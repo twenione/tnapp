@@ -1,0 +1,45 @@
+{
+  "session_id": "574c0826-3d54-5b47-a9ba-63cdf6313b51",
+  "schema_version": "0.1.0-draft",
+  "started_at_wall": "2026-01-01T00:00:00Z",
+  "app": {
+    "version": "0.1.0",
+    "build": 0,
+    "code_hash": "sha256:synthetic"
+  },
+  "engine": {
+    "config": {
+      "stub": true,
+      "variant": "combo_c"
+    },
+    "rng_seed": 2012
+  },
+  "route": {
+    "gpx_id": "synthetic-base",
+    "gpx_hash": "sha256:37a7737ddfc8aab96c1ecbd01c1513959de1859759496a6ca83f562c4cc06a53",
+    "point_count": 260
+  },
+  "clock": {
+    "monotonic_source": "synthetic-sequence"
+  },
+  "privacy": {
+    "upload_default": false
+  },
+  "device": {
+    "model": "synthetic",
+    "os": "test",
+    "sensors": [
+      "gps"
+    ]
+  },
+  "scenario": {
+    "family": "phase1-combination",
+    "noise_sigma_m": 0.0,
+    "departure_angle_deg": 30.0,
+    "departure_segment_m": 200.0,
+    "max_cross_track_m": 99.99999999999999,
+    "accuracy_degraded_seconds": 60,
+    "stationary_before_departure_seconds": 0,
+    "reverse_overlap": false
+  }
+}

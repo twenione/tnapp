@@ -31,5 +31,6 @@
     "sensors": [
       "gps"
     ]
-  }
+  },
+  "golden_status": "unverified-engine-output"
 }
