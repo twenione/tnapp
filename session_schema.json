@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trailnav.invalid/schemas/session-0.1.0.json",
+  "title": "tnApp session v0",
+  "schema_version": "0.1.0-draft",
+  "type": "object",
+  "required": ["manifest", "event_envelope", "streams", "tags", "privacy"],
+  "properties": {
+    "manifest": {
+      "type": "object",
+      "required": ["session_id", "schema_version", "started_at_wall", "app", "engine", "route", "clock"],
+      "properties": {
+        "session_id": {"type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"},
+        "schema_version": {"const": "0.1.0-draft"},
+        "started_at_wall": {"type": "string", "format": "date-time"},
+        "app": {"type": "object", "required": ["version", "code_hash"], "properties": {"version": {"type": "string"}, "build": {"type": "integer"}, "code_hash": {"type": "string"}}, "additionalProperties": true},
+        "engine": {"type": "object", "required": ["config", "rng_seed"], "properties": {"config": {"type": "object"}, "rng_seed": {"type": "integer"}}, "additionalProperties": true},
+        "route": {"type": "object", "required": ["gpx_hash"], "properties": {"gpx_id": {"type": "string"}, "gpx_hash": {"type": "string"}, "point_count": {"type": "integer"}}, "additionalProperties": true},
+        "clock": {"type": "object", "required": ["monotonic_source"], "properties": {"monotonic_source": {"type": "string"}}, "additionalProperties": true}
+      },
+      "additionalProperties": true
+    },
+    "event_envelope": {"type": "object", "required": ["seq", "t", "stream"], "properties": {"seq": {"type": "integer", "minimum": 0}, "t": {"type": "number"}, "stream": {"type": "string"}}, "additionalProperties": true},
+    "streams": {"type": "object"},
+    "tags": {"type": "object"},
+    "privacy": {"type": "object", "required": ["upload_default"], "properties": {"upload_default": {"const": false}}, "additionalProperties": true}
+  },
+  "additionalProperties": true
+}
+

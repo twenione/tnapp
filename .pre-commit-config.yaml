@@ -1,0 +1,14 @@
+repos:
+  - repo: local
+    hooks:
+      - id: engine-purity
+        name: engine-purity
+        entry: python tools/check_engine_purity.py core-guide/src/main/kotlin
+        language: system
+        pass_filenames: false
+      - id: session-format
+        name: session-format
+        entry: python tools/validate_session.py testdata/sessions/golden
+        language: system
+        pass_filenames: false
+
