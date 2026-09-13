@@ -1,0 +1,10 @@
+{
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "schema_version": "0.1.0-draft",
+  "started_at_wall": "2026-01-01T00:00:00Z",
+  "app": {"version": "0.1.0", "code_hash": "sha256:fixture"},
+  "engine": {"config": {"stub": true}, "rng_seed": 1},
+  "route": {"gpx_hash": "sha256:fixture"},
+  "clock": {"monotonic_source": "fixture"},
+  "privacy": {"upload_default": false}
+}
