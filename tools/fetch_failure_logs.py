@@ -8,6 +8,7 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 from pathlib import Path
 
 
@@ -17,8 +18,13 @@ class AuthRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, file, code, msg, headers, newurl):
         redirected = super().redirect_request(request, file, code, msg, headers, newurl)
         if redirected is not None:
+            old_host = urlparse(request.full_url).hostname or ""
+            new_host = urlparse(newurl).hostname or ""
             authorization = request.headers.get("Authorization")
-            if authorization:
+            # Keep the bearer only across GitHub API hosts. GitHub redirects
+            # log downloads to a signed blob URL where Authorization breaks
+            # the signature and must be omitted.
+            if authorization and new_host.endswith("github.com") and new_host == old_host:
                 redirected.add_header("Authorization", authorization)
         return redirected
 
