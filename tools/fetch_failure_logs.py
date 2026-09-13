@@ -4,45 +4,26 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
-import urllib.error
-import urllib.request
-from urllib.parse import urlparse
 from pathlib import Path
 
 
-class AuthRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Keep the workflow token when GitHub redirects a log download."""
-
-    def redirect_request(self, request, file, code, msg, headers, newurl):
-        redirected = super().redirect_request(request, file, code, msg, headers, newurl)
-        if redirected is not None:
-            old_host = urlparse(request.full_url).hostname or ""
-            new_host = urlparse(newurl).hostname or ""
-            authorization = request.headers.get("Authorization")
-            # Keep the bearer only across GitHub API hosts. GitHub redirects
-            # log downloads to a signed blob URL where Authorization breaks
-            # the signature and must be omitted.
-            if authorization and new_host.endswith("github.com") and new_host == old_host:
-                redirected.add_header("Authorization", authorization)
-        return redirected
-
-
-OPENER = urllib.request.build_opener(AuthRedirectHandler)
-
-
 def request_bytes(url: str, token: str) -> bytes:
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+    environment = os.environ.copy()
+    environment["GH_TOKEN"] = token
+    result = subprocess.run(
+        ["gh", "api", url],
+        env=environment,
+        capture_output=True,
+        timeout=30,
     )
-    with OPENER.open(request, timeout=30) as response:
-        return response.read()
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(detail or f"gh api exited {result.returncode}")
+    return result.stdout
 
 
 def safe_name(value: str) -> str:
@@ -57,10 +38,10 @@ def main() -> int:
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
-    jobs_url = f"https://api.github.com/repos/{args.repository}/actions/runs/{args.run_id}/jobs?per_page=100"
+    jobs_url = f"repos/{args.repository}/actions/runs/{args.run_id}/jobs?per_page=100"
     try:
         jobs = json.loads(request_bytes(jobs_url, args.token).decode("utf-8"))
-    except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+    except (OSError, RuntimeError, json.JSONDecodeError) as exc:
         print(f"FAIL: unable to list workflow jobs: {exc}", file=sys.stderr)
         return 1
 
@@ -70,10 +51,10 @@ def main() -> int:
     for job in failed_jobs:
         job_id = str(job.get("id", "unknown"))
         name = safe_name(str(job.get("name", "job")))
-        log_url = f"https://api.github.com/repos/{args.repository}/actions/jobs/{job_id}/logs"
+        log_url = f"repos/{args.repository}/actions/jobs/{job_id}/logs"
         try:
             log = request_bytes(log_url, args.token)
-        except (OSError, urllib.error.URLError) as exc:
+        except (OSError, RuntimeError) as exc:
             print(f"WARN: unable to fetch failed job log {job_id}: {exc}", file=sys.stderr)
             continue
         (args.out / f"job-{job_id}-{name}.log").write_bytes(log)
