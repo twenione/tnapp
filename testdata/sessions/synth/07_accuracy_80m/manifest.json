@@ -1,0 +1,35 @@
+{
+  "session_id": "7af78165-ff5f-5c3e-bd0d-0480ab8effb1",
+  "schema_version": "0.1.0-draft",
+  "started_at_wall": "2026-01-01T00:00:00Z",
+  "app": {
+    "version": "0.1.0",
+    "build": 0,
+    "code_hash": "sha256:synthetic"
+  },
+  "engine": {
+    "config": {
+      "stub": true,
+      "variant": "accuracy_80m"
+    },
+    "rng_seed": 1007
+  },
+  "route": {
+    "gpx_id": "synthetic-base",
+    "gpx_hash": "sha256:0266c1f6438b1e5daedcf0b0f7ecec7af44fd116a15fa7f0a6c63bc139f665cd",
+    "point_count": 31
+  },
+  "clock": {
+    "monotonic_source": "synthetic-sequence"
+  },
+  "privacy": {
+    "upload_default": false
+  },
+  "device": {
+    "model": "synthetic",
+    "os": "test",
+    "sensors": [
+      "gps"
+    ]
+  }
+}

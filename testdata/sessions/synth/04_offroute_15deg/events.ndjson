@@ -1,0 +1,38 @@
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 9.99999279, "lon": 19.99999279, "provider": "synthetic", "seq": 0, "speed_mps": 1.0, "stream": "loc", "t": 0}
+{"decision": "CONTINUE", "inputs": {"frame_count": 1, "rng_seed": 1004}, "reason": {"alternatives_considered": [], "rule": "stub.frame-count", "thresholds": {}}, "seq": 1, "state_hash": "sha256:synthetic", "stream": "guide", "t": 0.1}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.0000239, "lon": 20.00000787, "provider": "synthetic", "seq": 2, "speed_mps": 1.0, "stream": "loc", "t": 1}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00003651, "lon": 20.0000043, "provider": "synthetic", "seq": 3, "speed_mps": 1.0, "stream": "loc", "t": 2}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00005699, "lon": 20.00000828, "provider": "synthetic", "seq": 4, "speed_mps": 1.0, "stream": "loc", "t": 3}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00007807, "lon": 20.00001242, "provider": "synthetic", "seq": 5, "speed_mps": 1.0, "stream": "loc", "t": 4}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00009989, "lon": 20.00001672, "provider": "synthetic", "seq": 6, "speed_mps": 1.0, "stream": "loc", "t": 5}
+{"decision": "CONTINUE", "inputs": {"frame_count": 6, "rng_seed": 1004}, "reason": {"alternatives_considered": [], "rule": "stub.frame-count", "thresholds": {}}, "seq": 7, "state_hash": "sha256:synthetic", "stream": "guide", "t": 5.1}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00012279, "lon": 20.00002144, "provider": "synthetic", "seq": 8, "speed_mps": 1.0, "stream": "loc", "t": 6}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00013493, "lon": 20.00001464, "provider": "synthetic", "seq": 9, "speed_mps": 1.0, "stream": "loc", "t": 7}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00016109, "lon": 20.00002108, "provider": "synthetic", "seq": 10, "speed_mps": 1.0, "stream": "loc", "t": 8}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00018421, "lon": 20.00002369, "provider": "synthetic", "seq": 11, "speed_mps": 1.0, "stream": "loc", "t": 9}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00019854, "lon": 20.00001673, "provider": "synthetic", "seq": 12, "speed_mps": 1.0, "stream": "loc", "t": 10}
+{"decision": "CONTINUE", "inputs": {"frame_count": 11, "rng_seed": 1004}, "reason": {"alternatives_considered": [], "rule": "stub.frame-count", "thresholds": {}}, "seq": 13, "state_hash": "sha256:synthetic", "stream": "guide", "t": 10.1}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00021548, "lon": 20.00001165, "provider": "synthetic", "seq": 14, "speed_mps": 1.0, "stream": "loc", "t": 11}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.0002421, "lon": 20.00001561, "provider": "synthetic", "seq": 15, "speed_mps": 1.0, "stream": "loc", "t": 12}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.0002546, "lon": 20.00000491, "provider": "synthetic", "seq": 16, "speed_mps": 1.0, "stream": "loc", "t": 13}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00027757, "lon": 20.00000427, "provider": "synthetic", "seq": 17, "speed_mps": 1.0, "stream": "loc", "t": 14}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.0003026, "lon": 20.00000542, "provider": "synthetic", "seq": 18, "speed_mps": 1.0, "stream": "loc", "t": 15}
+{"decision": "CONTINUE", "inputs": {"frame_count": 16, "rng_seed": 1004}, "reason": {"alternatives_considered": [], "rule": "stub.frame-count", "thresholds": {}}, "seq": 19, "state_hash": "sha256:synthetic", "stream": "guide", "t": 15.1}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00031969, "lon": 19.99999853, "provider": "synthetic", "seq": 20, "speed_mps": 1.0, "stream": "loc", "t": 16}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00033836, "lon": 19.99999325, "provider": "synthetic", "seq": 21, "speed_mps": 1.0, "stream": "loc", "t": 17}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00036171, "lon": 19.99999286, "provider": "synthetic", "seq": 22, "speed_mps": 1.0, "stream": "loc", "t": 18}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00038029, "lon": 19.99998805, "provider": "synthetic", "seq": 23, "speed_mps": 1.0, "stream": "loc", "t": 19}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00040137, "lon": 19.99998624, "provider": "synthetic", "seq": 24, "speed_mps": 1.0, "stream": "loc", "t": 20}
+{"decision": "CONTINUE", "inputs": {"frame_count": 21, "rng_seed": 1004}, "reason": {"alternatives_considered": [], "rule": "stub.frame-count", "thresholds": {}}, "seq": 25, "state_hash": "sha256:synthetic", "stream": "guide", "t": 20.1}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00041772, "lon": 19.99998029, "provider": "synthetic", "seq": 26, "speed_mps": 1.0, "stream": "loc", "t": 21}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00043951, "lon": 19.99998048, "provider": "synthetic", "seq": 27, "speed_mps": 1.0, "stream": "loc", "t": 22}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00046142, "lon": 19.99998155, "provider": "synthetic", "seq": 28, "speed_mps": 1.0, "stream": "loc", "t": 23}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00048571, "lon": 19.99998578, "provider": "synthetic", "seq": 29, "speed_mps": 1.0, "stream": "loc", "t": 24}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00050542, "lon": 19.99998625, "provider": "synthetic", "seq": 30, "speed_mps": 1.0, "stream": "loc", "t": 25}
+{"decision": "CONTINUE", "inputs": {"frame_count": 26, "rng_seed": 1004}, "reason": {"alternatives_considered": [], "rule": "stub.frame-count", "thresholds": {}}, "seq": 31, "state_hash": "sha256:synthetic", "stream": "guide", "t": 25.1}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00052818, "lon": 19.99999051, "provider": "synthetic", "seq": 32, "speed_mps": 1.0, "stream": "loc", "t": 26}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00054269, "lon": 19.99998723, "provider": "synthetic", "seq": 33, "speed_mps": 1.0, "stream": "loc", "t": 27}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00055786, "lon": 19.99998523, "provider": "synthetic", "seq": 34, "speed_mps": 1.0, "stream": "loc", "t": 28}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00057927, "lon": 19.99998998, "provider": "synthetic", "seq": 35, "speed_mps": 1.0, "stream": "loc", "t": 29}
+{"accuracy": 5.0, "bearing_deg": 90.0, "lat": 10.00060617, "lon": 20.00000058, "provider": "synthetic", "seq": 36, "speed_mps": 1.0, "stream": "loc", "t": 30}
+{"decision": "CONTINUE", "inputs": {"frame_count": 31, "rng_seed": 1004}, "reason": {"alternatives_considered": [], "rule": "stub.frame-count", "thresholds": {}}, "seq": 37, "state_hash": "sha256:synthetic", "stream": "guide", "t": 30.1}
