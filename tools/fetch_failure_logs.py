@@ -36,6 +36,7 @@ def main() -> int:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--token", required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--metadata", type=Path, default=None)
     args = parser.parse_args()
 
     jobs_url = f"repos/{args.repository}/actions/runs/{args.run_id}/jobs?per_page=100"
@@ -47,6 +48,12 @@ def main() -> int:
 
     failed_jobs = [job for job in jobs.get("jobs", []) if job.get("conclusion") == "failure"]
     args.out.mkdir(parents=True, exist_ok=True)
+    metadata_path = args.metadata or (args.out / "failed_jobs.json")
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text(
+        json.dumps({"failed_jobs": [str(job.get("name", "job")) for job in failed_jobs]}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     fetched = 0
     for job in failed_jobs:
         job_id = str(job.get("id", "unknown"))

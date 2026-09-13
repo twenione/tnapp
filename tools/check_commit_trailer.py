@@ -30,7 +30,7 @@ def check_messages(messages: list[tuple[str, str]]) -> int:
 
 def git_messages(base: str | None, head: str | None) -> list[tuple[str, str]]:
     refs = f"{base}..{head}" if base and head else (head or "HEAD")
-    result = subprocess.run(["git", "log", "--format=%H%x00%B%x00", refs], text=True, capture_output=True)
+    result = subprocess.run(["git", "log", "--format=%H%x00%B%x00", refs], text=True, encoding="utf-8", errors="replace", capture_output=True)
     if result.returncode:
         print(result.stderr.rstrip(), file=sys.stderr)
         raise RuntimeError("git log failed")
