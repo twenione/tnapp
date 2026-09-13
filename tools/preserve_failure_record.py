@@ -12,7 +12,7 @@ from pathlib import Path
 
 MASKING_RULESET_VERSION = "mask-1.0.0"
 SECRET = re.compile(r"(?i)(?:gh[pousr]_[A-Za-z0-9_\-]{20,}|github_pat_[A-Za-z0-9_\-]{20,}|(?:token|secret|password|api[_-]?key)\s*[:=]\s*[^\s]+)")
-ERROR_LINE = re.compile(r"(?i)\b(?:fail(?:ed|ure)?|error|exception|traceback)\b")
+ERROR_LINE = re.compile(r"(?i)(?:##\[error\]|\b(?:fail(?:ed|ure)?|error|fatal)\s*:|\b(?:exception|traceback)\b)")
 
 
 def sanitize(text: str) -> str:
