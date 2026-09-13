@@ -1,0 +1,98 @@
+name: guard
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  purity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python tools/check_engine_purity.py core-guide/src/main/kotlin
+
+  session-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python tools/validate_session.py testdata/sessions/golden testdata/sessions/synth
+
+  replay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python tools/replay.py testdata/sessions/golden/golden_stub --strict
+
+  negative-control:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Every violation must be rejected
+        shell: bash
+        run: |
+          set -u
+          failures=0
+          for fixture in \
+            testdata/violations/engine_impure_clock.kt.txt \
+            testdata/violations/engine_impure_random.kt.txt; do
+            set +e
+            python tools/check_engine_purity.py "$fixture"
+            code=$?
+            set -e
+            test "$code" -eq 1 || failures=$((failures + 1))
+          done
+          for fixture in \
+            testdata/violations/session_seq_regress \
+            testdata/violations/session_missing_manifest; do
+            set +e
+            python tools/validate_session.py "$fixture"
+            code=$?
+            set -e
+            test "$code" -eq 1 || failures=$((failures + 1))
+          done
+          test "$failures" -eq 0
+
+  replay-determinism:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Replay every synthetic session twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          for session in testdata/sessions/synth/*; do
+            python tools/replay.py "$session" --strict > first.out
+            python tools/replay.py "$session" --strict > second.out
+            diff -u first.out second.out
+          done
+
+  commit-trailer:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python tools/check_commit_trailer.py ${{ github.event.pull_request.base.sha }} ${{ github.sha }}
+
