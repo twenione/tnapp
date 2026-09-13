@@ -40,6 +40,8 @@ def main() -> int:
         for item in payload.get("commits", []):
             if isinstance(item, dict) and item.get("id"):
                 commit_messages.append((str(item["id"]), str(item.get("message", ""))))
+    if before_sha and set(str(before_sha)) == {"0"}:
+        before_sha = None
     # A push payload's before..after range is authoritative when available. It
     # also covers merge commits whose trailer lives on a non-HEAD parent.
     if before_sha:
