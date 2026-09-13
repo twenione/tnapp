@@ -16,6 +16,33 @@ jobs:
         with:
           python-version: '3.12'
       - run: python tools/check_engine_purity.py core-guide/src/main/kotlin
+      - name: Capture push commit range
+        if: github.event_name == 'push'
+        env:
+          PUSH_EVENT: ${{ toJSON(github.event) }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          event = json.loads(os.environ["PUSH_EVENT"])
+          payload = {
+              "before": event.get("before"),
+              "after": event.get("after"),
+              "commits": [
+                  {"id": item.get("id"), "message": item.get("message", "")}
+                  for item in event.get("commits", [])
+                  if item.get("id")
+              ],
+          }
+          Path("push-range.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+          PY
+      - name: Upload push commit range metadata
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: push-range-${{ github.run_id }}
+          path: push-range.json
+          if-no-files-found: error
 
   session-format:
     runs-on: ubuntu-latest
