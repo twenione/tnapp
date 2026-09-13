@@ -12,6 +12,7 @@ from pathlib import Path
 
 MASKING_RULESET_VERSION = "mask-1.0.0"
 SECRET = re.compile(r"(?i)(?:gh[pousr]_[A-Za-z0-9_\-]{20,}|github_pat_[A-Za-z0-9_\-]{20,}|(?:token|secret|password|api[_-]?key)\s*[:=]\s*[^\s]+)")
+ERROR_LINE = re.compile(r"(?i)\b(?:fail(?:ed|ure)?|error|exception|traceback)\b")
 
 
 def sanitize(text: str) -> str:
@@ -20,9 +21,12 @@ def sanitize(text: str) -> str:
 
 def first_meaningful_line(text: str) -> str:
     for line in text.splitlines():
+        if line.strip() and ERROR_LINE.search(line):
+            return sanitize(line)
+    for line in text.splitlines():
         value = line.strip()
         if value and not value.startswith("#"):
-            return sanitize(value)
+            return sanitize(line)
     return "no meaningful error line found"
 
 
