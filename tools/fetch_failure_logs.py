@@ -15,7 +15,7 @@ def request_bytes(url: str, token: str) -> bytes:
     environment = os.environ.copy()
     environment["GH_TOKEN"] = token
     result = subprocess.run(
-        ["gh", "api", url],
+        ["gh", "api", "--allow-escape-sequences", url],
         env=environment,
         capture_output=True,
         timeout=30,
