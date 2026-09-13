@@ -5,7 +5,7 @@
   "app": {
     "version": "0.1.0",
     "build": 0,
-    "code_hash": "sha256:synthetic"
+    "code_hash": "sha256:172a88ef9dd29e283408d33a5218d510125ba5e6317584ea8b88642c9aeef55a"
   },
   "engine": {
     "config": {
@@ -32,5 +32,6 @@
       "gps"
     ]
   },
-  "golden_status": "unverified-engine-output"
+  "golden_status": "verified-engine-output",
+  "golden_verification": "phase1-accuracy"
 }
