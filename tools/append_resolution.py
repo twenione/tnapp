@@ -6,10 +6,14 @@ import argparse
 import datetime as dt
 import json
 import os
-import re
 import tempfile
 import subprocess
 from pathlib import Path
+
+try:
+    from check_commit_trailer import TRAILER
+except ModuleNotFoundError:  # imported as tools.append_resolution
+    from tools.check_commit_trailer import TRAILER
 
 
 def main() -> int:
@@ -25,13 +29,14 @@ def main() -> int:
     if result.returncode:
         print(result.stderr, end="")
         return result.returncode
-    trailer = re.search(r"(?im)^Failed-Run:\s*([^\s]+)\s*$", result.stdout)
+    trailer = TRAILER.search(result.stdout)
     if not trailer:
         print("NOOP: HEAD has no Failed-Run trailer; no resolution appended")
         return 0
+    failed_run_id = trailer.group(1)
     record = {
         "schema_version": "failrec-resolution-1.0.0",
-        "run_id": args.run_id,
+        "run_id": failed_run_id,
         "resolved_by_commit": args.head_sha,
         "resolved_run_id": args.run_id,
         "resolved_at": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -41,7 +46,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="tnapp-resolution-") as temp:
         path = Path(temp) / "resolution.json"
         path.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        push = subprocess.run(["python", "tools/push_failure_record.py", str(path), "--path", f"resolutions/{args.run_id}-{args.head_sha}.json"], text=True, capture_output=True)
+        push = subprocess.run(["python", "tools/push_failure_record.py", str(path), "--path", f"resolutions/{failed_run_id}-{args.head_sha}.json"], text=True, capture_output=True)
         print(push.stdout, end="")
         print(push.stderr, end="")
         if push.returncode:
