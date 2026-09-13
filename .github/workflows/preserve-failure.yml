@@ -30,6 +30,17 @@ jobs:
           merge-multiple: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
+      - name: Fetch failed job logs as data
+        env:
+          API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python tools/fetch_failure_logs.py \
+            --repository "$REPOSITORY" \
+            --run-id "$RUN_ID" \
+            --token "$API_TOKEN" \
+            --out incoming-logs
       - name: Build immutable failure record
         env:
           RUN_ID: ${{ github.event.workflow_run.id }}
@@ -45,7 +56,7 @@ jobs:
             --commit-sha "$COMMIT_SHA" \
             --branch "$BRANCH" \
             --created-at "$CREATED_AT" \
-            --runner-image-version "$IMAGE_VERSION"
+            --runner-image-version "${ImageVersion:-${IMAGE_VERSION:-}}"
       - name: Append record to private log repository
         env:
           FAILURE_LOG_TOKEN: ${{ secrets.FAILURE_LOG_TOKEN }}
@@ -56,7 +67,10 @@ jobs:
           python tools/push_failure_record.py out/failure-${{ github.event.workflow_run.id }}.json
 
   append-resolution:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == github.event.repository.default_branch
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
