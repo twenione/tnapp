@@ -1,0 +1,11 @@
+# Public repository safety: never commit measured tracks, credentials, or local state.
+*.gpx
+!testdata/routes/base.gpx
+*.jks
+*.keystore
+local.properties
+/sessions/
+__pycache__/
+*.pyc
+.gradle/
+build/
