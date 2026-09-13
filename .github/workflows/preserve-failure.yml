@@ -1,0 +1,78 @@
+name: preserve-failure
+
+on:
+  workflow_run:
+    workflows: [guard]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  record-failure:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout the trusted default branch only. Never checkout or execute PR code.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download guard logs as data
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          pattern: build-log-*
+          path: incoming-logs
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+      - name: Build immutable failure record
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          CREATED_AT: ${{ github.event.workflow_run.created_at }}
+          IMAGE_VERSION: ${{ env.ImageVersion }}
+        run: |
+          python tools/preserve_failure_record.py \
+            --logs incoming-logs \
+            --out out/failure-${RUN_ID}.json \
+            --run-id "$RUN_ID" \
+            --commit-sha "$COMMIT_SHA" \
+            --branch "$BRANCH" \
+            --created-at "$CREATED_AT" \
+            --runner-image-version "$IMAGE_VERSION"
+      - name: Append record to private log repository
+        env:
+          FAILURE_LOG_TOKEN: ${{ secrets.FAILURE_LOG_TOKEN }}
+        run: |
+          test -n "$FAILURE_LOG_TOKEN"
+          # The token is used only by the trusted action to append a new file.
+          # No PR scripts, Gradle tasks, or checked-out PR files are executed.
+          python tools/push_failure_record.py out/failure-${{ github.event.workflow_run.id }}.json
+
+  append-resolution:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Append resolution when HEAD has Failed-Run trailer
+        env:
+          FAILURE_LOG_TOKEN: ${{ secrets.FAILURE_LOG_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          git fetch --no-tags origin "$HEAD_SHA"
+          python tools/append_resolution.py \
+            --run-id "$RUN_ID" \
+            --head-sha "$HEAD_SHA" \
+            --token-present "$([ -n "$FAILURE_LOG_TOKEN" ] && echo yes || echo no)"
