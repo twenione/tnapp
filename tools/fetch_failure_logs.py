@@ -11,6 +11,21 @@ import urllib.request
 from pathlib import Path
 
 
+class AuthRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Keep the workflow token when GitHub redirects a log download."""
+
+    def redirect_request(self, request, file, code, msg, headers, newurl):
+        redirected = super().redirect_request(request, file, code, msg, headers, newurl)
+        if redirected is not None:
+            authorization = request.headers.get("Authorization")
+            if authorization:
+                redirected.add_header("Authorization", authorization)
+        return redirected
+
+
+OPENER = urllib.request.build_opener(AuthRedirectHandler)
+
+
 def request_bytes(url: str, token: str) -> bytes:
     request = urllib.request.Request(
         url,
@@ -20,7 +35,7 @@ def request_bytes(url: str, token: str) -> bytes:
             "X-GitHub-Api-Version": "2022-11-28",
         },
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with OPENER.open(request, timeout=30) as response:
         return response.read()
 
 
