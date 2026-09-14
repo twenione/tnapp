@@ -9,8 +9,9 @@
   },
   "engine": {
     "config": {
-      "stub": true,
-      "variant": "offroute_15deg"
+      "stub": false,
+      "variant": "offroute_15deg",
+      "implementation": "core-guide"
     },
     "rng_seed": 1004
   },

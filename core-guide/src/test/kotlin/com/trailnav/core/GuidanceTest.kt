@@ -1,7 +1,11 @@
 package com.trailnav.core
 
+import kotlin.test.Test
+
 /** Off-route hysteresis, accuracy filtering, arrival, and re-announcement checks. */
-fun main() {
+class GuidanceTest {
+    @Test
+    fun hysteresisAccuracyArrivalAndReannouncement() {
     val xml = """<gpx><trk><trkseg><trkpt lat="10.0" lon="20.0"/><trkpt lat="10.0" lon="20.002"/></trkseg></trk></gpx>"""
     val route = RouteModel.fromGpx(xml)
     val config = GuideConfig(offRouteEnterDwellSeconds = 2.0, offRouteExitDwellSeconds = 2.0)
@@ -21,5 +25,5 @@ fun main() {
     check(middle.guidance == null)
     val end = guide(middle.nextState, SensorFrame(1, 10.0, 20.002, 5f, 1f, null), config)
     check(end.guidance == Guidance.Arrived && end.nextState.arrived)
-    println("guidance tests: OK")
+    }
 }

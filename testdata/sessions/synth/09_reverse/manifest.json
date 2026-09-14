@@ -9,8 +9,9 @@
   },
   "engine": {
     "config": {
-      "stub": true,
-      "variant": "reverse"
+      "stub": false,
+      "variant": "reverse",
+      "implementation": "core-guide"
     },
     "rng_seed": 1009
   },

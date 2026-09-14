@@ -9,8 +9,9 @@
   },
   "engine": {
     "config": {
-      "stub": true,
-      "variant": "combo_a"
+      "stub": false,
+      "variant": "combo_a",
+      "implementation": "core-guide"
     },
     "rng_seed": 2010
   },
