@@ -1,6 +1,7 @@
 package com.trailnav.core
 
 import kotlin.test.Test
+import kotlin.math.cos
 
 /** Off-route hysteresis, accuracy filtering, arrival, and re-announcement checks. */
 class GuidanceTest {
@@ -25,5 +26,54 @@ class GuidanceTest {
     check(middle.guidance == null)
     val end = guide(middle.nextState, SensorFrame(1, 10.0, 20.002, 5f, 1f, null), config)
     check(end.guidance == Guidance.Arrived && end.nextState.arrived)
+    }
+
+    @Test
+    fun expiredEnterCandidateDoesNotCreateFalseOffRoute() {
+        val xml = """<gpx><trk><trkseg><trkpt lat="10.0" lon="20.0"/><trkpt lat="10.002" lon="20.0"/></trkseg></trk></gpx>"""
+        val route = RouteModel.fromGpx(xml)
+        val config = GuideConfig()
+        val metersPerDegreeLon = 6371008.8 * cos(Math.toRadians(10.0)) * Math.PI / 180.0
+        val east26Meters = 26.0 / metersPerDegreeLon
+        val onRouteLat = 10.0005
+        val onRouteLon = 20.0
+        val offRouteLon = onRouteLon + east26Meters
+
+        var state = GuideState.initial(route)
+        val firstSpike = guide(
+            state,
+            SensorFrame(0L, onRouteLat, offRouteLon, 5f, 1f, null),
+            config
+        )
+        check(!firstSpike.nextState.offRoute)
+        check(firstSpike.nextState.candidateOffRouteSince == 0L)
+        state = firstSpike.nextState
+
+        val briefRecovery = guide(
+            state,
+            SensorFrame(1_000L, onRouteLat, onRouteLon, 5f, 1f, null),
+            config
+        )
+        check(!briefRecovery.nextState.offRoute)
+        check(briefRecovery.nextState.candidateOffRouteSince == 0L)
+        state = briefRecovery.nextState
+
+        val longRecovery = guide(
+            state,
+            SensorFrame(10_800_000L, onRouteLat, onRouteLon, 5f, 1f, null),
+            config
+        )
+        check(!longRecovery.nextState.offRoute)
+        check(longRecovery.nextState.candidateOffRouteSince == null)
+        state = longRecovery.nextState
+
+        val lateSpike = guide(
+            state,
+            SensorFrame(10_800_001L, onRouteLat, offRouteLon, 5f, 1f, null),
+            config
+        )
+        check(!lateSpike.nextState.offRoute)
+        check(lateSpike.nextState.candidateOffRouteSince == 10_800_001L)
+        check(lateSpike.guidance !is Guidance.OffRoute)
     }
 }
