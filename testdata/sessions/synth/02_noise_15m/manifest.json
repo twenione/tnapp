@@ -9,8 +9,9 @@
   },
   "engine": {
     "config": {
-      "stub": true,
-      "variant": "noise_15m"
+      "stub": false,
+      "variant": "noise_15m",
+      "implementation": "core-guide"
     },
     "rng_seed": 1002
   },

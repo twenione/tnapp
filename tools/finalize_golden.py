@@ -11,7 +11,7 @@ from pathlib import Path
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--engine", type=Path, default=Path("core-guide/src/main/kotlin"))
-    parser.add_argument("--manifest", type=Path, default=Path("testdata/sessions/golden/golden_stub/manifest.json"))
+    parser.add_argument("--manifest", type=Path, default=Path("testdata/sessions/golden/golden_engine/manifest.json"))
     args = parser.parse_args()
     digest = hashlib.sha256()
     for path in sorted(args.engine.rglob("*.kt")):

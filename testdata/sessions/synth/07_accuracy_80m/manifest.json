@@ -9,8 +9,9 @@
   },
   "engine": {
     "config": {
-      "stub": true,
-      "variant": "accuracy_80m"
+      "stub": false,
+      "variant": "accuracy_80m",
+      "implementation": "core-guide"
     },
     "rng_seed": 1007
   },

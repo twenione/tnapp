@@ -60,6 +60,7 @@ def make_session(root: Path, name: str, points: list[tuple[float, float]], varia
     session_id = str(uuid.uuid5(SYNTH_NAMESPACE, name))
     session = root / name
     session.mkdir(parents=True, exist_ok=True)
+    write_gpx(session / "route.gpx", points)
     route_bytes = "\n".join(f"{lat:.8f},{lon:.8f}" for lat, lon in points).encode()
     route_hash = "sha256:" + hashlib.sha256(route_bytes).hexdigest()
     manifest = {
@@ -67,7 +68,7 @@ def make_session(root: Path, name: str, points: list[tuple[float, float]], varia
         "schema_version": "0.1.0-draft",
         "started_at_wall": "2026-01-01T00:00:00Z",
         "app": {"version": "0.1.0", "build": 0, "code_hash": "sha256:synthetic"},
-        "engine": {"config": {"stub": True, "variant": variant}, "rng_seed": seed},
+        "engine": {"config": {"stub": False, "variant": variant, "implementation": "core-guide"}, "rng_seed": seed},
         "route": {"gpx_id": "synthetic-base", "gpx_hash": route_hash, "point_count": len(points)},
         "clock": {"monotonic_source": "synthetic-sequence"},
         "privacy": {"upload_default": False},
@@ -96,6 +97,9 @@ def make_session(root: Path, name: str, points: list[tuple[float, float]], varia
             "stationary_before_departure_seconds": spec.get("stationary_before_departure_seconds", 0),
             "reverse_overlap": spec.get("reverse_overlap", False),
         }
+    if variant == "golden":
+        manifest["golden_status"] = "verified-engine-output"
+        manifest["golden_verification"] = "phase1-accuracy"
     (session / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     rng = random.Random(seed)
     events = []
@@ -162,7 +166,7 @@ def main() -> int:
     synth = args.output / "synth"
     for path in (golden, synth):
         path.mkdir(parents=True, exist_ok=True)
-    make_session(golden, "golden_stub", points, "golden", 100)
+    make_session(golden, "golden_engine", points, "golden", 100)
     variants = ["noise_5m", "noise_15m", "noise_30m", "offroute_15deg", "offroute_30deg", "offroute_90deg", "accuracy_80m", "stop_5m", "reverse"]
     for index, variant in enumerate(variants, 1):
         make_session(synth, f"{index:02d}_{variant}", points, variant, 1000 + index)

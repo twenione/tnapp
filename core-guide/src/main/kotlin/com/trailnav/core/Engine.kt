@@ -141,6 +141,11 @@ private fun updateOffRouteState(
                 state.copy(candidateOffRouteSince = since)
             }
         }
+        // Once an enter candidate has been observed, retain its start time
+        // until the dwell completes.  This prevents a noisy sample inside
+        // the enter band from resetting a sustained departure; the off-route
+        // state itself still uses exit distance/dwell hysteresis after entry.
+        if (state.candidateOffRouteSince != null) return state
         return state.copy(candidateOffRouteSince = null)
     }
 

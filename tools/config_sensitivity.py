@@ -1,38 +1,21 @@
 #!/usr/bin/env python3
-"""Exercise every Phase 1 GuideConfig sensitivity and enforce field coverage."""
+"""Check GuideConfig coverage and behavioural sensitivity via the real engine."""
 from __future__ import annotations
 
 import argparse
+import json
 import re
-from dataclasses import replace
 from pathlib import Path
 
-from dataclasses import dataclass
+from replay import invoke, resolve_cli
 
-
-@dataclass(frozen=True)
-class Config:
-    offRouteEnterDistMeters: float = 25.0
-    offRouteEnterDwellSeconds: float = 20.0
-    offRouteExitDistMeters: float = 15.0
-    offRouteExitDwellSeconds: float = 10.0
-    reannounceIntervalSeconds: float = 60.0
-
-
-REQUIRED = tuple(Config.__dataclass_fields__)
-
-
-def output(config: Config, distance: float = 30.0, elapsed: float = 30.0, initial_offroute: bool = False) -> tuple[str, ...]:
-    """Deterministic guide trace for a single departure/recovery probe."""
-    entered = initial_offroute or (distance > config.offRouteEnterDistMeters and elapsed >= config.offRouteEnterDwellSeconds)
-    if not entered:
-        return ("CONTINUE",)
-    recovered = distance < config.offRouteExitDistMeters and elapsed >= config.offRouteExitDwellSeconds
-    if recovered:
-        return ("CLEAR",)
-    if elapsed >= config.reannounceIntervalSeconds:
-        return ("OFF_ROUTE", "REANNOUNCE")
-    return ("OFF_ROUTE",)
+REQUIRED = (
+    "offRouteEnterDistMeters",
+    "offRouteEnterDwellSeconds",
+    "offRouteExitDistMeters",
+    "offRouteExitDwellSeconds",
+    "reannounceIntervalSeconds",
+)
 
 
 def field_names(source: Path) -> tuple[set[str], set[str]]:
@@ -55,34 +38,47 @@ def assert_coverage(fields: set[str], declared: set[str]) -> None:
         raise AssertionError(f"config field coverage mismatch missing={sorted(missing)} unknown={sorted(unknown)}")
 
 
+def engine_output(cli: Path, overrides: dict[str, float]) -> tuple[tuple[str, str], ...]:
+    command_root = Path(".")
+    command = [str(cli), "--probe"]
+    for name, value in overrides.items():
+        command.extend(["--config", f"{name}={value}"])
+    if cli.suffix.lower() in {".bat", ".cmd"}:
+        command = ["cmd", "/c", *command]
+    import subprocess
+
+    result = subprocess.run(command, cwd=command_root, check=False, capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"engine exited {result.returncode}")
+    frames = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+    return tuple((str(frame.get("decision", "")), str(frame.get("reason_rule", ""))) for frame in frames)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, default=Path("core-guide/src/main/kotlin/com/trailnav/core/Model.kt"))
+    parser.add_argument("--cli", help="path to installed compiled engine CLI")
     args = parser.parse_args()
     fields, declared = field_names(args.source)
     assert_coverage(fields, declared)
     if set(REQUIRED) - declared:
         raise AssertionError("a required sensitivity field is absent from GuideConfig declarations")
-    baseline = Config()
+    cli = resolve_cli(args.cli)
+    baseline = engine_output(cli, {})
     probes = {
-        "offRouteEnterDistMeters": replace(baseline, offRouteEnterDistMeters=100.0),
-        "offRouteEnterDwellSeconds": replace(baseline, offRouteEnterDwellSeconds=120.0),
-        "offRouteExitDistMeters": replace(baseline, offRouteExitDistMeters=5.0),
-        "offRouteExitDwellSeconds": replace(baseline, offRouteExitDwellSeconds=120.0),
-        "reannounceIntervalSeconds": replace(baseline, reannounceIntervalSeconds=5.0),
+        "offRouteEnterDistMeters": {"offRouteEnterDistMeters": 100.0},
+        "offRouteEnterDwellSeconds": {"offRouteEnterDwellSeconds": 120.0},
+        "offRouteExitDistMeters": {"offRouteExitDistMeters": 5.0},
+        "offRouteExitDwellSeconds": {"offRouteExitDwellSeconds": 120.0},
+        "reannounceIntervalSeconds": {"reannounceIntervalSeconds": 5.0},
     }
-    print("parameter | config_A | output_A | config_B | output_B | changed")
-    for name, changed in probes.items():
-        if name == "reannounceIntervalSeconds":
-            a, b = output(baseline, elapsed=30.0, initial_offroute=True), output(changed, elapsed=30.0, initial_offroute=True)
-        elif name.startswith("offRouteExit"):
-            a, b = output(baseline, distance=10.0, elapsed=30.0, initial_offroute=True), output(changed, distance=10.0, elapsed=30.0, initial_offroute=True)
-        else:
-            a, b = output(baseline, distance=30.0, elapsed=30.0), output(changed, distance=30.0, elapsed=30.0)
-        changed_output = a != b
-        print(f"{name} | {baseline} | {a} | {changed} | {b} | {changed_output}")
-        if not changed_output:
-            raise AssertionError(f"config value {name} did not change output")
+    print("parameter | baseline_engine_trace | changed_engine_trace | changed")
+    for name, overrides in probes.items():
+        changed = engine_output(cli, overrides)
+        did_change = baseline != changed
+        print(f"{name} | {json.dumps(baseline, sort_keys=True)} | {json.dumps(changed, sort_keys=True)} | {did_change}")
+        if not did_change:
+            raise AssertionError(f"config value {name} did not change actual engine output")
     omitted = set(declared)
     omitted.remove(REQUIRED[0])
     try:
@@ -91,7 +87,7 @@ def main() -> int:
         print(f"omission_probe=PASS ({exc})")
     else:
         raise AssertionError("field omission probe unexpectedly passed")
-    print(f"RESULT fields={len(fields)} sensitivity={len(REQUIRED)} status=PASS")
+    print(f"RESULT fields={len(fields)} sensitivity={len(REQUIRED)} engine_cli={cli} status=PASS")
     return 0
 
 

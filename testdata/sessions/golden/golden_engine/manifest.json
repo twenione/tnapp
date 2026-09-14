@@ -1,16 +1,17 @@
 {
-  "session_id": "6fc6d7bd-cbfd-58d7-a7f2-e2bafc59f5ac",
+  "session_id": "95b40a2d-af05-5620-b676-46f5d6cc5f85",
   "schema_version": "0.1.0-draft",
   "started_at_wall": "2026-01-01T00:00:00Z",
   "app": {
     "version": "0.1.0",
     "build": 0,
-    "code_hash": "sha256:172a88ef9dd29e283408d33a5218d510125ba5e6317584ea8b88642c9aeef55a"
+    "code_hash": "sha256:d0794332613c046e5c225fdf3b1eeea8e4c494e7bacf9163b4f818050f7702f0"
   },
   "engine": {
     "config": {
-      "stub": true,
-      "variant": "golden"
+      "stub": false,
+      "variant": "golden",
+      "implementation": "core-guide"
     },
     "rng_seed": 100
   },

@@ -53,6 +53,20 @@ jobs:
           python-version: '3.12'
       - run: python tools/validate_session.py testdata/sessions/golden testdata/sessions/synth
 
+  core-guide-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
+      - name: Compile and run core-guide tests
+        run: gradle :core-guide:test :replay:installDist
+
   replay:
     runs-on: ubuntu-latest
     steps:
@@ -60,7 +74,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python tools/replay.py testdata/sessions/golden/golden_stub --strict
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
+      - run: gradle :replay:installDist
+      - run: python tools/replay.py testdata/sessions/golden/golden_engine --cli replay/build/install/replay/bin/replay --strict
 
   negative-control:
     runs-on: ubuntu-latest
@@ -101,15 +123,41 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
+      - run: gradle :replay:installDist
       - name: Replay every synthetic session twice
         shell: bash
         run: |
           set -euo pipefail
           for session in testdata/sessions/synth/*; do
-            python tools/replay.py "$session" --strict > first.out
-            python tools/replay.py "$session" --strict > second.out
+            python tools/replay.py "$session" --cli replay/build/install/replay/bin/replay --strict > first.out
+            python tools/replay.py "$session" --cli replay/build/install/replay/bin/replay --strict > second.out
             diff -u first.out second.out
           done
+
+  phase1-accuracy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
+      - run: gradle :replay:installDist
+      - name: Execute every acceptance session with core-guide
+        run: python tools/phase1_accuracy.py --cli replay/build/install/replay/bin/replay --run-id "${{ github.run_id }}" --commit-sha "${{ github.sha }}"
 
   commit-trailer:
     if: github.event_name == 'pull_request'
@@ -130,6 +178,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
+      - run: gradle :replay:installDist
       - name: Verify every GuideConfig field and output sensitivity
-        run: python tools/config_sensitivity.py
+        run: python tools/config_sensitivity.py --cli replay/build/install/replay/bin/replay
 

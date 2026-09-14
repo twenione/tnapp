@@ -1,6 +1,7 @@
 # Public repository safety: never commit measured tracks, credentials, or local state.
 *.gpx
 !testdata/routes/base.gpx
+!testdata/sessions/**/route.gpx
 *.jks
 *.keystore
 local.properties
