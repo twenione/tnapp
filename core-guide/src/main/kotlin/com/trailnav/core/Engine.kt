@@ -45,7 +45,13 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
     )
 
     if (isArrived(next.route, directedMatch, config)) {
-        next = next.copy(arrived = true, offRoute = false, candidateOffRouteSince = null, exitCandidateSince = null)
+        next = next.copy(
+            arrived = true,
+            offRoute = false,
+            candidateOffRouteSince = null,
+            candidateOffRouteRecoverySince = null,
+            exitCandidateSince = null
+        )
         return GuideResult(
             Guidance.Arrived,
             next,
@@ -136,17 +142,32 @@ private fun updateOffRouteState(
         if (match.distanceMeters > config.offRouteEnterDistMeters) {
             val since = state.candidateOffRouteSince ?: timestamp
             return if (elapsedSeconds(timestamp, since) >= config.offRouteEnterDwellSeconds) {
-                state.copy(offRoute = true, offRouteSince = since, candidateOffRouteSince = null, exitCandidateSince = null)
+                state.copy(
+                    offRoute = true,
+                    offRouteSince = since,
+                    candidateOffRouteSince = null,
+                    candidateOffRouteRecoverySince = null,
+                    exitCandidateSince = null
+                )
             } else {
-                state.copy(candidateOffRouteSince = since)
+                state.copy(candidateOffRouteSince = since, candidateOffRouteRecoverySince = null)
             }
         }
-        // Once an enter candidate has been observed, retain its start time
-        // until the dwell completes.  This prevents a noisy sample inside
-        // the enter band from resetting a sustained departure; the off-route
-        // state itself still uses exit distance/dwell hysteresis after entry.
-        if (state.candidateOffRouteSince != null) return state
-        return state.copy(candidateOffRouteSince = null)
+        val candidateSince = state.candidateOffRouteSince
+        if (candidateSince == null) return state.copy(candidateOffRouteRecoverySince = null)
+        // A brief recovery inside the enter band is absorbed while the
+        // candidate's dwell window is still active.  Track the beginning of
+        // the in-band recovery separately so an intermittent noisy sample
+        // cannot cancel a departure that is about to complete its dwell.
+        val recoverySince = state.candidateOffRouteRecoverySince ?: timestamp
+        return if (
+            elapsedSeconds(timestamp, candidateSince) < config.offRouteEnterDwellSeconds ||
+            elapsedSeconds(timestamp, recoverySince) < config.offRouteEnterDwellSeconds
+        ) {
+            state.copy(candidateOffRouteRecoverySince = recoverySince)
+        } else {
+            state.copy(candidateOffRouteSince = null, candidateOffRouteRecoverySince = null)
+        }
     }
 
     if (match.distanceMeters < config.offRouteExitDistMeters) {

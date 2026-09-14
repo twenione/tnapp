@@ -134,6 +134,7 @@ data class GuideState(
     val direction: ProgressDirection = ProgressDirection.UNKNOWN,
     val stationary: Boolean = false,
     val candidateOffRouteSince: Long? = null,
+    val candidateOffRouteRecoverySince: Long? = null,
     val offRouteSince: Long? = null,
     val exitCandidateSince: Long? = null,
     val offRoute: Boolean = false,
