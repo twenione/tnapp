@@ -10,6 +10,7 @@ import argparse
 import json
 import math
 import subprocess
+import tempfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -113,7 +114,11 @@ def departure_metrics(locs: list[dict], distances: list[float]) -> tuple[float, 
     return travelled, max(distances, default=0.0) >= ON_ROUTE_LIMIT_M, start, end
 
 
-def evaluate_session(session: Path, cli: Path) -> tuple[int, int, int, float, float, float, bool]:
+def evaluate_session(
+    session: Path,
+    cli: Path,
+    overrides: list[str] | None = None,
+) -> tuple[int, int, int, float, float, float, bool]:
     events = load_events(session)
     locs = [event for event in events if event.get("stream") == "loc"]
     route_ll = route_points(session)
@@ -130,7 +135,7 @@ def evaluate_session(session: Path, cli: Path) -> tuple[int, int, int, float, fl
         )
         for event in locs
     ]
-    trace = invoke(cli, session, every_frame=True)
+    trace = invoke(cli, session, every_frame=True, overrides=overrides)
     frames = {int(item["loc_index"]): item for item in trace if item.get("kind") == "frame"}
     if len(frames) != len(locs):
         raise AssertionError(f"{session.name}: engine emitted {len(frames)} frames for {len(locs)} locations")
@@ -186,14 +191,49 @@ def git_sha() -> str:
         return "unknown"
 
 
+def contract_probe(cli: Path) -> None:
+    """Exercise the two config contracts used by D-033 negative control."""
+    with tempfile.TemporaryDirectory(prefix="tnapp-engine-contract-") as temporary:
+        root = Path(temporary)
+        source = Path("testdata/sessions/golden/golden_engine")
+        (root / "route.gpx").write_text((source / "route.gpx").read_text(encoding="utf-8"), encoding="utf-8")
+        meters_per_degree_lon = EARTH_RADIUS_M * math.cos(math.radians(10.0)) * math.pi / 180.0
+        east30 = 30.0 / meters_per_degree_lon
+        locations = [
+            {"seq": index, "t": timestamp, "stream": "loc", "lat": 10.0005, "lon": 20.0 + east30, "accuracy": 5.0, "speed_mps": 1.0, "bearing_deg": 0.0, "provider": "fixture"}
+            for index, timestamp in enumerate((0, 10, 21))
+        ]
+        (root / "events.ndjson").write_text("\n".join(json.dumps(item) for item in locations) + "\n", encoding="utf-8")
+
+        dwell_trace = invoke(cli, root, every_frame=True, overrides=["offRouteEnterDwellSeconds=20"])
+        dwell_decisions = [item.get("decision") for item in dwell_trace]
+        if dwell_decisions[:2] != ["CONTINUE", "CONTINUE"] or dwell_decisions[2:] != ["OFF_ROUTE"]:
+            raise AssertionError(f"dwell contract failed: {dwell_decisions}")
+
+        config_trace = invoke(
+            cli,
+            root,
+            every_frame=True,
+            overrides=["offRouteEnterDistMeters=100", "offRouteEnterDwellSeconds=0"],
+        )
+        config_decisions = [item.get("decision") for item in config_trace]
+        if any(decision == "OFF_ROUTE" for decision in config_decisions):
+            raise AssertionError(f"config contract failed: {config_decisions}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path("testdata/sessions/synth"))
     parser.add_argument("--cli", help="path to installed compiled engine CLI")
     parser.add_argument("--run-id", default="local")
     parser.add_argument("--commit-sha", default=None)
+    parser.add_argument("--config", action="append", default=[], metavar="NAME=VALUE")
+    parser.add_argument("--contract", action="store_true", help="run the D-033 engine contract probe")
     args = parser.parse_args()
     cli = resolve_cli(args.cli)
+    if args.contract:
+        contract_probe(cli)
+        print("D-033 contract probe=PASS")
     missing = [name for name in SESSIONS if not (args.root / name / "manifest.json").is_file()]
     if missing:
         print("FAIL missing sessions=" + ",".join(missing))
@@ -203,7 +243,7 @@ def main() -> int:
     print("session | false_positives | misses | samples | departure_length_m | max_cross_track_m | miss_eligible | engine_off_route | verdict")
     total_false = total_missed = 0
     for name in SESSIONS:
-        result = evaluate_session(args.root / name, cli)
+        result = evaluate_session(args.root / name, cli, args.config)
         false, missed, samples, maximum, offroute_count, departure_length, miss_eligible = result
         total_false += false
         total_missed += missed

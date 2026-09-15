@@ -25,10 +25,18 @@ def resolve_cli(explicit: str | None) -> Path:
     raise FileNotFoundError(f"compiled engine CLI not found; searched: {searched}")
 
 
-def invoke(cli: Path, root: Path, *, every_frame: bool = False) -> list[dict]:
+def invoke(
+    cli: Path,
+    root: Path,
+    *,
+    every_frame: bool = False,
+    overrides: list[str] | None = None,
+) -> list[dict]:
     command = [str(cli), "--route", str(root / "route.gpx"), "--session", str(root)]
     if every_frame:
         command.append("--emit-every-frame")
+    for override in overrides or []:
+        command.extend(["--config", override])
     if cli.suffix.lower() in {".bat", ".cmd"}:
         command = ["cmd", "/c", *command]
     result = subprocess.run(command, check=False, capture_output=True, text=True)
@@ -37,10 +45,10 @@ def invoke(cli: Path, root: Path, *, every_frame: bool = False) -> list[dict]:
     return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
 
 
-def replay(root: Path, cli: Path, strict: bool) -> int:
+def replay(root: Path, cli: Path, strict: bool, overrides: list[str] | None = None) -> int:
     if not (root / "events.ndjson").is_file() or not (root / "route.gpx").is_file():
         raise FileNotFoundError(f"session requires events.ndjson and route.gpx: {root}")
-    trace = invoke(cli, root)
+    trace = invoke(cli, root, overrides=overrides)
     comparisons = [item for item in trace if item.get("kind") == "guide"]
     mismatches: list[str] = []
     for item in comparisons:
@@ -68,12 +76,13 @@ def main(argv: list[str]) -> int:
     parser.add_argument("session_dir", type=Path)
     parser.add_argument("--cli", help="path to the installed compiled engine CLI")
     parser.add_argument("--strict", action="store_true")
+    parser.add_argument("--config", action="append", default=[], metavar="NAME=VALUE")
     args = parser.parse_args(argv[1:])
     if not args.session_dir.is_dir():
         print(f"ERROR: session directory missing: {args.session_dir}", file=sys.stderr)
         return 2
     try:
-        return replay(args.session_dir, resolve_cli(args.cli), args.strict)
+        return replay(args.session_dir, resolve_cli(args.cli), args.strict, args.config)
     except (OSError, RuntimeError, json.JSONDecodeError) as exc:
         print(f"ERROR: replay failed: {exc}", file=sys.stderr)
         return 2

@@ -1,0 +1,5 @@
+// D-033 mutation fixture. Applied only in a temporary CI checkout.
+// The production engine must require offRouteEnterDwellSeconds.
+if (match.distanceMeters > config.offRouteEnterDistMeters) {
+    return state.copy(offRoute = true)
+}

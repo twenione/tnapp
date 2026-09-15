@@ -1,0 +1,6 @@
+// D-033 mutation fixture. Applied only in a temporary CI checkout.
+// The production engine must consume the caller-supplied GuideConfig.
+val enterDistance = 25.0
+if (match.distanceMeters > enterDistance) {
+    // intentionally ignores config.offRouteEnterDistMeters
+}
