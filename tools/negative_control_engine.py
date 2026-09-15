@@ -59,10 +59,18 @@ def main() -> int:
                 failures.append(f"{name}: mutation needle not found")
                 continue
             engine.write_text(variant_engine, encoding="utf-8")
-            code, output = run([args.gradle, ":core-guide:test", ":replay:installDist", "--no-daemon"], workspace)
-            evidence.append(f"VARIANT {name} consumer=core-guide-build exit={code}\n{output}")
-            if code == 0:
-                failures.append(f"{name}: core-guide-build unexpectedly passed")
+            test_code, test_output = run([args.gradle, ":core-guide:test", "--no-daemon"], workspace)
+            evidence.append(f"VARIANT {name} consumer=core-guide-test exit={test_code}\n{test_output}")
+            if test_code == 0:
+                failures.append(f"{name}: core-guide-test unexpectedly passed")
+
+            # A failing test task prevents Gradle from reaching installDist in
+            # the same invocation. Build the real CLI separately so each
+            # downstream consumer is exercised against the mutated engine.
+            cli_code, cli_output = run([args.gradle, ":replay:installDist", "--no-daemon"], workspace)
+            evidence.append(f"VARIANT {name} consumer=replay-build exit={cli_code}\n{cli_output}")
+            if cli_code != 0:
+                failures.append(f"{name}: replay CLI build failed")
             cli = workspace / "replay/build/install/replay/bin/replay"
             if not cli.exists():
                 evidence.append(f"VARIANT {name} consumer=replay exit=not-built")
