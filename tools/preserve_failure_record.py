@@ -151,6 +151,7 @@ def main() -> int:
     parser.add_argument("--branch", required=True)
     parser.add_argument("--created-at", required=True)
     parser.add_argument("--runner-image-version", required=True)
+    parser.add_argument("--trigger-event", default="unknown")
     parser.add_argument("--repo-root", type=Path, default=Path("."))
     args = parser.parse_args()
     log_files = (
@@ -176,6 +177,7 @@ def main() -> int:
         "branch": args.branch,
         "created_at": args.created_at or dt.datetime.now(dt.timezone.utc).isoformat(),
         "runner_image_version": args.runner_image_version,
+        "trigger_event": args.trigger_event,
         "toolchain": toolchain(args.repo_root.resolve()),
         "failed_jobs": jobs,
         "error_signature": first_meaningful_line(raw),

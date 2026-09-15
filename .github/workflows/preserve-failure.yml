@@ -49,6 +49,7 @@ jobs:
           BRANCH: ${{ github.event.workflow_run.head_branch }}
           CREATED_AT: ${{ github.event.workflow_run.created_at }}
           IMAGE_VERSION: ${{ env.ImageVersion }}
+          TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
         run: |
           python tools/preserve_failure_record.py \
             --logs incoming-logs \
@@ -58,6 +59,7 @@ jobs:
             --branch "$BRANCH" \
             --created-at "$CREATED_AT" \
             --runner-image-version "${ImageVersion:-${IMAGE_VERSION:-}}" \
+            --trigger-event "$TRIGGER_EVENT" \
             --repo-root .
       - name: Append record to private log repository
         env:

@@ -116,6 +116,30 @@ jobs:
           done
           test "$failures" -eq 0
 
+  negative-control-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
+      - name: Verify engine consumers reject injected defects
+        run: python tools/negative_control_engine.py --gradle gradle --out d033-negative-control.log
+      - name: Upload D-033 mutation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: d033-negative-control-${{ github.run_id }}
+          path: d033-negative-control.log
+          if-no-files-found: error
+
   replay-determinism:
     runs-on: ubuntu-latest
     steps:
