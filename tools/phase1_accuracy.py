@@ -81,7 +81,39 @@ def distance_to_route(point: tuple[float, float], route: list[tuple[float, float
     return best
 
 
-def evaluate_session(session: Path, cli: Path) -> tuple[int, int, int, float, float]:
+def path_distance(a: dict, b: dict) -> float:
+    """Approximate travelled distance between two location events in metres."""
+    lat0 = math.radians(float(a["lat"]))
+    dlat = math.radians(float(b["lat"]) - float(a["lat"]))
+    dlon = math.radians(float(b["lon"]) - float(a["lon"]))
+    return math.hypot(dlat * EARTH_RADIUS_M, dlon * EARTH_RADIUS_M * math.cos(lat0))
+
+
+def departure_metrics(locs: list[dict], distances: list[float]) -> tuple[float, bool, int | None, int | None]:
+    """Return travelled length and eligibility for the 50 m miss criterion.
+
+    The boundary is derived from the location stream, rather than the scenario
+    manifest: an episode starts at the first sample above the enter band and
+    ends at the first later sample back below it (or at the final sample).
+    """
+    starts = [
+        index
+        for index, distance in enumerate(distances)
+        if distance > 25.0 and (index == 0 or distances[index - 1] <= 25.0)
+    ]
+    if not starts:
+        return 0.0, max(distances, default=0.0) >= ON_ROUTE_LIMIT_M, None, None
+    start = starts[0]
+    end = len(locs) - 1
+    for index in range(start + 1, len(locs)):
+        if distances[index] <= 25.0:
+            end = index
+            break
+    travelled = sum(path_distance(locs[index - 1], locs[index]) for index in range(start + 1, end + 1))
+    return travelled, max(distances, default=0.0) >= ON_ROUTE_LIMIT_M, start, end
+
+
+def evaluate_session(session: Path, cli: Path) -> tuple[int, int, int, float, float, float, bool]:
     events = load_events(session)
     locs = [event for event in events if event.get("stream") == "loc"]
     route_ll = route_points(session)
@@ -135,7 +167,16 @@ def evaluate_session(session: Path, cli: Path) -> tuple[int, int, int, float, fl
         )
         if not detected:
             misses += 1
-    return false_positives, misses, len(locs), max(distances), sum(1 for decision in decisions if decision == "OFF_ROUTE")
+    departure_length, miss_eligible, _, _ = departure_metrics(locs, distances)
+    return (
+        false_positives,
+        misses,
+        len(locs),
+        max(distances),
+        sum(1 for decision in decisions if decision == "OFF_ROUTE"),
+        departure_length,
+        miss_eligible,
+    )
 
 
 def git_sha() -> str:
@@ -159,15 +200,16 @@ def main() -> int:
         return 1
     sha = args.commit_sha or git_sha()
     print(f"evidence run_id={args.run_id} commit_sha={sha} engine_cli={cli}")
-    print("session | false_positives | misses | samples | max_cross_track_m | engine_off_route | verdict")
+    print("session | false_positives | misses | samples | departure_length_m | max_cross_track_m | miss_eligible | engine_off_route | verdict")
     total_false = total_missed = 0
     for name in SESSIONS:
         result = evaluate_session(args.root / name, cli)
-        false, missed, samples, maximum, offroute_count = result
+        false, missed, samples, maximum, offroute_count, departure_length, miss_eligible = result
         total_false += false
         total_missed += missed
         verdict = "PASS" if false == 0 and missed == 0 else "FAIL"
-        print(f"{name} | {false} | {missed} | {samples} | {maximum:.1f} | {offroute_count} | {verdict}")
+        eligibility = "미탐 판정 대상" if miss_eligible else "미탐 판정 대상 아님"
+        print(f"{name} | {false} | {missed} | {samples} | {departure_length:.1f} | {maximum:.1f} | {eligibility} | {offroute_count} | {verdict}")
     status = "PASS" if total_false == 0 and total_missed == 0 else "FAIL"
     print(f"RESULT sessions={len(SESSIONS)} false_positives={total_false} misses={total_missed} status={status}")
     return 0 if status == "PASS" else 1
