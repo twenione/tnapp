@@ -65,7 +65,7 @@ jobs:
         with:
           gradle-version: '8.14'
       - name: Compile and run core-guide tests
-        run: gradle :core-guide:test :replay:installDist
+        run: gradle :core-guide:test :replay:installDist :app:testDebugUnitTest :app:assembleDebug
 
   replay:
     runs-on: ubuntu-latest

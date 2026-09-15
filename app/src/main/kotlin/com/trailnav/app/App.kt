@@ -1,7 +1,10 @@
 package com.trailnav.app
 
-/** Android wiring is intentionally deferred to Phase 2. */
-object AppPlaceholder {
-    const val phase = 0
+/** Application-level constants shared by the activity and service. */
+object TrailNavApp {
+    const val phase = 2
+    const val locationIntervalMillis = 1_000L
+    const val locationPriority = "PRIORITY_HIGH_ACCURACY"
+    const val loggerUploadDefault = false
 }
 

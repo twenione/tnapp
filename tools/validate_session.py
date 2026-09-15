@@ -10,6 +10,7 @@ from typing import Any
 
 MANIFEST_REQUIRED = ("session_id", "schema_version", "started_at_wall", "app", "engine", "route", "clock")
 STREAM_REQUIRED = {
+    "envelope": ("event_stream", "event_type"),
     "loc": ("lat", "lon", "accuracy", "provider"),
     "imu": ("heading_deg",),
     "baro": ("pressure_hpa",),
