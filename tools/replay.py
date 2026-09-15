@@ -45,6 +45,35 @@ def invoke(
     return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
 
 
+def invoke_probe(cli: Path, overrides: list[str] | None = None) -> list[dict]:
+    command = [str(cli), "--probe"]
+    for override in overrides or []:
+        command.extend(["--config", override])
+    if cli.suffix.lower() in {".bat", ".cmd"}:
+        command = ["cmd", "/c", *command]
+    result = subprocess.run(command, check=False, capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"engine exited {result.returncode}")
+    return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+
+
+def contract_probe(cli: Path) -> int:
+    """Check D-033 dwell and caller-config contracts through the real CLI."""
+    dwell = invoke_probe(cli, ["offRouteEnterDwellSeconds=20"])
+    dwell_decisions = [item.get("decision") for item in dwell]
+    expected_dwell = ["CONTINUE", "CONTINUE", "OFF_ROUTE", "CONTINUE", "CONTINUE", "CONTINUE"]
+    if dwell_decisions != expected_dwell:
+        print(f"FAIL D-033 dwell contract actual={dwell_decisions} expected={expected_dwell}")
+        return 1
+    config = invoke_probe(cli, ["offRouteEnterDistMeters=100", "offRouteEnterDwellSeconds=0"])
+    config_decisions = [item.get("decision") for item in config]
+    if any(decision == "OFF_ROUTE" for decision in config_decisions):
+        print(f"FAIL D-033 config contract actual={config_decisions}")
+        return 1
+    print("D-033 replay contract=PASS")
+    return 0
+
+
 def replay(root: Path, cli: Path, strict: bool, overrides: list[str] | None = None) -> int:
     if not (root / "events.ndjson").is_file() or not (root / "route.gpx").is_file():
         raise FileNotFoundError(f"session requires events.ndjson and route.gpx: {root}")
@@ -73,11 +102,21 @@ def replay(root: Path, cli: Path, strict: bool, overrides: list[str] | None = No
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("session_dir", type=Path)
+    parser.add_argument("session_dir", type=Path, nargs="?")
     parser.add_argument("--cli", help="path to the installed compiled engine CLI")
     parser.add_argument("--strict", action="store_true")
     parser.add_argument("--config", action="append", default=[], metavar="NAME=VALUE")
+    parser.add_argument("--contract", action="store_true", help="run the D-033 engine contract probe")
     args = parser.parse_args(argv[1:])
+    if args.contract:
+        try:
+            return contract_probe(resolve_cli(args.cli))
+        except (OSError, RuntimeError, json.JSONDecodeError) as exc:
+            print(f"ERROR: contract probe failed: {exc}", file=sys.stderr)
+            return 2
+    if args.session_dir is None:
+        print("ERROR: session directory is required unless --contract is used", file=sys.stderr)
+        return 2
     if not args.session_dir.is_dir():
         print(f"ERROR: session directory missing: {args.session_dir}", file=sys.stderr)
         return 2

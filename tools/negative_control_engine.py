@@ -82,7 +82,7 @@ def main() -> int:
             commands = [
                 (
                     "replay",
-                    ["python", "tools/replay.py", "testdata/sessions/synth/10_combo_a", "--cli", str(cli), "--strict", "--config", "offRouteEnterDistMeters=100"],
+                    ["python", "tools/replay.py", "--cli", str(cli), "--contract"],
                 ),
                 (
                     "phase1-accuracy",
