@@ -66,6 +66,13 @@ jobs:
           gradle-version: '8.14'
       - name: Compile and run core-guide tests
         run: gradle :core-guide:test :replay:installDist :app:testDebugUnitTest :app:assembleDebug
+      - name: Upload debug APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trailnav-debug-${{ github.sha }}
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
 
   replay:
     runs-on: ubuntu-latest
