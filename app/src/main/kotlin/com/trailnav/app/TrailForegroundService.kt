@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -57,12 +58,18 @@ class TrailForegroundService : Service() {
             return START_NOT_STICKY
         }
         val routeUri = intent?.getStringExtra(EXTRA_ROUTE_URI)
-        if (!sessionStarted && routeUri != null) {
-            startSession(
-                routeUri = Uri.parse(routeUri),
-                onRouteVoiceEnabled = intent?.getBooleanExtra(EXTRA_ON_ROUTE_VOICE_ENABLED, false) ?: false,
-                onRouteVoiceIntervalSeconds = intent?.getLongExtra(EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS, 0L) ?: 0L,
-            )
+        if (routeUri != null) {
+            val voiceEnabled = intent?.getBooleanExtra(EXTRA_ON_ROUTE_VOICE_ENABLED, false) ?: false
+            val voiceIntervalSeconds = intent?.getLongExtra(EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS, 0L) ?: 0L
+            if (!sessionStarted) {
+                startSession(
+                    routeUri = Uri.parse(routeUri),
+                    onRouteVoiceEnabled = voiceEnabled,
+                    onRouteVoiceIntervalSeconds = voiceIntervalSeconds,
+                )
+            } else {
+                updateOnRouteVoiceConfiguration(voiceEnabled, voiceIntervalSeconds)
+            }
         }
         return START_STICKY
     }
@@ -129,6 +136,18 @@ class TrailForegroundService : Service() {
         mainHandler.postDelayed(noLocationWarning, LOCATION_FIX_TIMEOUT_MILLIS)
     }
 
+    private fun updateOnRouteVoiceConfiguration(enabled: Boolean, intervalSeconds: Long) {
+        onRouteVoiceScheduler?.configure(enabled, intervalSeconds)
+        logger?.appendSystem(
+            "voice.on-route-config",
+            mapOf(
+                "enabled" to (enabled && intervalSeconds > 0L).toString(),
+                "interval_seconds" to (if (intervalSeconds > 0L) intervalSeconds else 0L).toString(),
+                "updated_while_running" to "true",
+            ),
+        )
+    }
+
     private fun onLocation(location: TrailLocation) {
         val session = guideSession ?: return
         val gpsEvent = gpsSignalMonitor?.onLocation(location)
@@ -145,7 +164,10 @@ class TrailForegroundService : Service() {
         val spoken = guidance.toSpeech()
         val gpsAccuracyRejected = decision.result.reason.rule == "input.accuracy-filter"
         val periodic = onRouteVoiceScheduler?.onFrame(
-            timestampMillis = location.timestampMillis,
+            // Provider timestamps can be stale or repeat across batched fixes.
+            // Cadence is an app playback concern, so use a monotonic clock for
+            // the one-minute/three-minute/five-minute interval.
+            timestampMillis = SystemClock.elapsedRealtime(),
             onRoute = !decision.result.nextState.offRoute && !gpsAccuracyRejected,
             arrived = decision.result.nextState.arrived,
             suppressAnnouncement = reverseStatus,
@@ -157,7 +179,13 @@ class TrailForegroundService : Service() {
         logger?.appendEnvelope(location, "guide", "decision")
         logger?.appendGuide(location, decision.result, loggedSpeech)
         if (!spoken.isNullOrBlank()) tts?.speak(spoken)
-        if (periodic) tts?.speak(ON_ROUTE_VOICE_PROMPT)
+        if (periodic) {
+            logger?.appendSystem(
+                "voice.on-route",
+                mapOf("prompt" to ON_ROUTE_VOICE_PROMPT),
+            )
+            tts?.speak(ON_ROUTE_VOICE_PROMPT)
+        }
         updateNotification(decision.result.guidance)
     }
 
