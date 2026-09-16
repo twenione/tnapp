@@ -24,6 +24,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private lateinit var routes: ArrayAdapter<String>
     private var selectedRoute: Uri? = null
+    private var onRouteVoiceEnabled = false
+    private var onRouteVoiceIntervalSeconds = 0L
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -84,9 +86,32 @@ class MainActivity : AppCompatActivity() {
             adapter = routes
             choiceMode = ListView.CHOICE_MODE_SINGLE
         }
+        val onRouteVoiceLabel = TextView(this).apply {
+            text = "경로 위 주기 음성: 끄기"
+        }
+        val onRouteVoicePresets = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        listOf(
+            0L to "끄기",
+            60L to "1분",
+            180L to "3분",
+            300L to "5분",
+        ).forEach { (intervalSeconds, label) ->
+            onRouteVoicePresets.addView(Button(this).apply {
+                text = label
+                setOnClickListener {
+                    onRouteVoiceIntervalSeconds = intervalSeconds
+                    onRouteVoiceEnabled = intervalSeconds > 0L
+                    onRouteVoiceLabel.text = "경로 위 주기 음성: $label"
+                }
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
         root.addView(status)
         root.addView(import)
         root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(onRouteVoiceLabel)
+        root.addView(onRouteVoicePresets)
         root.addView(start)
         root.addView(stop)
         setContentView(root)
@@ -119,7 +144,8 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, TrailForegroundService::class.java).putExtra(
             TrailForegroundService.EXTRA_ROUTE_URI,
             route.toString(),
-        )
+        ).putExtra(TrailForegroundService.EXTRA_ON_ROUTE_VOICE_ENABLED, onRouteVoiceEnabled)
+            .putExtra(TrailForegroundService.EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS, onRouteVoiceIntervalSeconds)
         ContextCompat.startForegroundService(this, intent)
         status.text = "안내 서비스를 시작했습니다"
     }

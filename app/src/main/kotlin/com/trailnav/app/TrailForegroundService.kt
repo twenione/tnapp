@@ -31,18 +31,17 @@ class TrailForegroundService : Service() {
     private var logger: JsonlSessionLogger? = null
     private var guideSession: GuideSession? = null
     private var tts: TtsController? = null
+    private var gpsSignalMonitor: GpsSignalMonitor? = null
+    private var onRouteVoiceScheduler: OnRouteVoiceScheduler? = null
     private var sessionStarted = false
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var receivedLocation = false
-    private var noLocationWarningIssued = false
-    private var weakSignalWarningIssued = false
-    private var locationErrorWarningIssued = false
 
     private val noLocationWarning = Runnable {
-        if (sessionStarted && !receivedLocation && !noLocationWarningIssued) {
-            noLocationWarningIssued = true
-            logger?.appendSystem("location.no-fix-warning")
-            tts?.speak("GPS 신호를 확인할 수 없습니다. 위치 권한과 실외 GPS 상태를 확인하세요.")
+        if (sessionStarted) {
+            gpsSignalMonitor?.onNoFixTimeout()?.let {
+                logger?.appendSystem("location.no-fix-warning")
+                announceGpsSignal(it)
+            }
         }
     }
 
@@ -58,11 +57,21 @@ class TrailForegroundService : Service() {
             return START_NOT_STICKY
         }
         val routeUri = intent?.getStringExtra(EXTRA_ROUTE_URI)
-        if (!sessionStarted && routeUri != null) startSession(Uri.parse(routeUri))
+        if (!sessionStarted && routeUri != null) {
+            startSession(
+                routeUri = Uri.parse(routeUri),
+                onRouteVoiceEnabled = intent?.getBooleanExtra(EXTRA_ON_ROUTE_VOICE_ENABLED, false) ?: false,
+                onRouteVoiceIntervalSeconds = intent?.getLongExtra(EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS, 0L) ?: 0L,
+            )
+        }
         return START_STICKY
     }
 
-    private fun startSession(routeUri: Uri) {
+    private fun startSession(
+        routeUri: Uri,
+        onRouteVoiceEnabled: Boolean,
+        onRouteVoiceIntervalSeconds: Long,
+    ) {
         val xml = try {
             contentResolver.openInputStream(routeUri)?.use { it.readBytes().toString(Charsets.UTF_8) }
                 ?: throw IllegalStateException("unable to read GPX")
@@ -89,27 +98,30 @@ class TrailForegroundService : Service() {
         )
         tts = TtsController(this) { status -> logger?.appendSystem(status) }
         guideSession = GuideSession(route, config)
+        gpsSignalMonitor = GpsSignalMonitor().also { it.start() }
+        onRouteVoiceScheduler = OnRouteVoiceScheduler(onRouteVoiceEnabled, onRouteVoiceIntervalSeconds)
         sessionStarted = true
-        receivedLocation = false
-        noLocationWarningIssued = false
-        weakSignalWarningIssued = false
-        locationErrorWarningIssued = false
         startForegroundCompat()
         tts?.speak("안내 서비스를 시작합니다.")
         logger?.appendSystem(
             "service.started",
             mapOf("provider" to "fused", "interval_ms" to "1000", "battery_pct" to batteryPercent()),
         )
+        logger?.appendSystem(
+            "voice.on-route-config",
+            mapOf(
+                "enabled" to (onRouteVoiceEnabled && onRouteVoiceIntervalSeconds > 0L).toString(),
+                "interval_seconds" to (if (onRouteVoiceIntervalSeconds > 0L) onRouteVoiceIntervalSeconds else 0L).toString(),
+            ),
+        )
         source = FusedLocationSource(this).also { locationSource ->
             locationSource.start(
                 onLocation = ::onLocation,
                 onError = { error ->
                     logger?.appendError("location", error.message ?: error::class.java.simpleName)
-                    if (!locationErrorWarningIssued) {
-                        locationErrorWarningIssued = true
-                        noLocationWarningIssued = true
+                    gpsSignalMonitor?.onProviderError()?.let {
                         logger?.appendSystem("location.error-warning")
-                        tts?.speak("위치 정보를 받을 수 없습니다. 위치 권한과 GPS 상태를 확인하세요.")
+                        announceGpsSignal(it)
                     }
                 },
             )
@@ -119,25 +131,33 @@ class TrailForegroundService : Service() {
 
     private fun onLocation(location: TrailLocation) {
         val session = guideSession ?: return
-        if (!receivedLocation) {
-            receivedLocation = true
-            mainHandler.removeCallbacks(noLocationWarning)
-        }
+        val gpsEvent = gpsSignalMonitor?.onLocation(location)
+        // A first callback, even with poor accuracy, means the no-fix timer
+        // must stop. The monitor also emits the weak-signal warning for the
+        // first invalid or over-threshold accuracy value.
+        mainHandler.removeCallbacks(noLocationWarning)
+        gpsEvent?.let(::announceGpsSignal)
         logger?.appendEnvelope(location, "loc", "location")
         logger?.appendLocation(location)
         val decision = session.accept(location)
-        val spoken = decision.result.guidance.toSpeech()
+        val guidance = decision.result.guidance
+        val reverseStatus = guidance.isReverseStatus()
+        val spoken = guidance.toSpeech()
+        val gpsAccuracyRejected = decision.result.reason.rule == "input.accuracy-filter"
+        val periodic = onRouteVoiceScheduler?.onFrame(
+            timestampMillis = location.timestampMillis,
+            onRoute = !decision.result.nextState.offRoute && !gpsAccuracyRejected,
+            arrived = decision.result.nextState.arrived,
+            suppressAnnouncement = reverseStatus,
+        ) == true
+        val loggedSpeech = listOfNotNull(
+            spoken,
+            if (periodic) ON_ROUTE_VOICE_PROMPT else null,
+        ).joinToString(" ").ifBlank { null }
         logger?.appendEnvelope(location, "guide", "decision")
-        logger?.appendGuide(location, decision.result, spoken)
-        if (decision.result.reason.rule == "input.accuracy-filter" && !weakSignalWarningIssued) {
-            weakSignalWarningIssued = true
-            logger?.appendSystem(
-                "location.accuracy-warning",
-                mapOf("accuracy_m" to location.accuracyMeters.toString()),
-            )
-            tts?.speak("GPS 신호가 약합니다. 안내 정확도가 떨어질 수 있습니다.")
-        }
+        logger?.appendGuide(location, decision.result, loggedSpeech)
         if (!spoken.isNullOrBlank()) tts?.speak(spoken)
+        if (periodic) tts?.speak(ON_ROUTE_VOICE_PROMPT)
         updateNotification(decision.result.guidance)
     }
 
@@ -148,6 +168,10 @@ class TrailForegroundService : Service() {
         if (sessionStarted) logger?.appendSystem("service.stopped", mapOf("battery_pct" to batteryPercent()))
         tts?.close()
         tts = null
+        gpsSignalMonitor?.stop()
+        gpsSignalMonitor = null
+        onRouteVoiceScheduler?.reset()
+        onRouteVoiceScheduler = null
         logger?.close()
         logger = null
         sessionStarted = false
@@ -179,10 +203,28 @@ class TrailForegroundService : Service() {
         val message = when (guidance) {
             is Guidance.OffRoute -> "경로에서 ${"%.0f".format(guidance.distance)}m 이탈"
             Guidance.Arrived -> "목적지에 도착했습니다"
-            is Guidance.Status -> guidance.message
+            is Guidance.Status -> if (guidance.isReverseStatus()) "경로를 안내하는 중" else guidance.message
             else -> "경로를 안내하는 중"
         }
         NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification(message))
+    }
+
+    private fun announceGpsSignal(event: GpsSignalEvent) {
+        when (event) {
+            GpsSignalEvent.NoFixTimeout -> tts?.speak(
+                "GPS 신호를 확인할 수 없습니다. 위치 권한과 실외 GPS 상태를 확인하세요.",
+            )
+            GpsSignalEvent.ProviderError -> tts?.speak(
+                "위치 정보를 받을 수 없습니다. 위치 권한과 GPS 상태를 확인하세요.",
+            )
+            is GpsSignalEvent.WeakSignal -> {
+                logger?.appendSystem(
+                    "location.accuracy-warning",
+                    mapOf("accuracy_m" to event.accuracyMeters.toString()),
+                )
+                tts?.speak("GPS 신호가 약합니다. 안내 정확도가 떨어질 수 있습니다.")
+            }
+        }
     }
 
     private fun notification(text: String): Notification = NotificationCompat.Builder(this, CHANNEL_ID)
@@ -201,15 +243,20 @@ class TrailForegroundService : Service() {
 
     companion object {
         const val EXTRA_ROUTE_URI = "com.trailnav.app.ROUTE_URI"
+        const val EXTRA_ON_ROUTE_VOICE_ENABLED = "com.trailnav.app.ON_ROUTE_VOICE_ENABLED"
+        const val EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS = "com.trailnav.app.ON_ROUTE_VOICE_INTERVAL_SECONDS"
+        const val ON_ROUTE_VOICE_PROMPT = "정상적으로 경로를 따라가고 있습니다."
         private const val LOCATION_FIX_TIMEOUT_MILLIS = 15_000L
         private const val CHANNEL_ID = "trailnav.navigation"
         private const val NOTIFICATION_ID = 1001
     }
 }
 
-private fun Guidance?.toSpeech(): String? = when (this) {
+internal fun Guidance?.isReverseStatus(): Boolean = this is Guidance.Status && message == "역방향 진행 중"
+
+internal fun Guidance?.toSpeech(): String? = when (this) {
     is Guidance.OffRoute -> "경로를 벗어났습니다. ${"%.0f".format(distance)}미터"
-    is Guidance.Status -> message
+    is Guidance.Status -> if (isReverseStatus()) null else message
     Guidance.Arrived -> "목적지에 도착했습니다"
     is Guidance.TurnAhead, is Guidance.TurnNow, null -> null
 }
