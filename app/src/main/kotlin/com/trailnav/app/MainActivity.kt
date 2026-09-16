@@ -24,6 +24,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private lateinit var routes: ArrayAdapter<String>
     private var selectedRoute: Uri? = null
+    private var selectedRouteSummary: String? = null
     private var onRouteVoiceEnabled = false
     private var onRouteVoiceIntervalSeconds = 0L
 
@@ -44,7 +45,6 @@ class MainActivity : AppCompatActivity() {
         } catch (_: SecurityException) {
             // Some providers do not offer persistable grants; the current session can still use the URI.
         }
-        selectedRoute = uri
         val summary = contentResolver.openInputStream(uri)?.use { stream ->
             val bytes = stream.readBytes()
             val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 0xff) }
@@ -52,6 +52,8 @@ class MainActivity : AppCompatActivity() {
             com.trailnav.core.RouteModel.fromGpx(bytes.toString(Charsets.UTF_8))
             "${uri.lastPathSegment ?: "GPX 경로"} · sha256:${hash.take(12)}"
         } ?: throw IllegalStateException("GPX를 읽을 수 없습니다")
+        selectedRoute = uri
+        selectedRouteSummary = summary
         routes.add(summary)
         status.text = "경로를 선택했습니다"
     }
@@ -115,6 +117,36 @@ class MainActivity : AppCompatActivity() {
         root.addView(start)
         root.addView(stop)
         setContentView(root)
+        restoreUiState(savedInstanceState)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(KEY_SELECTED_ROUTE_URI, selectedRoute?.toString())
+        outState.putString(KEY_SELECTED_ROUTE_SUMMARY, selectedRouteSummary)
+        outState.putStringArrayList(
+            KEY_ROUTE_SUMMARIES,
+            ArrayList<String>().apply {
+                for (index in 0 until routes.count) add(routes.getItem(index).orEmpty())
+            },
+        )
+        outState.putString(KEY_STATUS, status.text.toString())
+        outState.putBoolean(KEY_ON_ROUTE_VOICE_ENABLED, onRouteVoiceEnabled)
+        outState.putLong(KEY_ON_ROUTE_VOICE_INTERVAL_SECONDS, onRouteVoiceIntervalSeconds)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun restoreUiState(savedInstanceState: Bundle?) {
+        if (savedInstanceState == null) return
+        selectedRoute = savedInstanceState.getString(KEY_SELECTED_ROUTE_URI)?.let(Uri::parse)
+        selectedRouteSummary = savedInstanceState.getString(KEY_SELECTED_ROUTE_SUMMARY)
+        onRouteVoiceEnabled = savedInstanceState.getBoolean(KEY_ON_ROUTE_VOICE_ENABLED, false)
+        onRouteVoiceIntervalSeconds = savedInstanceState.getLong(KEY_ON_ROUTE_VOICE_INTERVAL_SECONDS, 0L)
+        savedInstanceState.getStringArrayList(KEY_ROUTE_SUMMARIES)?.let { summaries ->
+            routes.clear()
+            routes.addAll(summaries)
+        }
+        if (routes.count == 0) selectedRouteSummary?.let(routes::add)
+        savedInstanceState.getString(KEY_STATUS)?.let { status.text = it }
     }
 
     private fun ensurePermissionAndStart() {
@@ -148,5 +180,14 @@ class MainActivity : AppCompatActivity() {
             .putExtra(TrailForegroundService.EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS, onRouteVoiceIntervalSeconds)
         ContextCompat.startForegroundService(this, intent)
         status.text = "안내 서비스를 시작했습니다"
+    }
+
+    companion object {
+        private const val KEY_SELECTED_ROUTE_URI = "selected_route_uri"
+        private const val KEY_SELECTED_ROUTE_SUMMARY = "selected_route_summary"
+        private const val KEY_ROUTE_SUMMARIES = "route_summaries"
+        private const val KEY_STATUS = "status"
+        private const val KEY_ON_ROUTE_VOICE_ENABLED = "on_route_voice_enabled"
+        private const val KEY_ON_ROUTE_VOICE_INTERVAL_SECONDS = "on_route_voice_interval_seconds"
     }
 }
