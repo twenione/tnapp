@@ -11,7 +11,9 @@ import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -30,11 +32,23 @@ class TrailForegroundService : Service() {
     private var guideSession: GuideSession? = null
     private var tts: TtsController? = null
     private var sessionStarted = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var receivedLocation = false
+    private var noLocationWarningIssued = false
+    private var weakSignalWarningIssued = false
+    private var locationErrorWarningIssued = false
+
+    private val noLocationWarning = Runnable {
+        if (sessionStarted && !receivedLocation && !noLocationWarningIssued) {
+            noLocationWarningIssued = true
+            logger?.appendSystem("location.no-fix-warning")
+            tts?.speak("GPS 신호를 확인할 수 없습니다. 위치 권한과 실외 GPS 상태를 확인하세요.")
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        tts = TtsController(this) { status -> logger?.appendSystem(status) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -73,9 +87,15 @@ class TrailForegroundService : Service() {
             routeHash = "sha256:${JsonlSessionLogger.sha256(xml)}",
             appVersion = BuildConfig.VERSION_NAME,
         )
+        tts = TtsController(this) { status -> logger?.appendSystem(status) }
         guideSession = GuideSession(route, config)
         sessionStarted = true
+        receivedLocation = false
+        noLocationWarningIssued = false
+        weakSignalWarningIssued = false
+        locationErrorWarningIssued = false
         startForegroundCompat()
+        tts?.speak("안내 서비스를 시작합니다.")
         logger?.appendSystem(
             "service.started",
             mapOf("provider" to "fused", "interval_ms" to "1000", "battery_pct" to batteryPercent()),
@@ -83,24 +103,46 @@ class TrailForegroundService : Service() {
         source = FusedLocationSource(this).also { locationSource ->
             locationSource.start(
                 onLocation = ::onLocation,
-                onError = { logger?.appendError("location", it.message ?: it::class.java.simpleName) },
+                onError = { error ->
+                    logger?.appendError("location", error.message ?: error::class.java.simpleName)
+                    if (!locationErrorWarningIssued) {
+                        locationErrorWarningIssued = true
+                        noLocationWarningIssued = true
+                        logger?.appendSystem("location.error-warning")
+                        tts?.speak("위치 정보를 받을 수 없습니다. 위치 권한과 GPS 상태를 확인하세요.")
+                    }
+                },
             )
         }
+        mainHandler.postDelayed(noLocationWarning, LOCATION_FIX_TIMEOUT_MILLIS)
     }
 
     private fun onLocation(location: TrailLocation) {
         val session = guideSession ?: return
+        if (!receivedLocation) {
+            receivedLocation = true
+            mainHandler.removeCallbacks(noLocationWarning)
+        }
         logger?.appendEnvelope(location, "loc", "location")
         logger?.appendLocation(location)
         val decision = session.accept(location)
         val spoken = decision.result.guidance.toSpeech()
         logger?.appendEnvelope(location, "guide", "decision")
         logger?.appendGuide(location, decision.result, spoken)
+        if (decision.result.reason.rule == "input.accuracy-filter" && !weakSignalWarningIssued) {
+            weakSignalWarningIssued = true
+            logger?.appendSystem(
+                "location.accuracy-warning",
+                mapOf("accuracy_m" to location.accuracyMeters.toString()),
+            )
+            tts?.speak("GPS 신호가 약합니다. 안내 정확도가 떨어질 수 있습니다.")
+        }
         if (!spoken.isNullOrBlank()) tts?.speak(spoken)
         updateNotification(decision.result.guidance)
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(noLocationWarning)
         source?.stop()
         source = null
         if (sessionStarted) logger?.appendSystem("service.stopped", mapOf("battery_pct" to batteryPercent()))
@@ -159,6 +201,7 @@ class TrailForegroundService : Service() {
 
     companion object {
         const val EXTRA_ROUTE_URI = "com.trailnav.app.ROUTE_URI"
+        private const val LOCATION_FIX_TIMEOUT_MILLIS = 15_000L
         private const val CHANNEL_ID = "trailnav.navigation"
         private const val NOTIFICATION_ID = 1001
     }

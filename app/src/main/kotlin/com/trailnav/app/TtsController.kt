@@ -6,6 +6,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.speech.tts.TextToSpeech
+import java.util.ArrayDeque
 import java.util.Locale
 
 /** TTS adapter that requests transient spoken-audio focus before each utterance. */
@@ -19,6 +20,7 @@ class TtsController(
         .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
         .build()
+    private val pending = ArrayDeque<String>()
     private val tts = TextToSpeech(context.applicationContext, this)
     private var ready = false
 
@@ -34,13 +36,23 @@ class TtsController(
             }
             tts.language = Locale.KOREAN
             onStatus("tts.ready")
+            while (pending.isNotEmpty()) speakReady(pending.removeFirst())
         } else {
             onStatus("tts.init-failed:$status")
         }
     }
 
     fun speak(text: String) {
-        if (!ready || text.isBlank()) return
+        if (text.isBlank()) return
+        if (!ready) {
+            pending.addLast(text)
+            onStatus("tts.pending")
+            return
+        }
+        speakReady(text)
+    }
+
+    private fun speakReady(text: String) {
         if (!requestFocus()) {
             onStatus("tts.audio-focus-denied")
             return
