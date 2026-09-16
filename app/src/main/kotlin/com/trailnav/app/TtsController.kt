@@ -15,12 +15,23 @@ class TtsController(
 ) : TextToSpeech.OnInitListener {
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var focusRequest: AudioFocusRequest? = null
+    private val navigationAudioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
     private val tts = TextToSpeech(context.applicationContext, this)
     private var ready = false
 
     override fun onInit(status: Int) {
         ready = status == TextToSpeech.SUCCESS
         if (ready) {
+            // Apply the same navigation attributes to the TTS playback itself
+            // as to the focus request so Android routes speech through the
+            // active media output (for example, a connected Bluetooth headset).
+            val attributeResult = tts.setAudioAttributes(navigationAudioAttributes)
+            if (attributeResult != TextToSpeech.SUCCESS) {
+                onStatus("tts.audio-attributes-failed:$attributeResult")
+            }
             tts.language = Locale.KOREAN
             onStatus("tts.ready")
         } else {
@@ -46,13 +57,9 @@ class TtsController(
 
     @Suppress("DEPRECATION")
     private fun requestFocus(): Boolean {
-        val attributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .build()
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-                .setAudioAttributes(attributes)
+                .setAudioAttributes(navigationAudioAttributes)
                 .build()
             focusRequest = request
             audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
