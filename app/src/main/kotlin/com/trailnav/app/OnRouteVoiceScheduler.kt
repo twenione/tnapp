@@ -9,8 +9,8 @@ class OnRouteVoiceScheduler(
     enabled: Boolean,
     intervalSeconds: Long,
 ) {
-    private val enabled = enabled && intervalSeconds > 0L
-    private val intervalMillis = (if (intervalSeconds > 0L) intervalSeconds else 1L) * 1_000L
+    private var enabled = enabled && intervalSeconds > 0L
+    private var intervalMillis = intervalMillisFor(intervalSeconds)
     private var lastAnnouncementAtMillis: Long? = null
 
     /**
@@ -44,7 +44,17 @@ class OnRouteVoiceScheduler(
         return !suppressAnnouncement
     }
 
+    /** Apply a new UI selection to an already running service. */
+    fun configure(enabled: Boolean, intervalSeconds: Long) {
+        this.enabled = enabled && intervalSeconds > 0L
+        intervalMillis = intervalMillisFor(intervalSeconds)
+        reset()
+    }
+
     fun reset() {
         lastAnnouncementAtMillis = null
     }
+
+    private fun intervalMillisFor(intervalSeconds: Long): Long =
+        (if (intervalSeconds > 0L) intervalSeconds else 1L) * 1_000L
 }

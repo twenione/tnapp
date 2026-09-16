@@ -45,6 +45,15 @@ class VoiceAndGpsTest {
     }
 
     @Test
+    fun runningServiceCanApplyNewCadenceSelection() {
+        val scheduler = OnRouteVoiceScheduler(enabled = false, intervalSeconds = 0L)
+        assertFalse(scheduler.onFrame(0L, onRoute = true))
+        scheduler.configure(enabled = true, intervalSeconds = 60L)
+        assertFalse(scheduler.onFrame(1_000L, onRoute = true))
+        assertTrue(scheduler.onFrame(61_000L, onRoute = true))
+    }
+
+    @Test
     fun gpsMonitorEmitsNoFixProviderAndWeakWarningsOnce() {
         val monitor = GpsSignalMonitor()
         monitor.start()
