@@ -6,6 +6,7 @@ import android.location.Location
 import android.os.Looper
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationAvailability
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
@@ -25,6 +26,12 @@ class FusedLocationSource(context: Context) : LocationSource {
         val listener = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 result.locations.forEach { onLocation(it.toTrailLocation()) }
+            }
+
+            override fun onLocationAvailability(availability: LocationAvailability) {
+                if (!availability.isLocationAvailable) {
+                    onError(IllegalStateException("location unavailable"))
+                }
             }
         }
         callback = listener
