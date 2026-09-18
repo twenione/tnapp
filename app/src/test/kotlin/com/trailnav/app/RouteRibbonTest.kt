@@ -16,13 +16,16 @@ class RouteRibbonTest {
     fun snapshotCarriesDistanceDirectionOffRouteAccuracyAndRemainingDistance() {
         val route = route()
         val config = GuideConfig(offRouteEnterDwellSeconds = 0.0)
+        val first = location(eastMeters = 0.0, accuracy = 7f, latitude = 10.00020)
+        val current = location(eastMeters = 32.0, accuracy = 7f, latitude = 10.00035)
+        val firstResult = guide(GuideState.initial(route), first.toSensorFrame(), config)
         val result = guide(
-            GuideState.initial(route),
-            location(eastMeters = 32.0, accuracy = 7f).toSensorFrame(),
+            firstResult.nextState,
+            current.toSensorFrame(),
             config,
         )
 
-        val ribbon = RouteRibbonCalculator.calculate(location(32.0, 7f), result, route, config)!!
+        val ribbon = RouteRibbonCalculator.calculate(current, result, route, config)!!
         assertEquals(ProgressDirection.FORWARD, ribbon.direction)
         assertTrue(ribbon.offRoute)
         assertEquals(32.0, ribbon.perpendicularDistanceMeters, 1.0)
@@ -72,8 +75,8 @@ class RouteRibbonTest {
         </trkseg></trk></gpx>""".trimIndent(),
     )
 
-    private fun location(eastMeters: Double, accuracy: Float): TrailLocation {
-        val lat = 10.00035
+    private fun location(eastMeters: Double, accuracy: Float, latitude: Double = 10.00035): TrailLocation {
+        val lat = latitude
         val lon = 20.0 + Math.toDegrees(eastMeters / (EARTH_RADIUS_METERS * cos(Math.toRadians(lat))))
         return TrailLocation(40_000L, lat, lon, accuracy, 1f, 0f, "test")
     }
