@@ -1,6 +1,7 @@
 package com.trailnav.app
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,6 +9,7 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.location.LocationManager
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
@@ -90,8 +92,9 @@ class TrailForegroundService : Service() {
             return
         }
         val config = GuideConfig()
+        val orientation = RouteOrientation.orient(xml, lastKnownLocation())
         val route = try {
-            RouteModel.fromGpx(xml, config)
+            RouteModel.fromGpx(orientation.gpxXml, config)
         } catch (error: Throwable) {
             logger?.appendError("route-parse", error.message ?: error::class.java.simpleName)
             stopSelf()
@@ -104,6 +107,15 @@ class TrailForegroundService : Service() {
             configHash = "sha256:${JsonlSessionLogger.sha256(config.toString())}",
             routeHash = "sha256:${JsonlSessionLogger.sha256(xml)}",
             appVersion = BuildConfig.VERSION_NAME,
+        )
+        logger?.appendSystem(
+            "route.orientation",
+            mapOf(
+                "reversed" to orientation.reversed.toString(),
+                "reason" to orientation.reason,
+                "first_endpoint_distance_m" to formatDistance(orientation.firstEndpointDistanceMeters),
+                "last_endpoint_distance_m" to formatDistance(orientation.lastEndpointDistanceMeters),
+            ),
         )
         tts = TtsController(this) { status -> logger?.appendSystem(status) }
         guideSession = GuideSession(route, config)
@@ -139,6 +151,34 @@ class TrailForegroundService : Service() {
         }
         mainHandler.postDelayed(noLocationWarning, LOCATION_FIX_TIMEOUT_MILLIS)
     }
+
+    /** Read a cached location synchronously so route setup never waits for a new fix. */
+    @SuppressLint("MissingPermission")
+    private fun lastKnownLocation(): TrailLocation? {
+        val manager = getSystemService(LOCATION_SERVICE) as? LocationManager ?: return null
+        val providers = linkedSetOf(
+            LocationManager.GPS_PROVIDER,
+            LocationManager.NETWORK_PROVIDER,
+            LocationManager.PASSIVE_PROVIDER,
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            providers += LocationManager.FUSED_PROVIDER
+        }
+        val location = providers.mapNotNull { provider ->
+            runCatching { manager.getLastKnownLocation(provider) }.getOrNull()
+        }.maxByOrNull { it.time } ?: return null
+        return TrailLocation(
+            timestampMillis = location.time,
+            latitude = location.latitude,
+            longitude = location.longitude,
+            accuracyMeters = location.accuracy,
+            speedMps = if (location.hasSpeed()) location.speed else null,
+            bearingDegrees = if (location.hasBearing()) location.bearing else null,
+            provider = location.provider ?: "last-known",
+        )
+    }
+
+    private fun formatDistance(value: Double?): String = value?.let { "%.2f".format(it) } ?: ""
 
     private fun updateOnRouteVoiceConfiguration(enabled: Boolean, intervalSeconds: Long) {
         onRouteVoiceScheduler?.configure(enabled, intervalSeconds)
