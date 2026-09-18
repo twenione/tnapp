@@ -2,11 +2,14 @@ package com.trailnav.app
 
 import android.Manifest
 import android.app.Activity
+import android.content.BroadcastReceiver
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.provider.Settings
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
@@ -22,11 +25,34 @@ import java.security.MessageDigest
 /** Minimal route list/import screen for Phase 2; maps and turn previews are later phases. */
 class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
+    private lateinit var routeRibbon: RouteRibbonView
     private lateinit var routes: ArrayAdapter<String>
     private var selectedRoute: Uri? = null
     private var selectedRouteSummary: String? = null
     private var onRouteVoiceEnabled = false
     private var onRouteVoiceIntervalSeconds = 0L
+
+    private val ribbonReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context, intent: Intent) {
+            if (intent.action != TrailForegroundService.ACTION_ROUTE_RIBBON_UPDATE) return
+            routeRibbon.update(
+                RouteRibbonState(
+                    perpendicularDistanceMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_DISTANCE_METERS, 0.0),
+                    signedOffsetMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_SIGNED_OFFSET_METERS, 0.0),
+                    direction = runCatching {
+                        com.trailnav.core.ProgressDirection.valueOf(
+                            intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_DIRECTION).orEmpty(),
+                        )
+                    }.getOrDefault(com.trailnav.core.ProgressDirection.UNKNOWN),
+                    offRoute = intent.getBooleanExtra(TrailForegroundService.EXTRA_RIBBON_OFF_ROUTE, false),
+                    enterBandMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_ENTER_BAND_METERS, 0.0),
+                    exitBandMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_EXIT_BAND_METERS, 0.0),
+                    accuracyRadiusMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_ACCURACY_METERS, 0.0),
+                    remainingDistanceMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_REMAINING_METERS, 0.0),
+                ),
+            )
+        }
+    }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -68,6 +94,9 @@ class MainActivity : AppCompatActivity() {
             setPadding(24, 24, 24, 24)
         }
         status = TextView(this).apply { text = "경로를 가져오세요" }
+        routeRibbon = RouteRibbonView(this).apply {
+            minimumHeight = (220 * resources.displayMetrics.density).toInt()
+        }
         val import = Button(this).apply {
             text = "GPX 가져오기"
             setOnClickListener { openGpx.launch(arrayOf("application/gpx+xml", "application/xml", "text/xml", "text/plain")) }
@@ -80,6 +109,7 @@ class MainActivity : AppCompatActivity() {
             text = "안내 중지"
             setOnClickListener {
                 stopService(Intent(this@MainActivity, TrailForegroundService::class.java))
+                routeRibbon.update(null)
                 status.text = "안내를 중지했습니다"
             }
         }
@@ -110,6 +140,7 @@ class MainActivity : AppCompatActivity() {
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
         root.addView(status)
+        root.addView(routeRibbon, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (250 * resources.displayMetrics.density).toInt()))
         root.addView(import)
         root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(onRouteVoiceLabel)
@@ -118,6 +149,22 @@ class MainActivity : AppCompatActivity() {
         root.addView(stop)
         setContentView(root)
         restoreUiState(savedInstanceState)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val filter = IntentFilter(TrailForegroundService.ACTION_ROUTE_RIBBON_UPDATE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(ribbonReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(ribbonReceiver, filter)
+        }
+    }
+
+    override fun onStop() {
+        unregisterReceiver(ribbonReceiver)
+        super.onStop()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
