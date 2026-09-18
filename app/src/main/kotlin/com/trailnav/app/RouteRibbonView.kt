@@ -3,7 +3,9 @@ package com.trailnav.app
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.View
 import com.trailnav.core.ProgressDirection
@@ -67,10 +69,44 @@ class RouteRibbonView @JvmOverloads constructor(
         val exitHalfWidth = (current.exitBandMeters.toFloat() * scale).coerceAtLeast(dp(2f))
         val enterHalfWidth = (current.enterBandMeters.toFloat() * scale).coerceAtLeast(exitHalfWidth)
 
-        bandPaint.color = Color.argb(100, 100, 160, 220)
-        canvas.drawRect(centerX - enterHalfWidth, ribbonTop, centerX + enterHalfWidth, ribbonBottom, bandPaint)
-        bandPaint.color = Color.argb(185, 44, 108, 178)
-        canvas.drawRect(centerX - exitHalfWidth, ribbonTop, centerX + exitHalfWidth, ribbonBottom, bandPaint)
+        // Paint the entire ribbon from edge to edge.  The stops make the
+        // recovery band, enter band and off-route area visually distinct
+        // while keeping the center line as the safest region.
+        val ribbonWidth = (right - left).coerceAtLeast(1f)
+        val halfWidth = ribbonWidth / 2f
+        val boundedExitHalfWidth = exitHalfWidth.coerceIn(0f, halfWidth)
+        val boundedEnterHalfWidth = enterHalfWidth.coerceIn(boundedExitHalfWidth, halfWidth)
+        val leftEnterStop = ((centerX - boundedEnterHalfWidth - left) / ribbonWidth).coerceIn(0f, 0.5f)
+        val leftExitStop = ((centerX - boundedExitHalfWidth - left) / ribbonWidth).coerceIn(leftEnterStop, 0.5f)
+        val rightExitStop = ((centerX + boundedExitHalfWidth - left) / ribbonWidth).coerceIn(0.5f, 1f)
+        val rightEnterStop = ((centerX + boundedEnterHalfWidth - left) / ribbonWidth).coerceIn(rightExitStop, 1f)
+        bandPaint.shader = LinearGradient(
+            left,
+            0f,
+            right,
+            0f,
+            intArrayOf(
+                Color.rgb(116, 52, 72),
+                Color.rgb(116, 52, 72),
+                Color.rgb(104, 160, 220),
+                Color.rgb(44, 108, 178),
+                Color.rgb(44, 108, 178),
+                Color.rgb(104, 160, 220),
+                Color.rgb(116, 52, 72),
+            ),
+            floatArrayOf(
+                0f,
+                leftEnterStop,
+                leftExitStop,
+                0.5f,
+                rightExitStop,
+                rightEnterStop,
+                1f,
+            ),
+            Shader.TileMode.CLAMP,
+        )
+        canvas.drawRect(left, ribbonTop, right, ribbonBottom, bandPaint)
+        bandPaint.shader = null
         axisPaint.color = Color.WHITE
         axisPaint.strokeWidth = dp(2f)
         canvas.drawLine(centerX, ribbonTop, centerX, ribbonBottom, axisPaint)
@@ -105,15 +141,24 @@ class RouteRibbonView @JvmOverloads constructor(
         drawText(canvas, "$side · 경로에서 ${formatMeters(current.perpendicularDistanceMeters)}", left + dp(12f), top + dp(52f), 14f, Color.LTGRAY)
         drawText(canvas, "↑ 진행 방향", centerX + dp(8f), ribbonTop + dp(16f), 12f, Color.WHITE)
         drawText(canvas, "↓ 지난 경로", centerX + dp(8f), ribbonBottom - dp(4f), 12f, Color.LTGRAY)
-        drawText(canvas, "진입 ${formatMeters(current.enterBandMeters)}", left + dp(8f), ribbonTop - dp(10f), 14f, Color.LTGRAY)
-        drawText(canvas, "복귀 ${formatMeters(current.exitBandMeters)}", right - dp(82f), ribbonTop - dp(10f), 14f, Color.LTGRAY)
-        drawText(canvas, "목적지까지 ${formatMeters(current.remainingDistanceMeters)}", left + dp(12f), bottom - dp(22f), 14f, Color.WHITE)
-        drawText(canvas, "GPS 반경 ±${formatMeters(current.accuracyRadiusMeters)}", right - dp(158f), bottom - dp(6f), 13f, Color.LTGRAY)
+        drawText(canvas, "진입 ${formatMeters(current.enterBandMeters)}", left + dp(10f), ribbonTop + dp(22f), 14f, Color.LTGRAY)
+        drawText(canvas, "복귀 ${formatMeters(current.exitBandMeters)}", right - dp(10f), ribbonTop + dp(22f), 14f, Color.LTGRAY, Paint.Align.RIGHT)
+        drawText(canvas, "목적지까지 ${formatMeters(current.remainingDistanceMeters)}", left + dp(10f), ribbonBottom - dp(12f), 14f, Color.WHITE)
+        drawText(canvas, "GPS 정확도 ${formatMeters(current.accuracyRadiusMeters)}", right - dp(10f), ribbonBottom - dp(12f), 13f, Color.LTGRAY, Paint.Align.RIGHT)
     }
 
-    private fun drawText(canvas: Canvas, text: String, x: Float, y: Float, sizeSp: Float, color: Int = Color.WHITE) {
+    private fun drawText(
+        canvas: Canvas,
+        text: String,
+        x: Float,
+        y: Float,
+        sizeSp: Float,
+        color: Int = Color.WHITE,
+        align: Paint.Align = Paint.Align.LEFT,
+    ) {
         textPaint.textSize = sp(sizeSp)
         textPaint.color = color
+        textPaint.textAlign = align
         canvas.drawText(text, x, y, textPaint)
     }
 
