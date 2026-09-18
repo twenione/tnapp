@@ -34,6 +34,8 @@ class TrailForegroundService : Service() {
     private var tts: TtsController? = null
     private var gpsSignalMonitor: GpsSignalMonitor? = null
     private var onRouteVoiceScheduler: OnRouteVoiceScheduler? = null
+    private var currentRoute: RouteModel? = null
+    private var currentGuideConfig: GuideConfig? = null
     private var sessionStarted = false
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -105,6 +107,8 @@ class TrailForegroundService : Service() {
         )
         tts = TtsController(this) { status -> logger?.appendSystem(status) }
         guideSession = GuideSession(route, config)
+        currentRoute = route
+        currentGuideConfig = config
         gpsSignalMonitor = GpsSignalMonitor().also { it.start() }
         onRouteVoiceScheduler = OnRouteVoiceScheduler(onRouteVoiceEnabled, onRouteVoiceIntervalSeconds)
         sessionStarted = true
@@ -159,6 +163,7 @@ class TrailForegroundService : Service() {
         logger?.appendEnvelope(location, "loc", "location")
         logger?.appendLocation(location)
         val decision = session.accept(location)
+        publishRouteRibbon(location, decision)
         val guidance = decision.result.guidance
         val reverseStatus = guidance.isReverseStatus()
         val spoken = guidance.toSpeech()
@@ -202,6 +207,8 @@ class TrailForegroundService : Service() {
         onRouteVoiceScheduler = null
         logger?.close()
         logger = null
+        currentRoute = null
+        currentGuideConfig = null
         sessionStarted = false
         super.onDestroy()
     }
@@ -255,6 +262,24 @@ class TrailForegroundService : Service() {
         }
     }
 
+    private fun publishRouteRibbon(location: TrailLocation, decision: SessionDecision) {
+        val route = currentRoute ?: return
+        val config = currentGuideConfig ?: return
+        val ribbon = RouteRibbonCalculator.calculate(location, decision.result, route, config) ?: return
+        sendBroadcast(
+            Intent(ACTION_ROUTE_RIBBON_UPDATE)
+                .setPackage(packageName)
+                .putExtra(EXTRA_RIBBON_DISTANCE_METERS, ribbon.perpendicularDistanceMeters)
+                .putExtra(EXTRA_RIBBON_SIGNED_OFFSET_METERS, ribbon.signedOffsetMeters)
+                .putExtra(EXTRA_RIBBON_DIRECTION, ribbon.direction.name)
+                .putExtra(EXTRA_RIBBON_OFF_ROUTE, ribbon.offRoute)
+                .putExtra(EXTRA_RIBBON_ENTER_BAND_METERS, ribbon.enterBandMeters)
+                .putExtra(EXTRA_RIBBON_EXIT_BAND_METERS, ribbon.exitBandMeters)
+                .putExtra(EXTRA_RIBBON_ACCURACY_METERS, ribbon.accuracyRadiusMeters)
+                .putExtra(EXTRA_RIBBON_REMAINING_METERS, ribbon.remainingDistanceMeters),
+        )
+    }
+
     private fun notification(text: String): Notification = NotificationCompat.Builder(this, CHANNEL_ID)
         .setContentTitle("TrailNav")
         .setContentText(text)
@@ -274,6 +299,15 @@ class TrailForegroundService : Service() {
         const val EXTRA_ON_ROUTE_VOICE_ENABLED = "com.trailnav.app.ON_ROUTE_VOICE_ENABLED"
         const val EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS = "com.trailnav.app.ON_ROUTE_VOICE_INTERVAL_SECONDS"
         const val ON_ROUTE_VOICE_PROMPT = "정상적으로 경로를 따라가고 있습니다."
+        const val ACTION_ROUTE_RIBBON_UPDATE = "com.trailnav.app.ROUTE_RIBBON_UPDATE"
+        const val EXTRA_RIBBON_DISTANCE_METERS = "ribbon_distance_meters"
+        const val EXTRA_RIBBON_SIGNED_OFFSET_METERS = "ribbon_signed_offset_meters"
+        const val EXTRA_RIBBON_DIRECTION = "ribbon_direction"
+        const val EXTRA_RIBBON_OFF_ROUTE = "ribbon_off_route"
+        const val EXTRA_RIBBON_ENTER_BAND_METERS = "ribbon_enter_band_meters"
+        const val EXTRA_RIBBON_EXIT_BAND_METERS = "ribbon_exit_band_meters"
+        const val EXTRA_RIBBON_ACCURACY_METERS = "ribbon_accuracy_meters"
+        const val EXTRA_RIBBON_REMAINING_METERS = "ribbon_remaining_meters"
         private const val LOCATION_FIX_TIMEOUT_MILLIS = 15_000L
         private const val CHANNEL_ID = "trailnav.navigation"
         private const val NOTIFICATION_ID = 1001
