@@ -61,8 +61,8 @@ class RouteRibbonView @JvmOverloads constructor(
         val maximumBand = max(current.enterBandMeters, 1.0)
         val usableHalfWidth = ((right - left) * 0.40f).coerceAtLeast(dp(30f))
         val scale = usableHalfWidth / maximumBand.toFloat()
-        val exitHalfWidth = (current.exitBandMeters * scale).coerceAtLeast(dp(2f))
-        val enterHalfWidth = (current.enterBandMeters * scale).coerceAtLeast(exitHalfWidth)
+        val exitHalfWidth = (current.exitBandMeters.toFloat() * scale).coerceAtLeast(dp(2f))
+        val enterHalfWidth = (current.enterBandMeters.toFloat() * scale).coerceAtLeast(exitHalfWidth)
 
         bandPaint.color = Color.argb(100, 100, 160, 220)
         canvas.drawRect(centerX - enterHalfWidth, ribbonTop, centerX + enterHalfWidth, ribbonBottom, bandPaint)
