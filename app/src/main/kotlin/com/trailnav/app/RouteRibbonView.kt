@@ -3,9 +3,7 @@ package com.trailnav.app
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.View
 import com.trailnav.core.ProgressDirection
@@ -18,6 +16,7 @@ class RouteRibbonView @JvmOverloads constructor(
 ) : View(context, attrs) {
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val bandPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val boundaryPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val axisPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pointPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val accuracyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -69,44 +68,40 @@ class RouteRibbonView @JvmOverloads constructor(
         val exitHalfWidth = (current.exitBandMeters.toFloat() * scale).coerceAtLeast(dp(2f))
         val enterHalfWidth = (current.enterBandMeters.toFloat() * scale).coerceAtLeast(exitHalfWidth)
 
-        // Paint the entire ribbon from edge to edge.  The stops make the
-        // recovery band, enter band and off-route area visually distinct
-        // while keeping the center line as the safest region.
+        // Paint the entire ribbon from edge to edge in three discrete blue
+        // stages.  Hard color changes and boundary lines keep the recovery
+        // and enter thresholds visible at a glance.
         val ribbonWidth = (right - left).coerceAtLeast(1f)
         val halfWidth = ribbonWidth / 2f
         val boundedExitHalfWidth = exitHalfWidth.coerceIn(0f, halfWidth)
         val boundedEnterHalfWidth = enterHalfWidth.coerceIn(boundedExitHalfWidth, halfWidth)
-        val leftEnterStop = ((centerX - boundedEnterHalfWidth - left) / ribbonWidth).coerceIn(0f, 0.5f)
-        val leftExitStop = ((centerX - boundedExitHalfWidth - left) / ribbonWidth).coerceIn(leftEnterStop, 0.5f)
-        val rightExitStop = ((centerX + boundedExitHalfWidth - left) / ribbonWidth).coerceIn(0.5f, 1f)
-        val rightEnterStop = ((centerX + boundedEnterHalfWidth - left) / ribbonWidth).coerceIn(rightExitStop, 1f)
-        bandPaint.shader = LinearGradient(
-            left,
-            0f,
-            right,
-            0f,
-            intArrayOf(
-                Color.rgb(116, 52, 72),
-                Color.rgb(116, 52, 72),
-                Color.rgb(104, 160, 220),
-                Color.rgb(44, 108, 178),
-                Color.rgb(44, 108, 178),
-                Color.rgb(104, 160, 220),
-                Color.rgb(116, 52, 72),
-            ),
-            floatArrayOf(
-                0f,
-                leftEnterStop,
-                leftExitStop,
-                0.5f,
-                rightExitStop,
-                rightEnterStop,
-                1f,
-            ),
-            Shader.TileMode.CLAMP,
-        )
+        val outerBlue = Color.rgb(34, 72, 118)
+        val enterBlue = Color.rgb(74, 139, 202)
+        val recoveryBlue = Color.rgb(31, 96, 164)
+        bandPaint.color = outerBlue
         canvas.drawRect(left, ribbonTop, right, ribbonBottom, bandPaint)
-        bandPaint.shader = null
+        bandPaint.color = enterBlue
+        canvas.drawRect(
+            centerX - boundedEnterHalfWidth,
+            ribbonTop,
+            centerX + boundedEnterHalfWidth,
+            ribbonBottom,
+            bandPaint,
+        )
+        bandPaint.color = recoveryBlue
+        canvas.drawRect(
+            centerX - boundedExitHalfWidth,
+            ribbonTop,
+            centerX + boundedExitHalfWidth,
+            ribbonBottom,
+            bandPaint,
+        )
+        boundaryPaint.color = Color.argb(220, 190, 225, 255)
+        boundaryPaint.strokeWidth = dp(1.5f)
+        canvas.drawLine(centerX - boundedEnterHalfWidth, ribbonTop, centerX - boundedEnterHalfWidth, ribbonBottom, boundaryPaint)
+        canvas.drawLine(centerX + boundedEnterHalfWidth, ribbonTop, centerX + boundedEnterHalfWidth, ribbonBottom, boundaryPaint)
+        canvas.drawLine(centerX - boundedExitHalfWidth, ribbonTop, centerX - boundedExitHalfWidth, ribbonBottom, boundaryPaint)
+        canvas.drawLine(centerX + boundedExitHalfWidth, ribbonTop, centerX + boundedExitHalfWidth, ribbonBottom, boundaryPaint)
         axisPaint.color = Color.WHITE
         axisPaint.strokeWidth = dp(2f)
         canvas.drawLine(centerX, ribbonTop, centerX, ribbonBottom, axisPaint)
