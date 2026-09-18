@@ -25,8 +25,8 @@ class RouteOrientationTest {
         assertEquals(20.0, route.sourcePoints.first().lon, 0.000001)
 
         val arrival = guideAtEndpoints(route, startLon = 20.0, destinationLon = 20.002)
-        assertTrue(arrival.guidance is Guidance.Arrived)
-        assertTrue(arrival.nextState.arrived)
+        assertTrue(arrival.result.guidance is Guidance.Arrived)
+        assertTrue(arrival.result.nextState.arrived)
     }
 
     @Test
@@ -39,8 +39,8 @@ class RouteOrientationTest {
         assertEquals(20.0, route.sourcePoints.last().lon, 0.000001)
 
         val arrival = guideAtEndpoints(route, startLon = 20.002, destinationLon = 20.0)
-        assertTrue(arrival.guidance is Guidance.Arrived)
-        assertTrue(arrival.nextState.arrived)
+        assertTrue(arrival.result.guidance is Guidance.Arrived)
+        assertTrue(arrival.result.nextState.arrived)
     }
 
     @Test
