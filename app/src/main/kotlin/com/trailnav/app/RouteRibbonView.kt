@@ -56,7 +56,10 @@ class RouteRibbonView @JvmOverloads constructor(
         }
 
         val centerX = (left + right) / 2f
-        val ribbonTop = top + dp(60f)
+        // Keep the route offset row and the band labels on separate baselines.
+        // The previous 6dp gap caused e.g. "오른쪽 · 경로에서 21m" and
+        // "진입 20m" to collide on compact screens.
+        val ribbonTop = top + dp(78f)
         val ribbonBottom = bottom - dp(30f)
         val maximumBand = max(current.enterBandMeters, 1.0)
         val usableHalfWidth = ((right - left) * 0.40f).coerceAtLeast(dp(30f))
@@ -93,19 +96,19 @@ class RouteRibbonView @JvmOverloads constructor(
             ProgressDirection.UNKNOWN -> "방향 확인 중"
         }
         val status = if (current.offRoute) "경로 이탈" else "경로 위"
-        drawText(canvas, "$status · $direction", left + dp(12f), top + dp(24f), 17f)
+        drawText(canvas, "$status · $direction", left + dp(12f), top + dp(25f), 20f)
         val side = when (current.side) {
             RibbonSide.LEFT -> "왼쪽"
             RibbonSide.RIGHT -> "오른쪽"
             RibbonSide.CENTER -> "중심"
         }
-        drawText(canvas, "$side · 경로에서 ${formatMeters(current.perpendicularDistanceMeters)}", left + dp(12f), top + dp(46f), 12f, Color.LTGRAY)
+        drawText(canvas, "$side · 경로에서 ${formatMeters(current.perpendicularDistanceMeters)}", left + dp(12f), top + dp(52f), 14f, Color.LTGRAY)
         drawText(canvas, "↑ 진행 방향", centerX + dp(8f), ribbonTop + dp(16f), 12f, Color.WHITE)
         drawText(canvas, "↓ 지난 경로", centerX + dp(8f), ribbonBottom - dp(4f), 12f, Color.LTGRAY)
-        drawText(canvas, "진입 ${formatMeters(current.enterBandMeters)}", left + dp(8f), ribbonTop - dp(8f), 11f, Color.LTGRAY)
-        drawText(canvas, "복귀 ${formatMeters(current.exitBandMeters)}", right - dp(76f), ribbonTop - dp(8f), 11f, Color.LTGRAY)
-        drawText(canvas, "목적지까지 ${formatMeters(current.remainingDistanceMeters)}", left + dp(12f), bottom - dp(8f), 13f, Color.WHITE)
-        drawText(canvas, "GPS 반경 ±${formatMeters(current.accuracyRadiusMeters)}", right - dp(148f), bottom - dp(8f), 12f, Color.LTGRAY)
+        drawText(canvas, "진입 ${formatMeters(current.enterBandMeters)}", left + dp(8f), ribbonTop - dp(10f), 14f, Color.LTGRAY)
+        drawText(canvas, "복귀 ${formatMeters(current.exitBandMeters)}", right - dp(82f), ribbonTop - dp(10f), 14f, Color.LTGRAY)
+        drawText(canvas, "목적지까지 ${formatMeters(current.remainingDistanceMeters)}", left + dp(12f), bottom - dp(22f), 14f, Color.WHITE)
+        drawText(canvas, "GPS 반경 ±${formatMeters(current.accuracyRadiusMeters)}", right - dp(158f), bottom - dp(6f), 13f, Color.LTGRAY)
     }
 
     private fun drawText(canvas: Canvas, text: String, x: Float, y: Float, sizeSp: Float, color: Int = Color.WHITE) {
