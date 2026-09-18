@@ -67,21 +67,28 @@ class MainActivity : AppCompatActivity() {
     private val openGpx = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
         try {
-            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        } catch (_: SecurityException) {
-            // Some providers do not offer persistable grants; the current session can still use the URI.
+            val summary = contentResolver.openInputStream(uri)?.use { stream ->
+                val bytes = stream.readBytes()
+                val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+                // Parse once at import time so malformed files are rejected before starting the service.
+                com.trailnav.core.RouteModel.fromGpx(bytes.toString(Charsets.UTF_8))
+                "${uri.lastPathSegment ?: "GPX 경로"} · sha256:${hash.take(12)}"
+            } ?: throw IllegalStateException("GPX를 읽을 수 없습니다")
+            try {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: SecurityException) {
+                // Some providers do not offer persistable grants; the current session can still use the URI.
+            }
+            selectedRoute = uri
+            selectedRouteSummary = summary
+            routes.add(summary)
+            status.text = "경로를 선택했습니다"
+        } catch (_: Exception) {
+            // The wildcard picker can show provider files whose MIME type is
+            // generic or unknown. Keep the picker broad, then reject invalid
+            // content here without crashing or replacing the current route.
+            status.text = "경로 파일을 읽을 수 없습니다. GPX 파일을 선택하세요."
         }
-        val summary = contentResolver.openInputStream(uri)?.use { stream ->
-            val bytes = stream.readBytes()
-            val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 0xff) }
-            // Parse once at import time so malformed files are rejected before starting the service.
-            com.trailnav.core.RouteModel.fromGpx(bytes.toString(Charsets.UTF_8))
-            "${uri.lastPathSegment ?: "GPX 경로"} · sha256:${hash.take(12)}"
-        } ?: throw IllegalStateException("GPX를 읽을 수 없습니다")
-        selectedRoute = uri
-        selectedRouteSummary = summary
-        routes.add(summary)
-        status.text = "경로를 선택했습니다"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -98,8 +105,8 @@ class MainActivity : AppCompatActivity() {
             minimumHeight = (220 * resources.displayMetrics.density).toInt()
         }
         val import = Button(this).apply {
-            text = "GPX 가져오기"
-            setOnClickListener { openGpx.launch(arrayOf("application/gpx+xml", "application/xml", "text/xml", "text/plain")) }
+            text = "경로 파일 가져오기"
+            setOnClickListener { openGpx.launch(ROUTE_PICKER_MIME_TYPES) }
         }
         val start = Button(this).apply {
             text = "안내 시작"
@@ -236,5 +243,9 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_STATUS = "status"
         private const val KEY_ON_ROUTE_VOICE_ENABLED = "on_route_voice_enabled"
         private const val KEY_ON_ROUTE_VOICE_INTERVAL_SECONDS = "on_route_voice_interval_seconds"
+        // Drive and local document providers frequently expose GPX as
+        // application/octet-stream or omit a MIME type. The content is still
+        // validated as GPX after selection, so the picker can safely be broad.
+        private val ROUTE_PICKER_MIME_TYPES = arrayOf("*/*")
     }
 }
