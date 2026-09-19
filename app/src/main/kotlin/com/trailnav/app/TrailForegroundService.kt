@@ -38,6 +38,7 @@ class TrailForegroundService : Service() {
     private var onRouteVoiceScheduler: OnRouteVoiceScheduler? = null
     private var currentRoute: RouteModel? = null
     private var currentGuideConfig: GuideConfig? = null
+    private var previousOffRoute = false
     private var sessionStarted = false
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -121,6 +122,7 @@ class TrailForegroundService : Service() {
         guideSession = GuideSession(route, config)
         currentRoute = route
         currentGuideConfig = config
+        previousOffRoute = false
         gpsSignalMonitor = GpsSignalMonitor().also { it.start() }
         onRouteVoiceScheduler = OnRouteVoiceScheduler(onRouteVoiceEnabled, onRouteVoiceIntervalSeconds)
         sessionStarted = true
@@ -205,6 +207,11 @@ class TrailForegroundService : Service() {
         val decision = session.accept(location)
         publishRouteRibbon(location, decision)
         val guidance = decision.result.guidance
+        val recoveryPrompt = recoveryVoicePrompt(
+            previousOffRoute = previousOffRoute,
+            currentOffRoute = decision.result.nextState.offRoute,
+        )
+        previousOffRoute = decision.result.nextState.offRoute
         val reverseStatus = guidance.isReverseStatus()
         val spoken = guidance.toSpeech()
         val gpsAccuracyRejected = decision.result.reason.rule == "input.accuracy-filter"
@@ -219,11 +226,19 @@ class TrailForegroundService : Service() {
         ) == true
         val loggedSpeech = listOfNotNull(
             spoken,
+            recoveryPrompt,
             if (periodic) ON_ROUTE_VOICE_PROMPT else null,
         ).joinToString(" ").ifBlank { null }
         logger?.appendEnvelope(location, "guide", "decision")
         logger?.appendGuide(location, decision.result, loggedSpeech)
         if (!spoken.isNullOrBlank()) tts?.speak(spoken)
+        if (recoveryPrompt != null) {
+            logger?.appendSystem(
+                "voice.recovered",
+                mapOf("prompt" to recoveryPrompt),
+            )
+            tts?.speak(recoveryPrompt)
+        }
         if (periodic) {
             logger?.appendSystem(
                 "voice.on-route",
@@ -249,6 +264,7 @@ class TrailForegroundService : Service() {
         logger = null
         currentRoute = null
         currentGuideConfig = null
+        previousOffRoute = false
         sessionStarted = false
         super.onDestroy()
     }

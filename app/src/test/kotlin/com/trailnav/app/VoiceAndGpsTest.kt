@@ -1,8 +1,11 @@
 package com.trailnav.app
 
 import com.trailnav.core.Guidance
+import com.trailnav.core.GuideConfig
+import com.trailnav.core.RouteModel
 import kotlin.test.Test
 import kotlin.test.assertFalse
+import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -45,12 +48,53 @@ class VoiceAndGpsTest {
     }
 
     @Test
+    fun guideRecoveryFallingEdgeSpeaksOnceAndStableOnRouteDoesNotRepeat() {
+        val route = RouteModel.fromGpx(
+            """<gpx><trk><trkseg>
+                <trkpt lat="10.000000" lon="20.000000"/>
+                <trkpt lat="10.001000" lon="20.000000"/>
+                <trkpt lat="10.002000" lon="20.000000"/>
+            </trkseg></trk></gpx>""".trimIndent(),
+        )
+        val config = GuideConfig(
+            offRouteEnterDwellSeconds = 0.0,
+            offRouteExitDwellSeconds = 0.0,
+        )
+        val session = GuideSession(route, config)
+        val onRoute = session.accept(location(latitude = 10.001000, eastMeters = 0.0))
+        val offRoute = session.accept(location(latitude = 10.001000, eastMeters = 30.0))
+        val recovered = session.accept(location(latitude = 10.001000, eastMeters = 5.0))
+        val stable = session.accept(location(latitude = 10.001000, eastMeters = 5.0))
+
+        assertFalse(onRoute.result.nextState.offRoute)
+        assertTrue(offRoute.result.nextState.offRoute)
+        assertFalse(recovered.result.nextState.offRoute)
+        assertEquals(
+            RECOVERY_VOICE_PROMPT,
+            recoveryVoicePrompt(offRoute.result.nextState.offRoute, recovered.result.nextState.offRoute),
+        )
+        assertFalse(isOffRouteRecovery(recovered.result.nextState.offRoute, stable.result.nextState.offRoute))
+        assertNull(recoveryVoicePrompt(recovered.result.nextState.offRoute, stable.result.nextState.offRoute))
+    }
+
+    @Test
     fun runningServiceCanApplyNewCadenceSelection() {
         val scheduler = OnRouteVoiceScheduler(enabled = false, intervalSeconds = 0L)
         assertFalse(scheduler.onFrame(0L, onRoute = true))
         scheduler.configure(enabled = true, intervalSeconds = 60L)
         assertFalse(scheduler.onFrame(1_000L, onRoute = true))
         assertTrue(scheduler.onFrame(61_000L, onRoute = true))
+    }
+
+    private fun location(latitude: Double, eastMeters: Double): TrailLocation {
+        val longitude = 20.0 + Math.toDegrees(
+            eastMeters / (EARTH_RADIUS_METERS * kotlin.math.cos(Math.toRadians(latitude))),
+        )
+        return TrailLocation(40_000L, latitude, longitude, 5f, 1f, null, "test")
+    }
+
+    private companion object {
+        const val EARTH_RADIUS_METERS = 6_371_008.8
     }
 
     @Test

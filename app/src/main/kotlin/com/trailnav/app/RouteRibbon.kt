@@ -23,8 +23,8 @@ data class RouteRibbonState(
 ) {
     val side: RibbonSide
         get() = when {
-            signedOffsetMeters > 0.01 -> RibbonSide.LEFT
-            signedOffsetMeters < -0.01 -> RibbonSide.RIGHT
+            signedOffsetMeters > 0.01 -> RibbonSide.RIGHT
+            signedOffsetMeters < -0.01 -> RibbonSide.LEFT
             else -> RibbonSide.CENTER
         }
 }
