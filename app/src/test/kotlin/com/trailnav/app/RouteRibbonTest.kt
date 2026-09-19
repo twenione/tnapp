@@ -62,9 +62,28 @@ class RouteRibbonTest {
         val result = guide(GuideState.initial(route), location.toSensorFrame(), config)
         val ribbon = RouteRibbonCalculator.calculate(location, result, route, config)!!
 
-        assertEquals(RibbonSide.RIGHT, ribbon.side)
+        assertEquals(RibbonSide.LEFT, ribbon.side)
         assertTrue(!ribbon.offRoute)
         assertTrue(ribbon.accuracyRadiusMeters > ribbon.perpendicularDistanceMeters)
+    }
+
+    @Test
+    fun signedOffsetAndPointScreenDirectionUseTheSameSideText() {
+        val rightOfCenter = RouteRibbonState(
+            perpendicularDistanceMeters = 10.0,
+            signedOffsetMeters = 12.0,
+            direction = ProgressDirection.FORWARD,
+            offRoute = false,
+            enterBandMeters = 25.0,
+            exitBandMeters = 15.0,
+            accuracyRadiusMeters = 5.0,
+            remainingDistanceMeters = 100.0,
+        )
+        val leftOfCenter = rightOfCenter.copy(signedOffsetMeters = -12.0)
+
+        // RouteRibbonView draws pointX = centerX + signedOffsetMeters * scale.
+        assertEquals(RibbonSide.RIGHT, rightOfCenter.side)
+        assertEquals(RibbonSide.LEFT, leftOfCenter.side)
     }
 
     private fun route(): RouteModel = RouteModel.fromGpx(
