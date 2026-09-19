@@ -172,6 +172,7 @@ class TrailForegroundService : Service() {
         // must stop. The monitor also emits the weak-signal warning for the
         // first invalid or over-threshold accuracy value.
         mainHandler.removeCallbacks(noLocationWarning)
+        publishGpsSignal(location.accuracyMeters)
         gpsEvent?.let(::announceGpsSignal)
         logger?.appendEnvelope(location, "loc", "location")
         logger?.appendLocation(location)
@@ -317,21 +318,13 @@ class TrailForegroundService : Service() {
     }
 
     private fun announceGpsSignal(event: GpsSignalEvent) {
-        when (event) {
-            GpsSignalEvent.NoFixTimeout -> tts?.speak(
-                "GPS 신호를 확인할 수 없습니다. 위치 권한과 실외 GPS 상태를 확인하세요.",
+        if (event is GpsSignalEvent.WeakSignal) {
+            logger?.appendSystem(
+                "location.accuracy-warning",
+                mapOf("accuracy_m" to event.accuracyMeters.toString()),
             )
-            GpsSignalEvent.ProviderError -> tts?.speak(
-                "위치 정보를 받을 수 없습니다. 위치 권한과 GPS 상태를 확인하세요.",
-            )
-            is GpsSignalEvent.WeakSignal -> {
-                logger?.appendSystem(
-                    "location.accuracy-warning",
-                    mapOf("accuracy_m" to event.accuracyMeters.toString()),
-                )
-                tts?.speak("GPS 신호가 약합니다. 안내 정확도가 떨어질 수 있습니다.")
-            }
         }
+        tts?.speak(event.toSpeechPrompt())
     }
 
     private fun publishRouteRibbon(location: TrailLocation, decision: SessionDecision) {
@@ -374,6 +367,14 @@ class TrailForegroundService : Service() {
         )
     }
 
+    private fun publishGpsSignal(accuracyMeters: Float) {
+        sendBroadcast(
+            Intent(ACTION_GPS_SIGNAL_UPDATE)
+                .setPackage(packageName)
+                .putExtra(EXTRA_GPS_ACCURACY_METERS, accuracyMeters.toDouble()),
+        )
+    }
+
     companion object {
         const val EXTRA_ROUTE_URI = "com.trailnav.app.ROUTE_URI"
         const val EXTRA_ON_ROUTE_VOICE_ENABLED = "com.trailnav.app.ON_ROUTE_VOICE_ENABLED"
@@ -381,6 +382,8 @@ class TrailForegroundService : Service() {
         const val ON_ROUTE_VOICE_PROMPT = "정상적으로 경로를 따라가고 있습니다."
         const val ACTION_ROUTE_PREPARATION_UPDATE = "com.trailnav.app.ROUTE_PREPARATION_UPDATE"
         const val EXTRA_ROUTE_PREPARATION_STAGE = "route_preparation_stage"
+        const val ACTION_GPS_SIGNAL_UPDATE = "com.trailnav.app.GPS_SIGNAL_UPDATE"
+        const val EXTRA_GPS_ACCURACY_METERS = "gps_accuracy_meters"
         const val ACTION_ROUTE_RIBBON_UPDATE = "com.trailnav.app.ROUTE_RIBBON_UPDATE"
         const val EXTRA_RIBBON_DISTANCE_METERS = "ribbon_distance_meters"
         const val EXTRA_RIBBON_SIGNED_OFFSET_METERS = "ribbon_signed_offset_meters"
@@ -404,4 +407,10 @@ internal fun Guidance?.toSpeech(): String? = when (this) {
     is Guidance.Status -> if (isReverseStatus()) null else message
     Guidance.Arrived -> "목적지에 도착했습니다"
     is Guidance.TurnAhead, is Guidance.TurnNow, null -> null
+}
+
+internal fun GpsSignalEvent.toSpeechPrompt(): String = when (this) {
+    GpsSignalEvent.NoFixTimeout -> "GPS 신호를 찾는 중입니다. 실외로 이동하면 더 빨리 잡힙니다."
+    GpsSignalEvent.ProviderError -> "GPS 신호가 일시적으로 끊겼습니다. 실외로 이동하거나 잠시 기다려 주세요."
+    is GpsSignalEvent.WeakSignal -> "GPS 신호가 약합니다. 안내 정확도가 떨어질 수 있습니다."
 }
