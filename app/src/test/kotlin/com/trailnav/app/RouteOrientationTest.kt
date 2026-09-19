@@ -1,6 +1,7 @@
 package com.trailnav.app
 
 import com.trailnav.core.Guidance
+import com.trailnav.core.GuideConfig
 import com.trailnav.core.ProgressDirection
 import com.trailnav.core.RouteModel
 import kotlin.test.Test
@@ -60,7 +61,7 @@ class RouteOrientationTest {
         val route = RouteModel.fromGpx(orientation.gpxXml)
         assertEquals(20.002, route.sourcePoints.first().lon, 0.000001)
         assertEquals(20.0, route.sourcePoints.last().lon, 0.000001)
-        val session = GuideSession(route)
+        val session = GuideSession(route, GuideConfig(minimumSessionSecondsBeforeArrival = 0.0))
         session.accept(location(20.002))
         val arrival = session.accept(location(20.0))
         assertTrue(arrival.result.guidance is Guidance.Arrived)
