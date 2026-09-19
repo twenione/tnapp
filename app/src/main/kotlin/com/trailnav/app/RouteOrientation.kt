@@ -1,74 +1,49 @@
 package com.trailnav.app
 
+import com.trailnav.core.ProgressDirection
 import java.io.StringReader
 import javax.xml.parsers.DocumentBuilderFactory
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
-import kotlin.math.sqrt
 import org.xml.sax.InputSource
 
-/** Result of choosing the route direction for the current navigation session. */
+/** Result of applying an observed travel direction to the imported GPX. */
 data class RouteOrientationResult(
     val gpxXml: String,
     val reversed: Boolean,
-    val firstEndpointDistanceMeters: Double?,
-    val lastEndpointDistanceMeters: Double?,
     val reason: String,
+    val observedNetDisplacementMeters: Double,
+    val observationElapsedSeconds: Double,
 )
 
-/**
- * App-layer GPX preprocessor.  The core engine continues to receive a route
- * whose first point is the session start and whose last point is the target.
- */
+/** App-layer GPX preprocessor; :core-guide remains unchanged. */
 object RouteOrientation {
-    /** Do not flip when the endpoint advantage is within normal GPS noise. */
-    const val DISTANCE_TIE_TOLERANCE_METERS = 5.0
+    fun orient(
+        gpxXml: String,
+        direction: ProgressDirection?,
+        reason: String,
+        observedNetDisplacementMeters: Double,
+        observationElapsedSeconds: Double,
+    ): RouteOrientationResult {
+        val reversed = direction == ProgressDirection.REVERSE
+        return RouteOrientationResult(
+            gpxXml = if (reversed) reverseGpx(gpxXml) else gpxXml,
+            reversed = reversed,
+            reason = reason,
+            observedNetDisplacementMeters = observedNetDisplacementMeters,
+            observationElapsedSeconds = observationElapsedSeconds,
+        )
+    }
 
-    fun orient(gpxXml: String, currentLocation: TrailLocation?): RouteOrientationResult {
-        if (currentLocation == null) {
-            return RouteOrientationResult(
-                gpxXml = gpxXml,
-                reversed = false,
-                firstEndpointDistanceMeters = null,
-                lastEndpointDistanceMeters = null,
-                reason = "last-location-unavailable",
-            )
-        }
+    /** Reverse track or route points while preserving the imported path geometry. */
+    fun reverseGpx(gpxXml: String): String {
         val points = parsePoints(gpxXml)
-        if (points.size < 2) {
-            return RouteOrientationResult(
-                gpxXml = gpxXml,
-                reversed = false,
-                firstEndpointDistanceMeters = null,
-                lastEndpointDistanceMeters = null,
-                reason = "endpoints-unavailable",
-            )
-        }
-        val firstDistance = distanceMeters(currentLocation.latitude, currentLocation.longitude, points.first())
-        val lastDistance = distanceMeters(currentLocation.latitude, currentLocation.longitude, points.last())
-        return when {
-            lastDistance + DISTANCE_TIE_TOLERANCE_METERS < firstDistance -> RouteOrientationResult(
-                gpxXml = buildReversedGpx(points),
-                reversed = true,
-                firstEndpointDistanceMeters = firstDistance,
-                lastEndpointDistanceMeters = lastDistance,
-                reason = "last-endpoint-closer",
-            )
-            firstDistance + DISTANCE_TIE_TOLERANCE_METERS < lastDistance -> RouteOrientationResult(
-                gpxXml = gpxXml,
-                reversed = false,
-                firstEndpointDistanceMeters = firstDistance,
-                lastEndpointDistanceMeters = lastDistance,
-                reason = "first-endpoint-closer",
-            )
-            else -> RouteOrientationResult(
-                gpxXml = gpxXml,
-                reversed = false,
-                firstEndpointDistanceMeters = firstDistance,
-                lastEndpointDistanceMeters = lastDistance,
-                reason = "endpoint-distance-ambiguous",
-            )
+        if (points.size < 2) return gpxXml
+        return buildString {
+            append("<gpx version=\"1.1\" creator=\"TrailNav\"><trk><trkseg>")
+            points.asReversed().forEach { point ->
+                append("<trkpt lat=\"").append(point.latitude)
+                    .append("\" lon=\"").append(point.longitude).append("\"/>")
+            }
+            append("</trkseg></trk></gpx>")
         }
     }
 
@@ -95,25 +70,6 @@ object RouteOrientation {
             }
         }
     }.getOrDefault(emptyList())
-
-    private fun buildReversedGpx(points: List<GpxPoint>): String = buildString {
-        append("<gpx version=\"1.1\" creator=\"TrailNav\"><trk><trkseg>")
-        points.asReversed().forEach { point ->
-            append("<trkpt lat=\"").append(point.latitude).append("\" lon=\"").append(point.longitude).append("\"/>")
-        }
-        append("</trkseg></trk></gpx>")
-    }
-
-    private fun distanceMeters(latitude: Double, longitude: Double, endpoint: GpxPoint): Double {
-        val earthRadius = 6_371_008.8
-        val lat1 = Math.toRadians(latitude)
-        val lat2 = Math.toRadians(endpoint.latitude)
-        val dLat = lat2 - lat1
-        val dLon = Math.toRadians(endpoint.longitude - longitude)
-        val haversine = sin(dLat / 2.0) * sin(dLat / 2.0) +
-            cos(lat1) * cos(lat2) * sin(dLon / 2.0) * sin(dLon / 2.0)
-        return earthRadius * 2.0 * atan2(sqrt(haversine), sqrt(1.0 - haversine))
-    }
 
     private data class GpxPoint(val latitude: Double, val longitude: Double)
 }

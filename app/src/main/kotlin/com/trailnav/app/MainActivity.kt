@@ -34,6 +34,14 @@ class MainActivity : AppCompatActivity() {
 
     private val ribbonReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: android.content.Context, intent: Intent) {
+            if (intent.action == TrailForegroundService.ACTION_ROUTE_PREPARATION_UPDATE) {
+                routeRibbon.updatePreparation(
+                    RoutePreparationStage.fromWire(
+                        intent.getStringExtra(TrailForegroundService.EXTRA_ROUTE_PREPARATION_STAGE),
+                    ),
+                )
+                return
+            }
             if (intent.action != TrailForegroundService.ACTION_ROUTE_RIBBON_UPDATE) return
             routeRibbon.update(
                 RouteRibbonState(
@@ -116,7 +124,7 @@ class MainActivity : AppCompatActivity() {
             text = "안내 중지"
             setOnClickListener {
                 stopService(Intent(this@MainActivity, TrailForegroundService::class.java))
-                routeRibbon.update(null)
+                routeRibbon.updatePreparation(RoutePreparationStage.PREPARING)
                 status.text = "안내를 중지했습니다"
             }
         }
@@ -160,7 +168,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        val filter = IntentFilter(TrailForegroundService.ACTION_ROUTE_RIBBON_UPDATE)
+        val filter = IntentFilter(TrailForegroundService.ACTION_ROUTE_RIBBON_UPDATE).apply {
+            addAction(TrailForegroundService.ACTION_ROUTE_PREPARATION_UPDATE)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(ribbonReceiver, filter, RECEIVER_NOT_EXPORTED)
         } else {
@@ -227,6 +237,7 @@ class MainActivity : AppCompatActivity() {
             status.text = "먼저 GPX 경로를 가져오세요"
             return
         }
+        routeRibbon.updatePreparation(RoutePreparationStage.PREPARING)
         val intent = Intent(this, TrailForegroundService::class.java).putExtra(
             TrailForegroundService.EXTRA_ROUTE_URI,
             route.toString(),

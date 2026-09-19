@@ -28,6 +28,7 @@ class RouteRibbonView @JvmOverloads constructor(
         typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
     }
     private var state: RouteRibbonState? = null
+    private var preparationStage = RoutePreparationStage.PREPARING
 
     init {
         backgroundPaint.color = Color.rgb(24, 28, 36)
@@ -37,6 +38,14 @@ class RouteRibbonView @JvmOverloads constructor(
 
     fun update(newState: RouteRibbonState?) {
         state = newState
+        if (newState != null) preparationStage = RoutePreparationStage.DIRECTION_CONFIRMED
+        invalidate()
+    }
+
+    fun updatePreparation(stage: RoutePreparationStage) {
+        state = null
+        preparationStage = stage
+        contentDescription = stage.label
         invalidate()
     }
 
@@ -51,8 +60,7 @@ class RouteRibbonView @JvmOverloads constructor(
 
         val current = state
         if (current == null) {
-            drawText(canvas, "경로 상대 위치 대기 중", left + dp(12f), top + dp(28f), 16f)
-            drawText(canvas, "GPS 위치를 수신하면 표시됩니다", left + dp(12f), top + dp(54f), 13f, Color.LTGRAY)
+            drawText(canvas, preparationStage.label, left + dp(12f), top + dp(40f), 22f)
             return
         }
 
