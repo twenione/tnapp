@@ -22,15 +22,52 @@ object RouteOrientation {
         reason: String,
         observedNetDisplacementMeters: Double,
         observationElapsedSeconds: Double,
+        fallbackLocation: TrailLocation? = null,
     ): RouteOrientationResult {
-        val reversed = direction == ProgressDirection.REVERSE
+        val fallbackDecision = if (direction == null && fallbackLocation != null) {
+            endpointFallbackDecision(gpxXml, fallbackLocation)
+        } else {
+            null
+        }
+        val reversed = direction == ProgressDirection.REVERSE || fallbackDecision?.reversed == true
         return RouteOrientationResult(
             gpxXml = if (reversed) reverseGpx(gpxXml) else gpxXml,
             reversed = reversed,
-            reason = reason,
+            reason = fallbackDecision?.reason ?: reason,
             observedNetDisplacementMeters = observedNetDisplacementMeters,
             observationElapsedSeconds = observationElapsedSeconds,
         )
+    }
+
+    private fun endpointFallbackDecision(gpxXml: String, location: TrailLocation): EndpointFallback? {
+        val points = parsePoints(gpxXml)
+        if (points.size < 2) return null
+        val startDistance = distanceMeters(location.latitude, location.longitude, points.first())
+        val endDistance = distanceMeters(location.latitude, location.longitude, points.last())
+        val difference = startDistance - endDistance
+        return when {
+            difference > ENDPOINT_TIE_METERS -> EndpointFallback(
+                reversed = true,
+                reason = "fallback-endpoint-distance",
+            )
+            difference < -ENDPOINT_TIE_METERS -> EndpointFallback(
+                reversed = false,
+                reason = "fallback-endpoint-distance",
+            )
+            else -> EndpointFallback(
+                reversed = false,
+                reason = "fallback-endpoint-ambiguous",
+            )
+        }
+    }
+
+    private fun distanceMeters(latitude: Double, longitude: Double, point: GpxPoint): Double {
+        val dLat = Math.toRadians(point.latitude - latitude)
+        val dLon = Math.toRadians(point.longitude - longitude)
+        val meanLat = Math.toRadians((point.latitude + latitude) / 2.0)
+        val north = dLat * EARTH_RADIUS_METERS
+        val east = dLon * kotlin.math.cos(meanLat) * EARTH_RADIUS_METERS
+        return kotlin.math.sqrt(north * north + east * east)
     }
 
     /** Reverse track or route points while preserving the imported path geometry. */
@@ -72,4 +109,9 @@ object RouteOrientation {
     }.getOrDefault(emptyList())
 
     private data class GpxPoint(val latitude: Double, val longitude: Double)
+
+    private data class EndpointFallback(val reversed: Boolean, val reason: String)
+
+    private const val EARTH_RADIUS_METERS = 6_371_008.8
+    private const val ENDPOINT_TIE_METERS = 1.0
 }

@@ -67,7 +67,8 @@ data class GuideConfig(
     val turnAngleThresholdDegrees: Double = 45.0,
     val spatialGridSizeMeters: Double = 100.0,
     val taggingOffRouteDistanceMeters: Double = 30.0,
-    val taggingOffRouteDwellSeconds: Double = 60.0
+    val taggingOffRouteDwellSeconds: Double = 60.0,
+    val minimumSessionSecondsBeforeArrival: Double = 10.0
 ) {
     init {
         require(accuracyRejectMeters >= 0.0)
@@ -80,6 +81,7 @@ data class GuideConfig(
         require(maximumPointGapMeters > 0.0)
         require(douglasPeuckerEpsilonMeters >= 0.0)
         require(spatialGridSizeMeters > 0.0)
+        require(minimumSessionSecondsBeforeArrival >= 0.0)
     }
 
     companion object {
@@ -109,7 +111,8 @@ data class GuideConfig(
             "turnAngleThresholdDegrees" to "fixed Phase 1 turn extraction criterion",
             "spatialGridSizeMeters" to "route index implementation parameter",
             "taggingOffRouteDistanceMeters" to "Phase 0 tagging parameter; not consumed by guide",
-            "taggingOffRouteDwellSeconds" to "Phase 0 tagging parameter; not consumed by guide"
+            "taggingOffRouteDwellSeconds" to "Phase 0 tagging parameter; not consumed by guide",
+            "minimumSessionSecondsBeforeArrival" to "startup arrival guard; covered by the immediate-arrival regression test"
         )
 
         fun sensitivityFieldNames(): Set<String> =
@@ -130,6 +133,7 @@ data class GuideState(
     val route: RouteModel,
     val lastMatch: MatchResult? = null,
     val lastTimestamp: Long? = null,
+    val sessionStartTimestamp: Long? = null,
     val emaDeltaMeters: Double = 0.0,
     val direction: ProgressDirection = ProgressDirection.UNKNOWN,
     val stationary: Boolean = false,

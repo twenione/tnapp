@@ -101,6 +101,33 @@ class RouteOrientationTest {
     }
 
     @Test
+    fun endpointFallbackReversesWhenBufferedStartIsNearOriginalEnd() {
+        val coordinator = RouteStartupCoordinator(xml, startupAtMillis = 0L)
+        val nearOriginalEnd = location(20.0019)
+
+        coordinator.accept(nearOriginalEnd, 0L)
+        val update = coordinator.timeout(30_000L)
+
+        assertEquals(RouteDirectionObservationOutcome.FALLBACK_TIMEOUT, update.observation.outcome)
+        assertTrue(update.orientation?.reversed == true)
+        assertEquals("fallback-endpoint-distance", update.orientation?.reason)
+        assertEquals(20.002, RouteModel.fromGpx(update.orientation!!.gpxXml).sourcePoints.first().lon, 0.000001)
+    }
+
+    @Test
+    fun endpointFallbackKeepsOrderWhenBufferedStartIsNearOriginalStart() {
+        val coordinator = RouteStartupCoordinator(xml, startupAtMillis = 0L)
+        val nearOriginalStart = location(20.0001)
+
+        coordinator.accept(nearOriginalStart, 0L)
+        val update = coordinator.timeout(30_000L)
+
+        assertFalse(update.orientation?.reversed ?: true)
+        assertEquals("fallback-endpoint-distance", update.orientation?.reason)
+        assertEquals(20.0, RouteModel.fromGpx(update.orientation!!.gpxXml).sourcePoints.first().lon, 0.000001)
+    }
+
+    @Test
     fun bufferedLocationsAreReturnedInOrderForReplayWithoutLoss() {
         val coordinator = RouteStartupCoordinator(xml)
         val first = location(20.001000)
