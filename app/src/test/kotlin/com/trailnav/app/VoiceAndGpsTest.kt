@@ -114,4 +114,20 @@ class VoiceAndGpsTest {
         assertIs<GpsSignalEvent.WeakSignal>(weak)
         assertNull(monitor.onLocation(TrailLocation(1L, 0.0, 0.0, 80f, null, null, "fake")))
     }
+
+    @Test
+    fun gpsSignalPromptsDoNotSuggestPermissionForGrantedButUnavailableSignal() {
+        assertEquals(
+            "GPS 신호를 찾는 중입니다. 실외로 이동하면 더 빨리 잡힙니다.",
+            GpsSignalEvent.NoFixTimeout.toSpeechPrompt(),
+        )
+        assertEquals(
+            "GPS 신호가 일시적으로 끊겼습니다. 실외로 이동하거나 잠시 기다려 주세요.",
+            GpsSignalEvent.ProviderError.toSpeechPrompt(),
+        )
+        assertEquals(
+            "GPS 신호가 약합니다. 안내 정확도가 떨어질 수 있습니다.",
+            GpsSignalEvent.WeakSignal(80f).toSpeechPrompt(),
+        )
+    }
 }

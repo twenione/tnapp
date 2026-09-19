@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Build
 import android.provider.Settings
+import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -20,11 +21,16 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import java.security.MessageDigest
+import kotlin.math.roundToInt
 
 /** Minimal route list/import screen for Phase 2; maps and turn previews are later phases. */
 class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
+    private lateinit var gpsIndicator: TextView
     private lateinit var routeRibbon: RouteRibbonView
     private lateinit var routes: ArrayAdapter<String>
     private var selectedRoute: Uri? = null
@@ -42,23 +48,29 @@ class MainActivity : AppCompatActivity() {
                 )
                 return
             }
+            if (intent.action == TrailForegroundService.ACTION_GPS_SIGNAL_UPDATE) {
+                updateGpsIndicator(
+                    intent.getDoubleExtra(TrailForegroundService.EXTRA_GPS_ACCURACY_METERS, 0.0),
+                )
+                return
+            }
             if (intent.action != TrailForegroundService.ACTION_ROUTE_RIBBON_UPDATE) return
-            routeRibbon.update(
-                RouteRibbonState(
-                    perpendicularDistanceMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_DISTANCE_METERS, 0.0),
-                    signedOffsetMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_SIGNED_OFFSET_METERS, 0.0),
-                    direction = runCatching {
-                        com.trailnav.core.ProgressDirection.valueOf(
-                            intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_DIRECTION).orEmpty(),
-                        )
-                    }.getOrDefault(com.trailnav.core.ProgressDirection.UNKNOWN),
-                    offRoute = intent.getBooleanExtra(TrailForegroundService.EXTRA_RIBBON_OFF_ROUTE, false),
-                    enterBandMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_ENTER_BAND_METERS, 0.0),
-                    exitBandMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_EXIT_BAND_METERS, 0.0),
-                    accuracyRadiusMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_ACCURACY_METERS, 0.0),
-                    remainingDistanceMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_REMAINING_METERS, 0.0),
-                ),
+            val ribbonState = RouteRibbonState(
+                perpendicularDistanceMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_DISTANCE_METERS, 0.0),
+                signedOffsetMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_SIGNED_OFFSET_METERS, 0.0),
+                direction = runCatching {
+                    com.trailnav.core.ProgressDirection.valueOf(
+                        intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_DIRECTION).orEmpty(),
+                    )
+                }.getOrDefault(com.trailnav.core.ProgressDirection.UNKNOWN),
+                offRoute = intent.getBooleanExtra(TrailForegroundService.EXTRA_RIBBON_OFF_ROUTE, false),
+                enterBandMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_ENTER_BAND_METERS, 0.0),
+                exitBandMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_EXIT_BAND_METERS, 0.0),
+                accuracyRadiusMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_ACCURACY_METERS, 0.0),
+                remainingDistanceMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_REMAINING_METERS, 0.0),
             )
+            routeRibbon.update(ribbonState)
+            updateGpsIndicator(ribbonState.accuracyRadiusMeters)
         }
     }
 
@@ -101,14 +113,30 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         // Hardware volume keys should control the stream used by navigation
         // speech while this activity is in the foreground.
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
         }
         status = TextView(this).apply { text = "경로를 가져오세요" }
+        gpsIndicator = TextView(this).apply {
+            text = "GPS 대기"
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setTextColor(0xff1b5e20.toInt())
+            contentDescription = "GPS 신호 상태"
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(status, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        header.addView(
+            gpsIndicator,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+        )
         routeRibbon = RouteRibbonView(this).apply {
             minimumHeight = (220 * resources.displayMetrics.density).toInt()
         }
@@ -154,7 +182,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
-        root.addView(status)
+        root.addView(header)
         root.addView(routeRibbon, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (250 * resources.displayMetrics.density).toInt()))
         root.addView(import)
         root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
@@ -163,13 +191,47 @@ class MainActivity : AppCompatActivity() {
         root.addView(start)
         root.addView(stop)
         setContentView(root)
+        val horizontalPadding = dp(24f)
+        val bottomPadding = dp(24f)
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val safeInsets = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+            )
+            // The top inset is read from the current window rather than guessed
+            // from a fixed status-bar height, so cutouts and foldable displays
+            // receive the same safe placement.
+            view.setPadding(horizontalPadding, safeInsets.top, horizontalPadding, bottomPadding + safeInsets.bottom)
+            insets
+        }
+        ViewCompat.requestApplyInsets(root)
         restoreUiState(savedInstanceState)
     }
+
+    private fun updateGpsIndicator(accuracyMeters: Double) {
+        if (!accuracyMeters.isFinite() || accuracyMeters <= 0.0) {
+            gpsIndicator.text = "GPS 대기"
+            gpsIndicator.setTextColor(0xff6d6d6d.toInt())
+            return
+        }
+        val rounded = "%.0f".format(accuracyMeters)
+        val quality = when {
+            accuracyMeters <= 10.0 -> "좋음"
+            accuracyMeters <= 30.0 -> "보통"
+            else -> "약함"
+        }
+        gpsIndicator.text = "GPS $quality ${rounded}m"
+        gpsIndicator.setTextColor(
+            if (quality == "약함") 0xffb71c1c.toInt() else 0xff1b5e20.toInt(),
+        )
+    }
+
+    private fun dp(value: Float): Int = (value * resources.displayMetrics.density).roundToInt()
 
     override fun onStart() {
         super.onStart()
         val filter = IntentFilter(TrailForegroundService.ACTION_ROUTE_RIBBON_UPDATE).apply {
             addAction(TrailForegroundService.ACTION_ROUTE_PREPARATION_UPDATE)
+            addAction(TrailForegroundService.ACTION_GPS_SIGNAL_UPDATE)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(ribbonReceiver, filter, RECEIVER_NOT_EXPORTED)
