@@ -1,7 +1,6 @@
 package com.trailnav.app
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -9,7 +8,6 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
-import android.location.LocationManager
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
@@ -38,6 +36,7 @@ class TrailForegroundService : Service() {
     private var onRouteVoiceScheduler: OnRouteVoiceScheduler? = null
     private var currentRoute: RouteModel? = null
     private var currentGuideConfig: GuideConfig? = null
+    private var routeStartupCoordinator: RouteStartupCoordinator? = null
     private var previousOffRoute = false
     private var sessionStarted = false
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -49,6 +48,12 @@ class TrailForegroundService : Service() {
                 announceGpsSignal(it)
             }
         }
+    }
+
+    private val routeOrientationTimeout = Runnable {
+        val coordinator = routeStartupCoordinator ?: return@Runnable
+        routeStartupCoordinator = null
+        finishRouteStartup(coordinator.timeout(SystemClock.elapsedRealtime()))
     }
 
     override fun onCreate() {
@@ -93,9 +98,8 @@ class TrailForegroundService : Service() {
             return
         }
         val config = GuideConfig()
-        val orientation = RouteOrientation.orient(xml, lastKnownLocation())
-        val route = try {
-            RouteModel.fromGpx(orientation.gpxXml, config)
+        try {
+            RouteModel.fromGpx(xml, config)
         } catch (error: Throwable) {
             logger?.appendError("route-parse", error.message ?: error::class.java.simpleName)
             stopSelf()
@@ -109,25 +113,18 @@ class TrailForegroundService : Service() {
             routeHash = "sha256:${JsonlSessionLogger.sha256(xml)}",
             appVersion = BuildConfig.VERSION_NAME,
         )
-        logger?.appendSystem(
-            "route.orientation",
-            mapOf(
-                "reversed" to orientation.reversed.toString(),
-                "reason" to orientation.reason,
-                "first_endpoint_distance_m" to formatDistance(orientation.firstEndpointDistanceMeters),
-                "last_endpoint_distance_m" to formatDistance(orientation.lastEndpointDistanceMeters),
-            ),
-        )
         tts = TtsController(this) { status -> logger?.appendSystem(status) }
-        guideSession = GuideSession(route, config)
-        currentRoute = route
+        guideSession = null
+        currentRoute = null
         currentGuideConfig = config
+        routeStartupCoordinator = RouteStartupCoordinator(xml, config, SystemClock.elapsedRealtime())
         previousOffRoute = false
         gpsSignalMonitor = GpsSignalMonitor().also { it.start() }
         onRouteVoiceScheduler = OnRouteVoiceScheduler(onRouteVoiceEnabled, onRouteVoiceIntervalSeconds)
         sessionStarted = true
         startForegroundCompat()
-        tts?.speak("안내 서비스를 시작합니다.")
+        publishRoutePreparation(RoutePreparationStage.PREPARING)
+        tts?.speak("안내를 준비중입니다.")
         logger?.appendSystem(
             "service.started",
             mapOf("provider" to "fused", "interval_ms" to "1000", "battery_pct" to batteryPercent()),
@@ -152,32 +149,7 @@ class TrailForegroundService : Service() {
             )
         }
         mainHandler.postDelayed(noLocationWarning, LOCATION_FIX_TIMEOUT_MILLIS)
-    }
-
-    /** Read a cached location synchronously so route setup never waits for a new fix. */
-    @SuppressLint("MissingPermission")
-    private fun lastKnownLocation(): TrailLocation? {
-        val manager = getSystemService(LOCATION_SERVICE) as? LocationManager ?: return null
-        val providers = linkedSetOf(
-            LocationManager.GPS_PROVIDER,
-            LocationManager.NETWORK_PROVIDER,
-            LocationManager.PASSIVE_PROVIDER,
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            providers += LocationManager.FUSED_PROVIDER
-        }
-        val location = providers.mapNotNull { provider ->
-            runCatching { manager.getLastKnownLocation(provider) }.getOrNull()
-        }.maxByOrNull { it.time } ?: return null
-        return TrailLocation(
-            timestampMillis = location.time,
-            latitude = location.latitude,
-            longitude = location.longitude,
-            accuracyMeters = location.accuracy,
-            speedMps = if (location.hasSpeed()) location.speed else null,
-            bearingDegrees = if (location.hasBearing()) location.bearing else null,
-            provider = location.provider ?: "last-known",
-        )
+        mainHandler.postDelayed(routeOrientationTimeout, ROUTE_ORIENTATION_TIMEOUT_MILLIS)
     }
 
     private fun formatDistance(value: Double?): String = value?.let { "%.2f".format(it) } ?: ""
@@ -195,7 +167,6 @@ class TrailForegroundService : Service() {
     }
 
     private fun onLocation(location: TrailLocation) {
-        val session = guideSession ?: return
         val gpsEvent = gpsSignalMonitor?.onLocation(location)
         // A first callback, even with poor accuracy, means the no-fix timer
         // must stop. The monitor also emits the weak-signal warning for the
@@ -204,6 +175,49 @@ class TrailForegroundService : Service() {
         gpsEvent?.let(::announceGpsSignal)
         logger?.appendEnvelope(location, "loc", "location")
         logger?.appendLocation(location)
+        val startup = routeStartupCoordinator
+        if (startup != null) {
+            val update = startup.accept(location, SystemClock.elapsedRealtime())
+            publishRoutePreparation(update.stage)
+            if (update.orientation != null) {
+                routeStartupCoordinator = null
+                finishRouteStartup(update)
+            }
+            return
+        }
+        processGuidance(location)
+    }
+
+    private fun finishRouteStartup(update: RouteStartupUpdate) {
+        val orientation = update.orientation ?: return
+        mainHandler.removeCallbacks(routeOrientationTimeout)
+        val config = currentGuideConfig ?: return
+        val route = try {
+            RouteModel.fromGpx(orientation.gpxXml, config)
+        } catch (error: Throwable) {
+            logger?.appendError("route-parse", error.message ?: error::class.java.simpleName)
+            stopSelf()
+            return
+        }
+        currentRoute = route
+        guideSession = GuideSession(route, config)
+        previousOffRoute = false
+        logger?.appendSystem(
+            "route.orientation",
+            mapOf(
+                "reversed" to orientation.reversed.toString(),
+                "reason" to orientation.reason,
+                "observed_net_displacement_m" to formatDistance(orientation.observedNetDisplacementMeters),
+                "observation_elapsed_seconds" to "%.3f".format(orientation.observationElapsedSeconds),
+            ),
+        )
+        publishRoutePreparation(RoutePreparationStage.DIRECTION_CONFIRMED)
+        tts?.speak("안내를 시작합니다.")
+        update.replayLocations.forEach(::processGuidance)
+    }
+
+    private fun processGuidance(location: TrailLocation) {
+        val session = guideSession ?: return
         val decision = session.accept(location)
         publishRouteRibbon(location, decision)
         val guidance = decision.result.guidance
@@ -251,6 +265,7 @@ class TrailForegroundService : Service() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(noLocationWarning)
+        mainHandler.removeCallbacks(routeOrientationTimeout)
         source?.stop()
         source = null
         if (sessionStarted) logger?.appendSystem("service.stopped", mapOf("battery_pct" to batteryPercent()))
@@ -264,6 +279,7 @@ class TrailForegroundService : Service() {
         logger = null
         currentRoute = null
         currentGuideConfig = null
+        routeStartupCoordinator = null
         previousOffRoute = false
         sessionStarted = false
         super.onDestroy()
@@ -350,11 +366,21 @@ class TrailForegroundService : Service() {
         manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "TrailNav 안내", NotificationManager.IMPORTANCE_LOW))
     }
 
+    private fun publishRoutePreparation(stage: RoutePreparationStage) {
+        sendBroadcast(
+            Intent(ACTION_ROUTE_PREPARATION_UPDATE)
+                .setPackage(packageName)
+                .putExtra(EXTRA_ROUTE_PREPARATION_STAGE, stage.wireName),
+        )
+    }
+
     companion object {
         const val EXTRA_ROUTE_URI = "com.trailnav.app.ROUTE_URI"
         const val EXTRA_ON_ROUTE_VOICE_ENABLED = "com.trailnav.app.ON_ROUTE_VOICE_ENABLED"
         const val EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS = "com.trailnav.app.ON_ROUTE_VOICE_INTERVAL_SECONDS"
         const val ON_ROUTE_VOICE_PROMPT = "정상적으로 경로를 따라가고 있습니다."
+        const val ACTION_ROUTE_PREPARATION_UPDATE = "com.trailnav.app.ROUTE_PREPARATION_UPDATE"
+        const val EXTRA_ROUTE_PREPARATION_STAGE = "route_preparation_stage"
         const val ACTION_ROUTE_RIBBON_UPDATE = "com.trailnav.app.ROUTE_RIBBON_UPDATE"
         const val EXTRA_RIBBON_DISTANCE_METERS = "ribbon_distance_meters"
         const val EXTRA_RIBBON_SIGNED_OFFSET_METERS = "ribbon_signed_offset_meters"
@@ -365,6 +391,7 @@ class TrailForegroundService : Service() {
         const val EXTRA_RIBBON_ACCURACY_METERS = "ribbon_accuracy_meters"
         const val EXTRA_RIBBON_REMAINING_METERS = "ribbon_remaining_meters"
         private const val LOCATION_FIX_TIMEOUT_MILLIS = 15_000L
+        private const val ROUTE_ORIENTATION_TIMEOUT_MILLIS = 30_000L
         private const val CHANNEL_ID = "trailnav.navigation"
         private const val NOTIFICATION_ID = 1001
     }
