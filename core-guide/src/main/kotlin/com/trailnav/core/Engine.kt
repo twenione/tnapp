@@ -11,13 +11,18 @@ fun guide(state: GuideState, frame: SensorFrame, config: GuideConfig = GuideConf
     Engine.guide(state, frame, config)
 
 private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfig): GuideResult {
-    if (state.arrived) {
-        return GuideResult(null, state, Reason("arrived.already-complete"))
+    val initializedState = if (state.sessionStartTimestamp == null) {
+        state.copy(sessionStartTimestamp = frame.timestamp)
+    } else {
+        state
+    }
+    if (initializedState.arrived) {
+        return GuideResult(null, initializedState, Reason("arrived.already-complete"))
     }
     if (frame.accuracy.toDouble() > config.accuracyRejectMeters) {
         return GuideResult(
             null,
-            state,
+            initializedState,
             Reason(
                 rule = "input.accuracy-filter",
                 thresholds = mapOf("accuracyRejectMeters" to config.accuracyRejectMeters),
@@ -25,17 +30,17 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
             )
         )
     }
-    val match = RouteMatcher.nearest(state.route, frame, state.lastMatch?.projectedMeters, config)
-        ?: return GuideResult(null, state, Reason("matching.no-route-segment"))
-    val directedMatch = RouteMatcher.withDirection(state, match, frame, config)
-    val ema = RouteMatcher.updatedEma(state, directedMatch, config)
+    val match = RouteMatcher.nearest(initializedState.route, frame, initializedState.lastMatch?.projectedMeters, config)
+        ?: return GuideResult(null, initializedState, Reason("matching.no-route-segment"))
+    val directedMatch = RouteMatcher.withDirection(initializedState, match, frame, config)
+    val ema = RouteMatcher.updatedEma(initializedState, directedMatch, config)
     val stationary = frame.speed != null && frame.speed.toDouble() < config.stationarySpeedMps
     val direction = if (stationary) ProgressDirection.STATIONARY else directedMatch.direction
     val reverseSince = when {
-        direction == ProgressDirection.REVERSE -> state.reverseSince ?: frame.timestamp
+        direction == ProgressDirection.REVERSE -> initializedState.reverseSince ?: frame.timestamp
         else -> null
     }
-    var next = state.copy(
+    var next = initializedState.copy(
         lastMatch = directedMatch.copy(direction = direction),
         lastTimestamp = frame.timestamp,
         emaDeltaMeters = ema,
@@ -44,7 +49,7 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         reverseSince = reverseSince
     )
 
-    if (isArrived(next.route, directedMatch, config)) {
+    if (isArrived(next.route, directedMatch, frame.timestamp, next.sessionStartTimestamp, config)) {
         next = next.copy(
             arrived = true,
             offRoute = false,
@@ -59,7 +64,8 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
                 rule = "arrival.radius-and-progress",
                 thresholds = mapOf(
                     "arriveRadiusMeters" to config.arriveRadiusMeters,
-                    "arriveProgressFraction" to config.arriveProgressFraction
+                    "arriveProgressFraction" to config.arriveProgressFraction,
+                    "minimumSessionSecondsBeforeArrival" to config.minimumSessionSecondsBeforeArrival
                 ),
                 details = mapOf("projectedMeters" to directedMatch.projectedMeters.toString())
             )
@@ -80,7 +86,7 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
                 Guidance.OffRoute(directedMatch.distanceMeters, direction.name.lowercase()),
                 next,
                 Reason(
-                    rule = if (state.offRoute) "off-route.reannounce" else "off-route.enter",
+                    rule = if (initializedState.offRoute) "off-route.reannounce" else "off-route.enter",
                     thresholds = mapOf(
                         "enterDistMeters" to config.offRouteEnterDistMeters,
                         "enterDwellSeconds" to config.offRouteEnterDwellSeconds,
@@ -124,11 +130,19 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
     )
 }
 
-private fun isArrived(route: RouteModel, match: MatchResult, config: GuideConfig): Boolean {
+private fun isArrived(
+    route: RouteModel,
+    match: MatchResult,
+    timestamp: Long,
+    sessionStartTimestamp: Long?,
+    config: GuideConfig,
+): Boolean {
     if (route.points.isEmpty() || route.totalLengthMeters <= 0.0) return false
     val finalPoint = route.points.last()
     val distanceToEnd = RouteMath.distance(match.projectedPoint, finalPoint)
-    return distanceToEnd <= config.arriveRadiusMeters &&
+    val sessionElapsed = elapsedSeconds(timestamp, sessionStartTimestamp)
+    return sessionElapsed >= config.minimumSessionSecondsBeforeArrival &&
+        distanceToEnd <= config.arriveRadiusMeters &&
         match.projectedMeters > route.totalLengthMeters * config.arriveProgressFraction
 }
 

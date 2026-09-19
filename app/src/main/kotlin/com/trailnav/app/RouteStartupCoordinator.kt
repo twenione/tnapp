@@ -55,6 +55,7 @@ class RouteStartupCoordinator(
             reason = reason,
             observedNetDisplacementMeters = kotlin.math.abs(observation.netDisplacementMeters),
             observationElapsedSeconds = observation.elapsedSeconds,
+            fallbackLocation = if (observation.direction == null) bufferedLocations.lastOrNull() else null,
         )
         val replay = bufferedLocations.toList()
         bufferedLocations.clear()

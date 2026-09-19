@@ -9,10 +9,14 @@ class GuidanceTest {
     fun hysteresisAccuracyArrivalAndReannouncement() {
     val xml = """<gpx><trk><trkseg><trkpt lat="10.0" lon="20.0"/><trkpt lat="10.0" lon="20.002"/></trkseg></trk></gpx>"""
     val route = RouteModel.fromGpx(xml)
-    val config = GuideConfig(offRouteEnterDwellSeconds = 2.0, offRouteExitDwellSeconds = 2.0)
+    val config = GuideConfig(
+        offRouteEnterDwellSeconds = 2.0,
+        offRouteExitDwellSeconds = 2.0,
+        minimumSessionSecondsBeforeArrival = 0.0,
+    )
     var state = GuideState.initial(route)
     val filtered = guide(state, SensorFrame(0, 10.0, 20.0, 51f, 1f, null), config)
-    check(filtered.guidance == null && filtered.nextState == state)
+    check(filtered.guidance == null && filtered.nextState.sessionStartTimestamp == 0L)
     state = guide(state, SensorFrame(0, 10.0, 20.0, 5f, 1f, null), config).nextState
     val far1 = guide(state, SensorFrame(1, 10.0005, 20.0, 5f, 1f, null), config)
     check(!far1.nextState.offRoute)
@@ -75,5 +79,34 @@ class GuidanceTest {
         check(!lateSpike.nextState.offRoute)
         check(lateSpike.nextState.candidateOffRouteSince == 10_800_001L)
         check(lateSpike.guidance !is Guidance.OffRoute)
+    }
+
+    @Test
+    fun arrivalNearEndIsBlockedDuringStartupGuard() {
+        val xml = """<gpx><trk><trkseg><trkpt lat="10.0" lon="20.0"/><trkpt lat="10.0" lon="20.002"/></trkseg></trk></gpx>"""
+        val route = RouteModel.fromGpx(xml)
+        val config = GuideConfig()
+        val nearEnd = SensorFrame(0L, 10.0, 20.0019, 5f, 1f, null)
+
+        val immediate = guide(GuideState.initial(route), nearEnd, config)
+        check(immediate.nextState.sessionStartTimestamp == 0L)
+        check(immediate.guidance != Guidance.Arrived) {
+            "a first frame near 95% progress must not arrive immediately"
+        }
+
+        val beforeMinimum = guide(
+            immediate.nextState,
+            nearEnd.copy(timestamp = 5L),
+            config,
+        )
+        check(beforeMinimum.guidance != Guidance.Arrived)
+
+        val afterMinimum = guide(
+            beforeMinimum.nextState,
+            nearEnd.copy(timestamp = 10L),
+            config,
+        )
+        check(afterMinimum.guidance == Guidance.Arrived)
+        check(afterMinimum.nextState.arrived)
     }
 }

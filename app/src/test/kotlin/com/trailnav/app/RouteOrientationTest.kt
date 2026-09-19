@@ -1,6 +1,7 @@
 package com.trailnav.app
 
 import com.trailnav.core.Guidance
+import com.trailnav.core.GuideConfig
 import com.trailnav.core.ProgressDirection
 import com.trailnav.core.RouteModel
 import kotlin.test.Test
@@ -60,7 +61,7 @@ class RouteOrientationTest {
         val route = RouteModel.fromGpx(orientation.gpxXml)
         assertEquals(20.002, route.sourcePoints.first().lon, 0.000001)
         assertEquals(20.0, route.sourcePoints.last().lon, 0.000001)
-        val session = GuideSession(route)
+        val session = GuideSession(route, GuideConfig(minimumSessionSecondsBeforeArrival = 0.0))
         session.accept(location(20.002))
         val arrival = session.accept(location(20.0))
         assertTrue(arrival.result.guidance is Guidance.Arrived)
@@ -98,6 +99,33 @@ class RouteOrientationTest {
         assertEquals(30.0, update.orientation?.observationElapsedSeconds)
         assertFalse(update.orientation?.reversed ?: true)
         assertTrue(update.replayLocations.isEmpty())
+    }
+
+    @Test
+    fun endpointFallbackReversesWhenBufferedStartIsNearOriginalEnd() {
+        val coordinator = RouteStartupCoordinator(xml, startupAtMillis = 0L)
+        val nearOriginalEnd = location(20.0019)
+
+        coordinator.accept(nearOriginalEnd, 0L)
+        val update = coordinator.timeout(30_000L)
+
+        assertEquals(RouteDirectionObservationOutcome.FALLBACK_TIMEOUT, update.observation.outcome)
+        assertTrue(update.orientation?.reversed == true)
+        assertEquals("fallback-endpoint-distance", update.orientation?.reason)
+        assertEquals(20.002, RouteModel.fromGpx(update.orientation!!.gpxXml).sourcePoints.first().lon, 0.000001)
+    }
+
+    @Test
+    fun endpointFallbackKeepsOrderWhenBufferedStartIsNearOriginalStart() {
+        val coordinator = RouteStartupCoordinator(xml, startupAtMillis = 0L)
+        val nearOriginalStart = location(20.0001)
+
+        coordinator.accept(nearOriginalStart, 0L)
+        val update = coordinator.timeout(30_000L)
+
+        assertFalse(update.orientation?.reversed ?: true)
+        assertEquals("fallback-endpoint-distance", update.orientation?.reason)
+        assertEquals(20.0, RouteModel.fromGpx(update.orientation!!.gpxXml).sourcePoints.first().lon, 0.000001)
     }
 
     @Test
