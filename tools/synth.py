@@ -70,7 +70,11 @@ def make_session(root: Path, name: str, points: list[tuple[float, float]], varia
         "app": {"version": "0.1.0", "build": 0, "code_hash": "sha256:synthetic"},
         "engine": {"config": {"stub": False, "variant": variant, "implementation": "core-guide"}, "rng_seed": seed},
         "route": {"gpx_id": "synthetic-base", "gpx_hash": route_hash, "point_count": len(points)},
-        "clock": {"monotonic_source": "synthetic-sequence"},
+        "clock": {
+            "monotonic_source": "synthetic-sequence",
+            "timestamp_unit": "seconds",
+            "frame_intervals_seconds": [0.944, 0.997, 0.950, 0.999],
+        },
         "privacy": {"upload_default": False},
         "device": {"model": "synthetic", "os": "test", "sensors": ["gps"]},
     }
@@ -106,6 +110,8 @@ def make_session(root: Path, name: str, points: list[tuple[float, float]], varia
     seq = 0
     frame_count = 0
     time_offset = 0
+    frame_clock = 0.0
+    frame_intervals = (0.944, 0.997, 0.950, 0.999)
     for index, (lat, lon) in enumerate(points):
         frame_count += 1
         source_index = index
@@ -135,7 +141,7 @@ def make_session(root: Path, name: str, points: list[tuple[float, float]], varia
             noise_lat = noise_lon = rng.gauss(0, noise_sigma)
         if variant == "stop_5m" and 60 <= index < 65:
             time_offset = 300
-        event_t = index + time_offset
+        event_t = frame_clock + time_offset
         stationary = combo is not None and combo.get("stationary_before_departure_seconds", 0) > 0 and index < 5
         speed = 0.0 if (variant == "stop_5m" and 60 <= index < 65) or stationary else 1.0
         accuracy = 80.0 if variant == "accuracy_80m" and 10 <= index < 20 else 5.0
@@ -146,6 +152,7 @@ def make_session(root: Path, name: str, points: list[tuple[float, float]], varia
         if index % 5 == 0:
             events.append(event(seq, event_t + 0.1, "guide", decision="CONTINUE", inputs={"frame_count": frame_count, "rng_seed": seed}, reason={"rule": "stub.frame-count", "thresholds": {}, "alternatives_considered": []}, state_hash="sha256:synthetic"))
             seq += 1
+        frame_clock += frame_intervals[index % len(frame_intervals)]
     (session / "events.ndjson").write_text("\n".join(json.dumps(item, sort_keys=True) for item in events) + "\n", encoding="utf-8")
 
 
