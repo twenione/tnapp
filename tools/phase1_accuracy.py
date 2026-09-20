@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from replay import invoke, resolve_cli
+from replay import invoke, invoke_subsecond_probe, resolve_cli
 
 BASELINE = tuple(
     f"{index:02d}_{name}"
@@ -220,6 +220,9 @@ def contract_probe(cli: Path) -> None:
         config_decisions = [item.get("decision") for item in config_trace]
         if any(decision == "OFF_ROUTE" for decision in config_decisions):
             raise AssertionError(f"config contract failed: {config_decisions}")
+        subsecond_decisions = [item.get("decision") for item in invoke_subsecond_probe(cli)]
+        if subsecond_decisions != ["CONTINUE", "CONTINUE", "CONTINUE"]:
+            raise AssertionError(f"elapsed-ms subsecond contract failed: {subsecond_decisions}")
 
 
 def main() -> int:
