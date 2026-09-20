@@ -26,6 +26,10 @@ VARIANTS = {
         "match.distanceMeters > config.offRouteEnterDistMeters",
         "match.distanceMeters > 25.0 /* D-033 config constant */",
     ),
+    "unit-heuristic": (
+        "return (now - then) / 1_000.0",
+        "val delta = now - then\n    return if (delta >= 1_000L) delta / 1_000.0 else delta.toDouble() /* D-033 unit heuristic */",
+    ),
 }
 
 

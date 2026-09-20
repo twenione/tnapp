@@ -201,6 +201,7 @@ def contract_probe(cli: Path) -> None:
         east30 = 30.0 / meters_per_degree_lon
         locations = [
             {"seq": index, "t": timestamp, "stream": "loc", "lat": 10.0005, "lon": 20.0 + east30, "accuracy": 5.0, "speed_mps": 1.0, "bearing_deg": 0.0, "provider": "fixture"}
+            # Session event timestamps are seconds; EngineCli converts them to epoch milliseconds.
             for index, timestamp in enumerate((0, 10, 21))
         ]
         (root / "events.ndjson").write_text("\n".join(json.dumps(item) for item in locations) + "\n", encoding="utf-8")

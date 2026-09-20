@@ -202,7 +202,5 @@ private fun updateOffRouteState(
 
 private fun elapsedSeconds(now: Long, then: Long?): Double {
     if (then == null || now < then) return 0.0
-    val delta = now - then
-    // Android supplies epoch milliseconds; tiny synthetic tests often use seconds.
-    return if (delta >= 1_000L) delta / 1_000.0 else delta.toDouble()
+    return (now - then) / 1_000.0
 }

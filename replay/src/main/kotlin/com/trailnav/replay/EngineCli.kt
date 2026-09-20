@@ -23,6 +23,10 @@ fun main(args: Array<String>) {
         runConfigProbe(config)
         return
     }
+    if (options.probeSubsecond) {
+        runSubsecondProbe(config)
+        return
+    }
     val session = requireNotNull(options.session) { "--session is required" }
     val routePath = requireNotNull(options.route) { "--route is required" }
     val route = RouteModel.fromGpx(Files.readString(Path.of(routePath)), config)
@@ -35,7 +39,7 @@ fun main(args: Array<String>) {
         if (stream == "loc") {
             val t = numberField(line, "t") ?: return@forEach
             val frame = SensorFrame(
-                timestamp = (t * 1000.0).toLong(),
+                timestamp = Math.round(t * 1000.0),
                 lat = numberField(line, "lat") ?: return@forEach,
                 lon = numberField(line, "lon") ?: return@forEach,
                 accuracy = (numberField(line, "accuracy") ?: 0.0).toFloat(),
@@ -62,6 +66,7 @@ private data class CliOptions(
     val session: String?,
     val everyFrame: Boolean,
     val probe: Boolean,
+    val probeSubsecond: Boolean,
     val overrides: Map<String, Double>
 )
 
@@ -70,6 +75,7 @@ private fun parseArgs(args: List<String>): CliOptions {
     var session: String? = null
     var everyFrame = false
     var probe = false
+    var probeSubsecond = false
     val overrides = linkedMapOf<String, Double>()
     var index = 0
     while (index < args.size) {
@@ -78,6 +84,7 @@ private fun parseArgs(args: List<String>): CliOptions {
             "--session" -> session = args[++index]
             "--emit-every-frame" -> everyFrame = true
             "--probe" -> probe = true
+            "--probe-subsecond" -> probeSubsecond = true
             "--config" -> {
                 val assignment = args[++index]
                 val split = assignment.split('=', limit = 2)
@@ -88,7 +95,7 @@ private fun parseArgs(args: List<String>): CliOptions {
         }
         index += 1
     }
-    return CliOptions(route, session, everyFrame, probe, overrides)
+    return CliOptions(route, session, everyFrame, probe, probeSubsecond, overrides)
 }
 
 private data class Output(
@@ -143,6 +150,19 @@ private fun runConfigProbe(config: GuideConfig) {
         val distance = result.guidanceDistance() ?: result.reason.details["distanceMeters"]?.toDoubleOrNull()
         val item = Output(index, frame.timestamp / 1000.0, decision(result.guidance), result.reason.rule, distance, result.nextState.direction.name.lowercase())
         println(item.json())
+    }
+}
+
+private fun runSubsecondProbe(config: GuideConfig) {
+    val route = RouteModel.fromGpx("<gpx><trk><trkseg><trkpt lat=\"10.0\" lon=\"20.0\"/><trkpt lat=\"10.002\" lon=\"20.0\"/></trkseg></trk></gpx>", config)
+    val metersPerDegreeLon = 6_371_008.8 * cos(Math.toRadians(10.0)) * Math.PI / 180.0
+    val east30 = 30.0 / metersPerDegreeLon
+    var state = GuideState.initial(route)
+    listOf(0L, 944L, 1_941L).forEachIndexed { index, timestamp ->
+        val result = guide(state, SensorFrame(timestamp, 10.0005, 20.0 + east30, 5f, 1f, null), config)
+        state = result.nextState
+        val distance = result.guidanceDistance() ?: result.reason.details["distanceMeters"]?.toDoubleOrNull()
+        Output(index, timestamp / 1000.0, decision(result.guidance), result.reason.rule, distance, state.direction.name.lowercase()).also { println(it.json()) }
     }
 }
 
