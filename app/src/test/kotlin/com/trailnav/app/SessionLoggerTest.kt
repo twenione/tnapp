@@ -29,8 +29,8 @@ class SessionLoggerTest {
             val location = TrailLocation(1_000L, 10.0001, 20.0, 5f, 1f, null, "fake")
             val result = guide(GuideState.initial(route), location.toSensorFrame(), GuideConfig())
             logger.appendEnvelope(location, "loc", "location")
-            logger.appendLocation(location)
-            logger.appendGuide(location, result, null)
+            val locationSeq = logger.appendLocation(location)
+            logger.appendGuide(location, result, null, locationSeq)
             logger.appendSystem("service.started", mapOf("battery_pct" to "90"))
             logger.appendError("test", "synthetic")
         }
@@ -42,6 +42,7 @@ class SessionLoggerTest {
         assertTrue(events[0].contains("\"event_stream\":\"loc\""))
         assertTrue(events[1].contains("\"stream\":\"loc\""))
         assertTrue(events[2].contains("\"stream\":\"guide\""))
+        assertTrue(events[2].contains("\"src_seq\":1"))
         assertTrue(events[2].contains("\"rule\":\"matching.on-route\""))
         assertTrue(events[3].contains("\"stream\":\"sys\""))
         assertTrue(events[4].contains("\"stream\":\"err\""))

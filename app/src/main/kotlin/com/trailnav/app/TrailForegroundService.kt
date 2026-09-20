@@ -108,7 +108,7 @@ class TrailForegroundService : Service() {
         val sessionDirectory = File(filesDir, "sessions/${System.currentTimeMillis()}")
         logger = JsonlSessionLogger(
             directory = sessionDirectory,
-            codeHash = "sha256:${JsonlSessionLogger.sha256(BuildConfig.VERSION_NAME)}",
+            codeHash = BuildConfig.GIT_CODE_HASH,
             configHash = "sha256:${JsonlSessionLogger.sha256(config.toString())}",
             routeHash = "sha256:${JsonlSessionLogger.sha256(xml)}",
             appVersion = BuildConfig.VERSION_NAME,
@@ -175,10 +175,10 @@ class TrailForegroundService : Service() {
         publishGpsSignal(location.accuracyMeters)
         gpsEvent?.let(::announceGpsSignal)
         logger?.appendEnvelope(location, "loc", "location")
-        logger?.appendLocation(location)
+        val locationSeq = logger?.appendLocation(location)
         val startup = routeStartupCoordinator
         if (startup != null) {
-            val update = startup.accept(location, SystemClock.elapsedRealtime())
+            val update = startup.accept(location, SystemClock.elapsedRealtime(), locationSeq)
             publishRoutePreparation(update.stage)
             if (update.orientation != null) {
                 routeStartupCoordinator = null
@@ -186,7 +186,7 @@ class TrailForegroundService : Service() {
             }
             return
         }
-        processGuidance(location)
+        processGuidance(location, locationSeq)
     }
 
     private fun finishRouteStartup(update: RouteStartupUpdate) {
@@ -214,10 +214,12 @@ class TrailForegroundService : Service() {
         )
         publishRoutePreparation(RoutePreparationStage.DIRECTION_CONFIRMED)
         tts?.speak("안내를 시작합니다.")
-        update.replayLocations.forEach(::processGuidance)
+        update.replayLocations.forEachIndexed { index, replayLocation ->
+            processGuidance(replayLocation, update.replaySourceSeqs.getOrNull(index))
+        }
     }
 
-    private fun processGuidance(location: TrailLocation) {
+    private fun processGuidance(location: TrailLocation, sourceSeq: Long?) {
         val session = guideSession ?: return
         val decision = session.accept(location)
         publishRouteRibbon(location, decision)
@@ -245,7 +247,7 @@ class TrailForegroundService : Service() {
             if (periodic) ON_ROUTE_VOICE_PROMPT else null,
         ).joinToString(" ").ifBlank { null }
         logger?.appendEnvelope(location, "guide", "decision")
-        logger?.appendGuide(location, decision.result, loggedSpeech)
+        logger?.appendGuide(location, decision.result, loggedSpeech, requireNotNull(sourceSeq))
         if (!spoken.isNullOrBlank()) tts?.speak(spoken)
         if (recoveryPrompt != null) {
             logger?.appendSystem(

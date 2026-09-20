@@ -32,6 +32,8 @@ fun main(args: Array<String>) {
     val route = RouteModel.fromGpx(Files.readString(Path.of(routePath)), config)
     var state = GuideState.initial(route)
     var locCount = 0
+    var guideCount = 0
+    val locOutputs = mutableListOf<Output>()
     var latest: Output? = null
     Files.readAllLines(Path.of(session, "events.ndjson")).forEach { line ->
         if (line.isBlank()) return@forEach
@@ -50,14 +52,25 @@ fun main(args: Array<String>) {
             state = result.nextState
             locCount += 1
             val distance = result.guidanceDistance() ?: result.reason.details["distanceMeters"]?.toDoubleOrNull()
-            latest = Output(locCount, t, decision(result.guidance), result.reason.rule, distance, result.nextState.direction.name.lowercase())
+            val sourceSeq = numberField(line, "seq")?.toLong() ?: error("loc event is missing seq")
+            latest = Output(locCount, t, decision(result.guidance), result.reason.rule, distance, result.nextState.direction.name.lowercase(), sourceSeq)
+            locOutputs += latest!!
             if (options.everyFrame) println(latest!!.json())
         } else if (stream == "guide" && !options.everyFrame) {
             val seq = numberField(line, "seq")?.toLong() ?: -1L
             val recorded = stringField(line, "decision") ?: ""
-            val output = latest ?: Output(locCount, 0.0, "CONTINUE", "none", null, "unknown")
-            println("{\"kind\":\"guide\",\"seq\":$seq,\"loc_index\":${output.locIndex},\"recorded_decision\":\"${escape(recorded)}\",\"decision\":\"${output.decision}\",\"reason_rule\":\"${escape(output.reasonRule)}\",\"distance_m\":${output.distance ?: "null"},\"direction\":\"${output.direction}\"}")
+            val output = locOutputs.getOrNull(guideCount)
+                ?: error("guide event count exceeds loc event count at seq=$seq")
+            val recordedSourceSeq = numberField(line, "src_seq")?.toLong()
+            if (recordedSourceSeq != null && recordedSourceSeq != output.sourceSeq) {
+                error("guide src_seq=$recordedSourceSeq does not match loc seq=${output.sourceSeq} at guide seq=$seq")
+            }
+            println("{\"kind\":\"guide\",\"seq\":$seq,\"loc_index\":${output.locIndex},\"source_seq\":${output.sourceSeq},\"recorded_src_seq\":${recordedSourceSeq ?: "null"},\"recorded_decision\":\"${escape(recorded)}\",\"decision\":\"${output.decision}\",\"reason_rule\":\"${escape(output.reasonRule)}\",\"distance_m\":${output.distance ?: "null"},\"direction\":\"${output.direction}\"}")
+            guideCount += 1
         }
+    }
+    if (!options.everyFrame && guideCount != locCount) {
+        error("loc event count $locCount does not match guide event count $guideCount")
     }
 }
 
@@ -104,9 +117,10 @@ private data class Output(
     val decision: String,
     val reasonRule: String,
     val distance: Double?,
-    val direction: String
+    val direction: String,
+    val sourceSeq: Long = -1L
 ) {
-    fun json(): String = "{\"kind\":\"frame\",\"loc_index\":$locIndex,\"t\":$t,\"decision\":\"$decision\",\"reason_rule\":\"${escape(reasonRule)}\",\"distance_m\":${distance ?: "null"},\"direction\":\"$direction\"}"
+    fun json(): String = "{\"kind\":\"frame\",\"loc_index\":$locIndex,\"source_seq\":${if (sourceSeq >= 0) sourceSeq else "null"},\"t\":$t,\"decision\":\"$decision\",\"reason_rule\":\"${escape(reasonRule)}\",\"distance_m\":${distance ?: "null"},\"direction\":\"$direction\"}"
 }
 
 private fun decision(guidance: Guidance?): String = when (guidance) {

@@ -149,9 +149,8 @@ def make_session(root: Path, name: str, points: list[tuple[float, float]], varia
             accuracy = 80.0
         events.append(event(seq, event_t, "loc", lat=round(route_lat + noise_lat, 8), lon=round(route_lon + noise_lon, 8), accuracy=accuracy, provider="synthetic", speed_mps=speed, bearing_deg=90.0))
         seq += 1
-        if index % 5 == 0:
-            events.append(event(seq, event_t + 0.1, "guide", decision="CONTINUE", inputs={"frame_count": frame_count, "rng_seed": seed}, reason={"rule": "stub.frame-count", "thresholds": {}, "alternatives_considered": []}, state_hash="sha256:synthetic"))
-            seq += 1
+        events.append(event(seq, event_t + 0.1, "guide", decision="CONTINUE", inputs={"frame_count": frame_count, "rng_seed": seed}, reason={"rule": "stub.frame-count", "thresholds": {}, "alternatives_considered": []}, state_hash="sha256:synthetic"))
+        seq += 1
         frame_clock += frame_intervals[index % len(frame_intervals)]
     (session / "events.ndjson").write_text("\n".join(json.dumps(item, sort_keys=True) for item in events) + "\n", encoding="utf-8")
 
