@@ -20,6 +20,7 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -390,18 +391,58 @@ class MainActivity : AppCompatActivity() {
             status.text = "이 경로의 파일 권한이 없습니다. 다시 가져오기 필요"
             return
         }
-        val viewIntent = Intent(Intent.ACTION_VIEW).apply {
-            data = uri
-            type = "application/gpx+xml"
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            clipData = android.content.ClipData.newRawUri("", uri)
-        }
         try {
-            startActivity(Intent.createChooser(viewIntent, "지도 앱 선택"))
+            val rawView = mapViewIntent(uri)
+            if (canResolve(rawView)) {
+                startActivity(Intent.createChooser(rawView, "지도 앱 선택"))
+                return
+            }
+            val cachedUri = copyRouteToMapCache(route, uri)
+            if (cachedUri != null) {
+                val cachedView = mapViewIntent(cachedUri)
+                if (canResolve(cachedView)) {
+                    startActivity(Intent.createChooser(cachedView, "지도 앱 선택"))
+                    return
+                }
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/gpx+xml"
+                    putExtra(Intent.EXTRA_STREAM, cachedUri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    clipData = android.content.ClipData.newRawUri("", cachedUri)
+                }
+                if (canResolve(send)) {
+                    startActivity(Intent.createChooser(send, "지도 앱 선택"))
+                    return
+                }
+            }
+            status.text = "GPX를 열 수 있는 지도 앱이 없습니다"
         } catch (_: android.content.ActivityNotFoundException) {
             status.text = "GPX를 열 수 있는 지도 앱이 없습니다"
         } catch (_: SecurityException) {
             status.text = "GPX를 열 수 있는 지도 앱이 없습니다"
+        }
+    }
+
+    private fun mapViewIntent(uri: Uri): Intent = Intent(Intent.ACTION_VIEW).apply {
+        data = uri
+        type = "application/gpx+xml"
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        clipData = android.content.ClipData.newRawUri("", uri)
+    }
+
+    private fun canResolve(intent: Intent): Boolean = packageManager.resolveActivity(intent, 0) != null
+
+    private fun copyRouteToMapCache(route: SavedRoute, uri: Uri): Uri? {
+        return try {
+            val shared = java.io.File(cacheDir, "shared").apply { mkdirs() }
+            val safeName = route.displayName.substringAfterLast('/').ifBlank { "route.gpx" }
+            val target = java.io.File(shared, safeName)
+            contentResolver.openInputStream(uri)?.use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
+            } ?: return null
+            FileProvider.getUriForFile(this, "${BuildConfig.APPLICATION_ID}.fileprovider", target)
+        } catch (_: Exception) {
+            null
         }
     }
 
