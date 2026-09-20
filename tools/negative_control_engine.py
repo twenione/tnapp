@@ -10,6 +10,7 @@ auditable evidence of the expected failure.
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import subprocess
 import tempfile
@@ -103,6 +104,28 @@ def main() -> int:
                 if code == 0:
                     failures.append(f"{name}: {consumer} unexpectedly passed")
             engine.write_text(original, encoding="utf-8")
+
+        fixture = workspace / "testdata/sessions/golden/log_shape_fixture"
+        if fixture.is_dir():
+            broken_fixture = workspace / "d033-replay-missing-loc"
+            shutil.copytree(fixture, broken_fixture)
+            event_lines = (broken_fixture / "events.ndjson").read_text(encoding="utf-8").splitlines()
+            removed = False
+            retained: list[str] = []
+            for line in event_lines:
+                event = json.loads(line)
+                if not removed and event.get("stream") == "loc":
+                    removed = True
+                    continue
+                retained.append(line)
+            (broken_fixture / "events.ndjson").write_text("\n".join(retained) + "\n", encoding="utf-8")
+            pairing_code, pairing_output = run(
+                ["python", "tools/replay.py", str(broken_fixture), "--cli", str(cli), "--strict"],
+                workspace,
+            )
+            evidence.append(f"REPLAY missing-loc consumer=replay exit={pairing_code}\n{pairing_output}")
+            if pairing_code == 0:
+                failures.append("replay: missing-loc mutation unexpectedly passed")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text("\n\n".join(evidence) + "\n", encoding="utf-8")
     if failures:

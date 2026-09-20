@@ -3,6 +3,24 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+fun gitOutput(vararg command: String): String? = runCatching {
+    ProcessBuilder(*command)
+        .directory(rootDir)
+        .redirectErrorStream(true)
+        .start()
+        .inputStream
+        .bufferedReader()
+        .use { it.readText().trim() }
+}.getOrNull()?.takeIf { it.isNotBlank() }
+
+val gitSha = gitOutput("git", "rev-parse", "HEAD")
+val gitDirty = gitOutput("git", "status", "--porcelain")?.isNotBlank() == true
+val gitCodeHash = if (gitSha?.matches(Regex("[0-9a-fA-F]{40}")) == true) {
+    "git:$gitSha${if (gitDirty) "-dirty" else ""}"
+} else {
+    "git:unknown"
+}
+
 android {
     namespace = "com.trailnav.app"
     compileSdk = 35
@@ -14,6 +32,7 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "GIT_CODE_HASH", "\"$gitCodeHash\"")
     }
 
     buildTypes {

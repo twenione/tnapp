@@ -92,10 +92,27 @@ def contract_probe(cli: Path) -> int:
 def replay(root: Path, cli: Path, strict: bool, overrides: list[str] | None = None) -> int:
     if not (root / "events.ndjson").is_file() or not (root / "route.gpx").is_file():
         raise FileNotFoundError(f"session requires events.ndjson and route.gpx: {root}")
+    events = [json.loads(line) for line in (root / "events.ndjson").read_text(encoding="utf-8").splitlines() if line.strip()]
+    loc_events = [event for event in events if event.get("stream") == "loc"]
+    guide_events = [event for event in events if event.get("stream") == "guide"]
+    if len(loc_events) != len(guide_events):
+        print(f"FAIL: loc event count {len(loc_events)} does not match guide event count {len(guide_events)}")
+        return 1
     trace = invoke(cli, root, overrides=overrides)
     comparisons = [item for item in trace if item.get("kind") == "guide"]
+    if len(comparisons) != len(guide_events):
+        print(f"FAIL: engine comparison count {len(comparisons)} does not match guide event count {len(guide_events)}")
+        return 1
     mismatches: list[str] = []
-    for item in comparisons:
+    for index, item in enumerate(comparisons):
+        expected_source_seq = loc_events[index].get("seq")
+        if item.get("source_seq") != expected_source_seq:
+            mismatches.append(f"src_seq index {index}")
+            print(f"guide index={index} MISMATCH source_seq={item.get('source_seq')} expected={expected_source_seq}")
+        recorded_source_seq = item.get("recorded_src_seq")
+        if recorded_source_seq is not None and recorded_source_seq != expected_source_seq:
+            mismatches.append(f"recorded src_seq index {index}")
+            print(f"guide index={index} MISMATCH recorded_src_seq={recorded_source_seq} expected={expected_source_seq}")
         recorded = item.get("recorded_decision", "")
         actual = item.get("decision", "")
         status = "MATCH" if recorded == actual else "MISMATCH"

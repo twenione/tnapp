@@ -8,6 +8,7 @@ data class RouteStartupUpdate(
     val observation: RouteDirectionObservation,
     val orientation: RouteOrientationResult? = null,
     val replayLocations: List<TrailLocation> = emptyList(),
+    val replaySourceSeqs: List<Long?> = emptyList(),
 )
 
 /** Buffers initial fixes until the route direction is known, without dropping them. */
@@ -18,13 +19,15 @@ class RouteStartupCoordinator(
 ) {
     private val originalRoute = RouteModel.fromGpx(originalGpxXml, config)
     private val observer = RouteDirectionObserver(originalRoute, config, startupAtMillis = startupAtMillis)
-    private val bufferedLocations = mutableListOf<TrailLocation>()
+    private data class BufferedLocation(val location: TrailLocation, val sourceSeq: Long?)
+
+    private val bufferedLocations = mutableListOf<BufferedLocation>()
     private val gpxXml = originalGpxXml
     private var resolved = false
 
-    fun accept(location: TrailLocation, observedAtMillis: Long = location.timestampMillis): RouteStartupUpdate {
+    fun accept(location: TrailLocation, observedAtMillis: Long = location.timestampMillis, sourceSeq: Long? = null): RouteStartupUpdate {
         check(!resolved) { "route startup direction is already resolved" }
-        bufferedLocations += location
+        bufferedLocations += BufferedLocation(location, sourceSeq)
         return toUpdate(observer.observe(location, observedAtMillis))
     }
 
@@ -55,7 +58,7 @@ class RouteStartupCoordinator(
             reason = reason,
             observedNetDisplacementMeters = kotlin.math.abs(observation.netDisplacementMeters),
             observationElapsedSeconds = observation.elapsedSeconds,
-            fallbackLocation = if (observation.direction == null) bufferedLocations.lastOrNull() else null,
+            fallbackLocation = if (observation.direction == null) bufferedLocations.lastOrNull()?.location else null,
         )
         val replay = bufferedLocations.toList()
         bufferedLocations.clear()
@@ -63,7 +66,8 @@ class RouteStartupCoordinator(
             stage = RoutePreparationStage.DIRECTION_CONFIRMED,
             observation = observation,
             orientation = orientation,
-            replayLocations = replay,
+            replayLocations = replay.map { it.location },
+            replaySourceSeqs = replay.map { it.sourceSeq },
         )
     }
 }

@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Validate the v0 session envelope and append-only event stream."""
+"""Validate the v0 session envelope and append-only event stream.
+
+The D-040 time contract is explicit: ``t`` is the event timestamp and must
+be monotonic within each stream; ``seq`` is append order and must increase
+strictly across the complete file.  A cross-stream timestamp ordering is not
+required because providers can flush buffered streams at different times.
+"""
 from __future__ import annotations
 
 import json
@@ -23,6 +29,7 @@ STREAM_REQUIRED = {
 }
 FORBIDDEN_KEY = re.compile(r"(?:imei|android_id|advertising_id|mac_address|email|phone|account_id)", re.I)
 UUID4 = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$")
+GIT_CODE_HASH = re.compile(r"^git:(?:[0-9a-fA-F]{40}(?:-dirty)?|unknown)$")
 
 
 def get(obj: Any, dotted: str) -> Any:
@@ -76,6 +83,9 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
         errors.append(f"manifest.json: session_id must be a UUID: {session_id!r}")
     if manifest.get("privacy", {}).get("upload_default") not in (False, None):
         errors.append("manifest.json: upload_default must be false")
+    code_hash = get(manifest, "app.code_hash")
+    if isinstance(code_hash, str) and not code_hash.startswith("sha256:") and not GIT_CODE_HASH.fullmatch(code_hash):
+        errors.append("manifest.json: app.code_hash must use sha256: or git: prefix")
     for hit in forbidden(manifest):
         errors.append(f"manifest.json: forbidden identifying key: {hit}")
 
@@ -89,7 +99,9 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
         errors.append(f"events.ndjson: read error: {exc}")
         return errors, warnings, 0
     previous_seq = -1
-    previous_t: float | None = None
+    previous_t_by_stream: dict[str, float] = {}
+    loc_sequences: list[int] = []
+    guide_events: list[tuple[int, int | None]] = []
     count = 0
     guide_count = 0
     for line_number, raw in enumerate(lines, 1):
@@ -115,10 +127,14 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
             previous_seq = seq
         if not isinstance(timestamp, (int, float)) or isinstance(timestamp, bool):
             errors.append(f"events.ndjson:{line_number}: t must be numeric")
-        elif previous_t is not None and timestamp < previous_t:
-            errors.append(f"events.ndjson:{line_number}: t {timestamp} regresses from {previous_t}")
+        elif not isinstance(stream, str):
+            pass
         else:
-            previous_t = float(timestamp)
+            previous_t = previous_t_by_stream.get(stream)
+            if previous_t is not None and timestamp < previous_t:
+                errors.append(f"events.ndjson:{line_number}: [{stream}] t {timestamp} regresses from {previous_t}")
+            else:
+                previous_t_by_stream[stream] = float(timestamp)
         if stream not in STREAM_REQUIRED:
             errors.append(f"events.ndjson:{line_number}: unsupported stream: {stream!r}")
         else:
@@ -127,15 +143,32 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
                     errors.append(f"events.ndjson:{line_number}: [{stream}] missing field: {field}")
             if stream == "guide":
                 guide_count += 1
+                src_seq = event.get("src_seq")
+                if src_seq is not None and (not isinstance(src_seq, int) or isinstance(src_seq, bool)):
+                    errors.append(f"events.ndjson:{line_number}: [guide] src_seq must be integer when present")
+                guide_events.append((line_number, src_seq if isinstance(src_seq, int) and not isinstance(src_seq, bool) else None))
                 reason = event.get("reason")
                 if not isinstance(reason, dict) or not reason.get("rule"):
                     errors.append(f"events.ndjson:{line_number}: guide.reason.rule is required")
+            elif stream == "loc" and isinstance(seq, int) and not isinstance(seq, bool):
+                loc_sequences.append(seq)
         for hit in forbidden(event):
             errors.append(f"events.ndjson:{line_number}: forbidden identifying key: {hit}")
     if count == 0:
         warnings.append("events.ndjson: no events")
     if guide_count == 0:
         warnings.append("events.ndjson: guide stream is empty")
+    src_values = [value for _, value in guide_events if value is not None]
+    if src_values:
+        if len(src_values) != len(guide_events):
+            errors.append("events.ndjson: guide src_seq must be present on every guide event when used")
+        for index, src_seq in enumerate(src_values):
+            if src_seq not in loc_sequences:
+                errors.append(f"events.ndjson: guide src_seq {src_seq} does not reference a loc event")
+            if index and src_seq <= src_values[index - 1]:
+                errors.append(f"events.ndjson: guide src_seq {src_seq} is not strictly increasing")
+        if len(loc_sequences) == len(src_values) and src_values != loc_sequences:
+            errors.append("events.ndjson: guide src_seq does not match loc order")
     return errors, warnings, count
 
 

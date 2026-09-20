@@ -1,0 +1,4 @@
+{"seq":0,"t":0,"stream":"loc","lat":10.0,"lon":20.0,"accuracy":5.0,"provider":"synthetic"}
+{"seq":1,"t":0.1,"stream":"guide","src_seq":0,"decision":"CONTINUE","inputs":{},"reason":{"rule":"fixture"},"state_hash":"sha256:fixture"}
+{"seq":2,"t":1,"stream":"loc","lat":10.0,"lon":20.0,"accuracy":5.0,"provider":"synthetic"}
+{"seq":3,"t":0.9,"stream":"loc","lat":10.0,"lon":20.0,"accuracy":5.0,"provider":"synthetic"}

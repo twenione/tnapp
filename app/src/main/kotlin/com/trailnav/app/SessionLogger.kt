@@ -13,8 +13,8 @@ import java.util.UUID
 /** Structured event sink so the Android service can be exercised without Android in JVM tests. */
 interface SessionEventSink : Closeable {
     fun appendEnvelope(location: TrailLocation, eventStream: String, eventType: String)
-    fun appendLocation(location: TrailLocation)
-    fun appendGuide(location: TrailLocation, result: GuideResult, spokenText: String?)
+    fun appendLocation(location: TrailLocation): Long
+    fun appendGuide(location: TrailLocation, result: GuideResult, spokenText: String?, sourceSeq: Long)
     fun appendSystem(kind: String, details: Map<String, String> = emptyMap())
     fun appendError(kind: String, message: String)
 }
@@ -63,15 +63,14 @@ class JsonlSessionLogger(
               "app":{"version":"${escape(appVersion)}","code_hash":"${escape(codeHash)}"},
               "engine":{"config":{"implementation":"core-guide","config_hash":"${escape(configHash)}"},"rng_seed":0},
               "route":{"gpx_hash":"${escape(routeHash)}"},
-              "clock":{"monotonic_source":"location-frame-timestamp"},
+              "clock":{"monotonic_source":"location-frame-timestamp","timestamp_unit":"seconds","t_order":"per-stream","seq_order":"append"},
               "privacy":{"upload_default":false}
             }""".trimIndent() + "\n",
             StandardCharsets.UTF_8,
         )
     }
 
-    override fun appendLocation(location: TrailLocation) {
-        append(
+    override fun appendLocation(location: TrailLocation): Long = append(
             stream = "loc",
             timestamp = location.timestampMillis / 1000.0,
             fields = linkedMapOf(
@@ -83,13 +82,13 @@ class JsonlSessionLogger(
                 "provider" to location.provider,
             ),
         )
-    }
 
-    override fun appendGuide(location: TrailLocation, result: GuideResult, spokenText: String?) {
+    override fun appendGuide(location: TrailLocation, result: GuideResult, spokenText: String?, sourceSeq: Long) {
         append(
             stream = "guide",
             timestamp = location.timestampMillis / 1000.0,
             fields = linkedMapOf(
+                "src_seq" to sourceSeq,
                 "inputs" to linkedMapOf(
                     "timestamp" to location.timestampMillis,
                     "lat" to location.latitude,
@@ -127,11 +126,13 @@ class JsonlSessionLogger(
         append("err", System.currentTimeMillis() / 1000.0, linkedMapOf("kind" to kind, "message" to message))
     }
 
-    private fun append(stream: String, timestamp: Double, fields: Map<String, Any?>) {
-        val event = linkedMapOf<String, Any?>("seq" to sequence++, "t" to timestamp, "stream" to stream)
+    private fun append(stream: String, timestamp: Double, fields: Map<String, Any?>): Long {
+        val eventSeq = sequence++
+        val event = linkedMapOf<String, Any?>("seq" to eventSeq, "t" to timestamp, "stream" to stream)
         event.putAll(fields)
         writer.append(toJson(event)).append('\n')
         writer.flush()
+        return eventSeq
     }
 
     override fun close() {

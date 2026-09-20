@@ -89,7 +89,13 @@ jobs:
         with:
           gradle-version: '8.14'
       - run: gradle :replay:installDist
-      - run: python tools/replay.py testdata/sessions/golden/golden_engine --cli replay/build/install/replay/bin/replay --strict
+      - name: Replay golden and log-shape fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          for session in testdata/sessions/golden/*; do
+            python tools/replay.py "$session" --cli replay/build/install/replay/bin/replay --strict
+          done
 
   negative-control:
     runs-on: ubuntu-latest
@@ -114,6 +120,7 @@ jobs:
           done
           for fixture in \
             testdata/violations/session_seq_regress \
+            testdata/violations/session_stream_time_regress \
             testdata/violations/session_missing_manifest; do
             set +e
             python tools/validate_session.py "$fixture"
