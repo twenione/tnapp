@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from replay import invoke, resolve_cli
+from replay import invoke, invoke_subsecond_probe, resolve_cli
 
 BASELINE = tuple(
     f"{index:02d}_{name}"
@@ -201,6 +201,7 @@ def contract_probe(cli: Path) -> None:
         east30 = 30.0 / meters_per_degree_lon
         locations = [
             {"seq": index, "t": timestamp, "stream": "loc", "lat": 10.0005, "lon": 20.0 + east30, "accuracy": 5.0, "speed_mps": 1.0, "bearing_deg": 0.0, "provider": "fixture"}
+            # Session event timestamps are seconds; EngineCli converts them to epoch milliseconds.
             for index, timestamp in enumerate((0, 10, 21))
         ]
         (root / "events.ndjson").write_text("\n".join(json.dumps(item) for item in locations) + "\n", encoding="utf-8")
@@ -219,6 +220,9 @@ def contract_probe(cli: Path) -> None:
         config_decisions = [item.get("decision") for item in config_trace]
         if any(decision == "OFF_ROUTE" for decision in config_decisions):
             raise AssertionError(f"config contract failed: {config_decisions}")
+        subsecond_decisions = [item.get("decision") for item in invoke_subsecond_probe(cli)]
+        if subsecond_decisions != ["CONTINUE", "CONTINUE", "CONTINUE"]:
+            raise AssertionError(f"elapsed-ms subsecond contract failed: {subsecond_decisions}")
 
 
 def main() -> int:

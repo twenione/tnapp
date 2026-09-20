@@ -2,6 +2,7 @@ package com.trailnav.core
 
 /** A single location sample supplied by the host application. */
 data class SensorFrame(
+    /** Epoch milliseconds; a timestamp earlier than the previous sample contributes zero elapsed time. */
     val timestamp: Long,
     val lat: Double,
     val lon: Double,

@@ -18,17 +18,17 @@ class GuidanceTest {
     val filtered = guide(state, SensorFrame(0, 10.0, 20.0, 51f, 1f, null), config)
     check(filtered.guidance == null && filtered.nextState.sessionStartTimestamp == 0L)
     state = guide(state, SensorFrame(0, 10.0, 20.0, 5f, 1f, null), config).nextState
-    val far1 = guide(state, SensorFrame(1, 10.0005, 20.0, 5f, 1f, null), config)
+    val far1 = guide(state, SensorFrame(1_000, 10.0005, 20.0, 5f, 1f, null), config)
     check(!far1.nextState.offRoute)
-    val far2 = guide(far1.nextState, SensorFrame(3, 10.0005, 20.0, 5f, 1f, null), config)
+    val far2 = guide(far1.nextState, SensorFrame(3_000, 10.0005, 20.0, 5f, 1f, null), config)
     check(far2.nextState.offRoute && far2.guidance is Guidance.OffRoute)
-    val near1 = guide(far2.nextState, SensorFrame(4, 10.0, 20.0005, 5f, 1f, null), config)
+    val near1 = guide(far2.nextState, SensorFrame(4_000, 10.0, 20.0005, 5f, 1f, null), config)
     check(near1.nextState.offRoute)
-    val near2 = guide(near1.nextState, SensorFrame(6, 10.0, 20.0005, 5f, 1f, null), config)
+    val near2 = guide(near1.nextState, SensorFrame(6_000, 10.0, 20.0005, 5f, 1f, null), config)
     check(!near2.nextState.offRoute)
     val middle = guide(GuideState.initial(route), SensorFrame(0, 10.0, 20.001, 5f, 1f, null), config)
     check(middle.guidance == null)
-    val end = guide(middle.nextState, SensorFrame(1, 10.0, 20.002, 5f, 1f, null), config)
+    val end = guide(middle.nextState, SensorFrame(1_000, 10.0, 20.002, 5f, 1f, null), config)
     check(end.guidance == Guidance.Arrived && end.nextState.arrived)
     }
 
@@ -96,17 +96,71 @@ class GuidanceTest {
 
         val beforeMinimum = guide(
             immediate.nextState,
-            nearEnd.copy(timestamp = 5L),
+            nearEnd.copy(timestamp = 5_000L),
             config,
         )
         check(beforeMinimum.guidance != Guidance.Arrived)
 
         val afterMinimum = guide(
             beforeMinimum.nextState,
-            nearEnd.copy(timestamp = 10L),
+            nearEnd.copy(timestamp = 10_000L),
             config,
         )
         check(afterMinimum.guidance == Guidance.Arrived)
         check(afterMinimum.nextState.arrived)
+    }
+
+    @Test
+    fun subsecondOffRouteReannounceDoesNotBypassDwell() {
+        val route = RouteModel.fromGpx("""<gpx><trk><trkseg><trkpt lat="10.0" lon="20.0"/><trkpt lat="10.002" lon="20.0"/></trkseg></trk></gpx>""")
+        val config = GuideConfig(offRouteEnterDwellSeconds = 0.0, reannounceIntervalSeconds = 60.0)
+        val metersPerDegreeLon = 6371008.8 * cos(Math.toRadians(10.0)) * Math.PI / 180.0
+        val east30Meters = 30.0 / metersPerDegreeLon
+        val first = guide(GuideState.initial(route), SensorFrame(0L, 10.0005, 20.0 + east30Meters, 5f, 1f, null), config)
+        check(first.guidance is Guidance.OffRoute)
+        val second = guide(first.nextState, SensorFrame(999L, 10.0005, 20.0 + east30Meters, 5f, 1f, null), config)
+        check(second.guidance == null) { "999 ms must not satisfy a 60 second reannounce interval" }
+    }
+
+    @Test
+    fun recoveryDwellDoesNotExitAfterSubsecondGap() {
+        val route = RouteModel.fromGpx("""<gpx><trk><trkseg><trkpt lat="10.0" lon="20.0"/><trkpt lat="10.002" lon="20.0"/></trkseg></trk></gpx>""")
+        val config = GuideConfig(offRouteEnterDwellSeconds = 0.0, offRouteExitDwellSeconds = 10.0)
+        val metersPerDegreeLon = 6371008.8 * cos(Math.toRadians(10.0)) * Math.PI / 180.0
+        val east30Meters = 30.0 / metersPerDegreeLon
+        val first = guide(GuideState.initial(route), SensorFrame(0L, 10.0005, 20.0 + east30Meters, 5f, 1f, null), config)
+        check(first.nextState.offRoute)
+        val recovery = guide(first.nextState, SensorFrame(999L, 10.0005, 20.0, 5f, 1f, null), config)
+        check(recovery.nextState.offRoute) { "999 ms must not satisfy a 10 second recovery dwell" }
+    }
+
+    @Test
+    fun reverseWarningDoesNotTriggerAfterSubsecondGap() {
+        val route = RouteModel.fromGpx("""<gpx><trk><trkseg><trkpt lat="10.0" lon="20.0"/><trkpt lat="10.002" lon="20.0"/></trkseg></trk></gpx>""")
+        val config = GuideConfig(reverseWarningDwellSeconds = 60.0)
+        val first = guide(GuideState.initial(route), SensorFrame(0L, 10.0015, 20.0, 5f, 1f, null), config)
+        val second = guide(first.nextState, SensorFrame(997L, 10.0010, 20.0, 5f, 1f, null), config)
+        val third = guide(second.nextState, SensorFrame(1_994L, 10.0005, 20.0, 5f, 1f, null), config)
+        check(third.guidance !is Guidance.Status) { "997 ms must not satisfy a 60 second reverse warning dwell" }
+    }
+
+    @Test
+    fun enterDwellDoesNotTriggerAfterSubsecondGap() {
+        val route = RouteModel.fromGpx("""<gpx><trk><trkseg><trkpt lat="10.0" lon="20.0"/><trkpt lat="10.002" lon="20.0"/></trkseg></trk></gpx>""")
+        val config = GuideConfig(offRouteEnterDwellSeconds = 20.0)
+        val metersPerDegreeLon = 6371008.8 * cos(Math.toRadians(10.0)) * Math.PI / 180.0
+        val east30Meters = 30.0 / metersPerDegreeLon
+        val first = guide(GuideState.initial(route), SensorFrame(0L, 10.0005, 20.0 + east30Meters, 5f, 1f, null), config)
+        val second = guide(first.nextState, SensorFrame(944L, 10.0005, 20.0 + east30Meters, 5f, 1f, null), config)
+        check(!second.nextState.offRoute) { "944 ms must not satisfy a 20 second enter dwell" }
+    }
+
+    @Test
+    fun arrivalGuardDoesNotTriggerAfterSubsecondGap() {
+        val route = RouteModel.fromGpx("""<gpx><trk><trkseg><trkpt lat="10.0" lon="20.0"/><trkpt lat="10.0" lon="20.002"/></trkseg></trk></gpx>""")
+        val nearEnd = SensorFrame(0L, 10.0, 20.0019, 5f, 1f, null)
+        val first = guide(GuideState.initial(route), nearEnd, GuideConfig())
+        val second = guide(first.nextState, nearEnd.copy(timestamp = 944L), GuideConfig())
+        check(second.guidance != Guidance.Arrived) { "944 ms must not satisfy a 10 second startup guard" }
     }
 }

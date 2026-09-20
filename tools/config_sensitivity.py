@@ -7,7 +7,7 @@ import json
 import re
 from pathlib import Path
 
-from replay import invoke, resolve_cli
+from replay import invoke, invoke_subsecond_probe, resolve_cli
 
 REQUIRED = (
     "offRouteEnterDistMeters",
@@ -63,6 +63,9 @@ def main() -> int:
     assert_coverage(fields, declared)
     if set(REQUIRED) - declared:
         raise AssertionError("a required sensitivity field is absent from GuideConfig declarations")
+    subsecond_decisions = [item.get("decision") for item in invoke_subsecond_probe(resolve_cli(args.cli))]
+    if subsecond_decisions != ["CONTINUE", "CONTINUE", "CONTINUE"]:
+        raise AssertionError(f"elapsed-ms subsecond contract failed: {subsecond_decisions}")
     cli = resolve_cli(args.cli)
     baseline = engine_output(cli, {})
     probes = {

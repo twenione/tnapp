@@ -11,7 +11,7 @@ class MatchingTest {
     val config = GuideConfig()
     val first = RouteMatcher.nearest(route, SensorFrame(0, 10.0, 20.0005, 5f, 1f, null), null, config)
     check(first != null)
-    val returnFrame = SensorFrame(1, 10.001, 20.0005, 5f, 1f, null)
+    val returnFrame = SensorFrame(1_000, 10.001, 20.0005, 5f, 1f, null)
     val bounded = RouteMatcher.nearest(route, returnFrame, route.totalLengthMeters * 0.65, config)
     check(bounded != null && bounded.projectedMeters > route.totalLengthMeters * 0.5)
     val boundedMatch = requireNotNull(bounded)

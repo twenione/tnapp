@@ -57,6 +57,17 @@ def invoke_probe(cli: Path, overrides: list[str] | None = None) -> list[dict]:
     return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
 
 
+def invoke_subsecond_probe(cli: Path) -> list[dict]:
+    """Run the compiled engine's subsecond timestamp regression probe."""
+    command = [str(cli), "--probe-subsecond"]
+    if cli.suffix.lower() in {".bat", ".cmd"}:
+        command = ["cmd", "/c", *command]
+    result = subprocess.run(command, check=False, capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"engine exited {result.returncode}")
+    return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+
+
 def contract_probe(cli: Path) -> int:
     """Check D-033 dwell and caller-config contracts through the real CLI."""
     dwell = invoke_probe(cli, ["offRouteEnterDwellSeconds=20"])
@@ -69,6 +80,10 @@ def contract_probe(cli: Path) -> int:
     config_decisions = [item.get("decision") for item in config]
     if any(decision == "OFF_ROUTE" for decision in config_decisions):
         print(f"FAIL D-033 config contract actual={config_decisions}")
+        return 1
+    subsecond_decisions = [item.get("decision") for item in invoke_subsecond_probe(cli)]
+    if subsecond_decisions != ["CONTINUE", "CONTINUE", "CONTINUE"]:
+        print(f"FAIL elapsed-ms subsecond contract actual={subsecond_decisions}")
         return 1
     print("D-033 replay contract=PASS")
     return 0
