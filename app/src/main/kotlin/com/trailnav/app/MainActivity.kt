@@ -139,6 +139,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        SessionExportCatalog.cleanupExports(this)
         // Hardware volume keys should control the stream used by navigation
         // speech while this activity is in the foreground.
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
@@ -168,6 +169,10 @@ class MainActivity : AppCompatActivity() {
         val import = Button(this).apply {
             text = "경로 파일 가져오기"
             setOnClickListener { openGpx.launch(ROUTE_PICKER_MIME_TYPES) }
+        }
+        val export = Button(this).apply {
+            text = "기록 내보내기"
+            setOnClickListener { startActivity(Intent(this@MainActivity, SessionExportActivity::class.java)) }
         }
         startButton = Button(this).apply {
             text = "안내 시작"
@@ -248,6 +253,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(header)
         root.addView(routeRibbon, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (250 * resources.displayMetrics.density).toInt()))
         root.addView(import)
+        root.addView(export)
         root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(mapButton)
         root.addView(onRouteVoiceLabel)
@@ -434,7 +440,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun copyRouteToMapCache(route: SavedRoute, uri: Uri): Uri? {
         return try {
-            val shared = java.io.File(cacheDir, "shared").apply { mkdirs() }
+            // Keep the provider surface limited to cache/exports, shared with
+            // the session ZIP exporter. The raw SAF URI is always attempted first.
+            val shared = java.io.File(cacheDir, "exports/map").apply { mkdirs() }
             val safeName = route.displayName.substringAfterLast('/').ifBlank { "route.gpx" }
             val target = java.io.File(shared, safeName)
             contentResolver.openInputStream(uri)?.use { input ->
