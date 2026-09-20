@@ -10,10 +10,9 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
-import android.provider.Settings
+import android.provider.OpenableColumns
 import android.view.Gravity
 import android.view.ViewGroup
-import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ListView
@@ -32,14 +31,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private lateinit var gpsIndicator: TextView
     private lateinit var routeRibbon: RouteRibbonView
-    private lateinit var routes: ArrayAdapter<String>
+    private lateinit var routeListAdapter: RouteListAdapter
+    private val savedRoutes = mutableListOf<SavedRoute>()
     private lateinit var startButton: Button
     private lateinit var pauseResumeButton: Button
     private lateinit var endButton: Button
+    private lateinit var mapButton: Button
     private lateinit var navigationState: TextView
     private lateinit var onRouteVoiceLabel: TextView
     private var selectedRoute: Uri? = null
     private var selectedRouteSummary: String? = null
+    private var selectedSavedRoute: SavedRoute? = null
     private var onRouteVoiceEnabled = false
     private var onRouteVoiceIntervalSeconds = 0L
 
@@ -97,22 +99,34 @@ class MainActivity : AppCompatActivity() {
     private val openGpx = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
         try {
-            val summary = contentResolver.openInputStream(uri)?.use { stream ->
+            val imported = contentResolver.openInputStream(uri)?.use { stream ->
                 val bytes = stream.readBytes()
                 val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 0xff) }
                 // Parse once at import time so malformed files are rejected before starting the service.
-                com.trailnav.core.RouteModel.fromGpx(bytes.toString(Charsets.UTF_8))
-                "${uri.lastPathSegment ?: "GPX 경로"} · sha256:${hash.take(12)}"
+                val route = com.trailnav.core.RouteModel.fromGpx(bytes.toString(Charsets.UTF_8))
+                val displayName = contentResolver.query(
+                    uri,
+                    arrayOf(OpenableColumns.DISPLAY_NAME),
+                    null,
+                    null,
+                    null,
+                )?.use { cursor ->
+                    val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (column >= 0 && cursor.moveToFirst()) cursor.getString(column) else null
+                }?.takeIf { it.isNotBlank() }
+                    ?: uri.lastPathSegment?.takeIf { it.isNotBlank() }
+                    ?: "GPX 경로"
+                SavedRoute(uri.toString(), displayName, hash, route.totalLengthMeters, System.currentTimeMillis())
             } ?: throw IllegalStateException("GPX를 읽을 수 없습니다")
             try {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (_: SecurityException) {
                 // Some providers do not offer persistable grants; the current session can still use the URI.
             }
-            selectedRoute = uri
-            selectedRouteSummary = summary
-            routes.add(summary)
-            status.text = "경로를 선택했습니다"
+            val selected = RouteCatalog.upsert(savedRoutes, imported)
+            RouteCatalog.save(this, savedRoutes, selected.uri)
+            selectSavedRoute(selected)
+            routeListAdapter.notifyDataSetChanged()
         } catch (_: Exception) {
             // The wildcard picker can show provider files whose MIME type is
             // generic or unknown. Keep the picker broad, then reject invalid
@@ -181,10 +195,26 @@ class MainActivity : AppCompatActivity() {
                     .show()
             }
         }
-        routes = ArrayAdapter(this, android.R.layout.simple_list_item_activated_1, mutableListOf())
+        routeListAdapter = RouteListAdapter(this, savedRoutes)
         val list = ListView(this).apply {
-            adapter = routes
+            adapter = routeListAdapter
             choiceMode = ListView.CHOICE_MODE_SINGLE
+            setOnItemClickListener { _, _, position, _ -> selectSavedRoute(routeListAdapter.getItem(position)) }
+            setOnItemLongClickListener { _, _, position, _ ->
+                val route = routeListAdapter.getItem(position)
+                androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("목록에서 제거")
+                    .setMessage("${route.displayName}을(를) 목록에서 제거하시겠습니까?")
+                    .setNegativeButton("취소", null)
+                    .setPositiveButton("제거") { _, _ -> removeSavedRoute(route) }
+                    .show()
+                true
+            }
+        }
+        mapButton = Button(this).apply {
+            text = "지도에서 보기"
+            isEnabled = false
+            setOnClickListener { openSelectedRouteInMap() }
         }
         onRouteVoiceLabel = TextView(this).apply {
             text = "경로 위 주기 음성: 끄기"
@@ -218,6 +248,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(routeRibbon, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (250 * resources.displayMetrics.density).toInt()))
         root.addView(import)
         root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(mapButton)
         root.addView(onRouteVoiceLabel)
         root.addView(onRouteVoicePresets)
         navigationState = TextView(this).apply {
@@ -244,6 +275,7 @@ class MainActivity : AppCompatActivity() {
         }
         ViewCompat.requestApplyInsets(root)
         restoreUiState(savedInstanceState)
+        restoreRouteCatalog()
         renderVoiceLabel()
         applyServiceState(NavigationPreferences.state(this))
     }
@@ -292,12 +324,6 @@ class MainActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(KEY_SELECTED_ROUTE_URI, selectedRoute?.toString())
         outState.putString(KEY_SELECTED_ROUTE_SUMMARY, selectedRouteSummary)
-        outState.putStringArrayList(
-            KEY_ROUTE_SUMMARIES,
-            ArrayList<String>().apply {
-                for (index in 0 until routes.count) add(routes.getItem(index).orEmpty())
-            },
-        )
         outState.putString(KEY_STATUS, status.text.toString())
         outState.putBoolean(KEY_ON_ROUTE_VOICE_ENABLED, onRouteVoiceEnabled)
         outState.putLong(KEY_ON_ROUTE_VOICE_INTERVAL_SECONDS, onRouteVoiceIntervalSeconds)
@@ -305,20 +331,78 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun restoreUiState(savedInstanceState: Bundle?) {
-        if (savedInstanceState == null) return
-        selectedRoute = savedInstanceState.getString(KEY_SELECTED_ROUTE_URI)?.let(Uri::parse)
-        selectedRouteSummary = savedInstanceState.getString(KEY_SELECTED_ROUTE_SUMMARY)
-        onRouteVoiceEnabled = savedInstanceState.getBoolean(KEY_ON_ROUTE_VOICE_ENABLED, false)
-        onRouteVoiceIntervalSeconds = savedInstanceState.getLong(KEY_ON_ROUTE_VOICE_INTERVAL_SECONDS, 0L)
-        savedInstanceState.getStringArrayList(KEY_ROUTE_SUMMARIES)?.let { summaries ->
-            routes.clear()
-            routes.addAll(summaries)
+        if (savedInstanceState != null) {
+            selectedRoute = savedInstanceState.getString(KEY_SELECTED_ROUTE_URI)?.let(Uri::parse)
+            selectedRouteSummary = savedInstanceState.getString(KEY_SELECTED_ROUTE_SUMMARY)
+            onRouteVoiceEnabled = savedInstanceState.getBoolean(KEY_ON_ROUTE_VOICE_ENABLED, false)
+            onRouteVoiceIntervalSeconds = savedInstanceState.getLong(KEY_ON_ROUTE_VOICE_INTERVAL_SECONDS, 0L)
+            savedInstanceState.getString(KEY_STATUS)?.let { status.text = it }
         }
-        if (routes.count == 0) selectedRouteSummary?.let(routes::add)
-        savedInstanceState.getString(KEY_STATUS)?.let { status.text = it }
         val storedVoice = NavigationPreferences.voice(this)
         onRouteVoiceEnabled = storedVoice.enabled
         onRouteVoiceIntervalSeconds = storedVoice.intervalSeconds
+    }
+
+    private fun restoreRouteCatalog() {
+        savedRoutes.clear()
+        savedRoutes.addAll(RouteCatalog.load(this))
+        routeListAdapter.notifyDataSetChanged()
+        val lastUri = RouteCatalog.lastSelectedUri(this)
+        val restored = savedRoutes.firstOrNull { it.uri == lastUri }
+            ?: selectedRoute?.let { uri -> savedRoutes.firstOrNull { it.uri == uri.toString() } }
+        if (restored != null) selectSavedRoute(restored)
+    }
+
+    private fun selectSavedRoute(route: SavedRoute) {
+        selectedSavedRoute = route
+        selectedRoute = Uri.parse(route.uri)
+        selectedRouteSummary = RouteCatalog.details(route)
+        RouteCatalog.save(this, savedRoutes, route.uri)
+        val readable = RouteCatalog.isReadable(this, route)
+        mapButton.isEnabled = readable
+        if (readable) {
+            status.text = "경로를 선택했습니다"
+        } else {
+            status.text = "이 경로의 파일 권한이 없습니다. 다시 가져오기 필요"
+        }
+    }
+
+    private fun removeSavedRoute(route: SavedRoute) {
+        val remaining = savedRoutes.filterNot { it.uri == route.uri }
+        savedRoutes.clear()
+        savedRoutes.addAll(remaining)
+        val replacement = remaining.maxByOrNull { it.addedAt }
+        RouteCatalog.save(this, savedRoutes, replacement?.uri)
+        routeListAdapter.notifyDataSetChanged()
+        if (selectedSavedRoute?.uri == route.uri) {
+            selectedSavedRoute = replacement
+            selectedRoute = replacement?.let { Uri.parse(it.uri) }
+            selectedRouteSummary = replacement?.let(RouteCatalog::details)
+            mapButton.isEnabled = replacement?.let { RouteCatalog.isReadable(this, it) } == true
+            status.text = if (replacement == null) "경로를 가져오세요" else "경로를 선택했습니다"
+        }
+    }
+
+    private fun openSelectedRouteInMap() {
+        val route = selectedSavedRoute ?: return
+        val uri = selectedRoute ?: return
+        if (!RouteCatalog.isReadable(this, route)) {
+            status.text = "이 경로의 파일 권한이 없습니다. 다시 가져오기 필요"
+            return
+        }
+        val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+            data = uri
+            type = "application/gpx+xml"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            clipData = android.content.ClipData.newRawUri("", uri)
+        }
+        try {
+            startActivity(Intent.createChooser(viewIntent, "지도 앱 선택"))
+        } catch (_: android.content.ActivityNotFoundException) {
+            status.text = "GPX를 열 수 있는 지도 앱이 없습니다"
+        } catch (_: SecurityException) {
+            status.text = "GPX를 열 수 있는 지도 앱이 없습니다"
+        }
     }
 
     private fun renderVoiceLabel() {
@@ -392,6 +476,12 @@ class MainActivity : AppCompatActivity() {
             status.text = "먼저 GPX 경로를 가져오세요"
             return
         }
+        val savedRoute = selectedSavedRoute
+        if (savedRoute == null || !RouteCatalog.isReadable(this, savedRoute)) {
+            status.text = "이 경로의 파일 권한이 없습니다. 다시 가져오기 필요"
+            mapButton.isEnabled = false
+            return
+        }
         routeRibbon.updatePreparation(RoutePreparationStage.PREPARING)
         val voice = NavigationPreferences.voice(this)
         val intent = Intent(this, TrailForegroundService::class.java).putExtra(
@@ -406,7 +496,6 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val KEY_SELECTED_ROUTE_URI = "selected_route_uri"
         private const val KEY_SELECTED_ROUTE_SUMMARY = "selected_route_summary"
-        private const val KEY_ROUTE_SUMMARIES = "route_summaries"
         private const val KEY_STATUS = "status"
         private const val KEY_ON_ROUTE_VOICE_ENABLED = "on_route_voice_enabled"
         private const val KEY_ON_ROUTE_VOICE_INTERVAL_SECONDS = "on_route_voice_interval_seconds"
