@@ -5,7 +5,7 @@
   "app": {
     "version": "0.1.0",
     "build": 0,
-    "code_hash": "sha256:d0794332613c046e5c225fdf3b1eeea8e4c494e7bacf9163b4f818050f7702f0"
+    "code_hash": "sha256:7a6aa4cb6c21ec2e3de8cad395a7077d3459efb6ffb8202acbc2801339c47b62"
   },
   "engine": {
     "config": {
@@ -21,7 +21,14 @@
     "point_count": 31
   },
   "clock": {
-    "monotonic_source": "synthetic-sequence"
+    "monotonic_source": "synthetic-sequence",
+    "timestamp_unit": "seconds",
+    "frame_intervals_seconds": [
+      0.944,
+      0.997,
+      0.95,
+      0.999
+    ]
   },
   "privacy": {
     "upload_default": false

@@ -21,7 +21,14 @@
     "point_count": 260
   },
   "clock": {
-    "monotonic_source": "synthetic-sequence"
+    "monotonic_source": "synthetic-sequence",
+    "timestamp_unit": "seconds",
+    "frame_intervals_seconds": [
+      0.944,
+      0.997,
+      0.95,
+      0.999
+    ]
   },
   "privacy": {
     "upload_default": false
