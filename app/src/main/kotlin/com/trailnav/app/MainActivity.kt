@@ -33,6 +33,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var gpsIndicator: TextView
     private lateinit var routeRibbon: RouteRibbonView
     private lateinit var routes: ArrayAdapter<String>
+    private lateinit var startButton: Button
+    private lateinit var pauseResumeButton: Button
+    private lateinit var endButton: Button
+    private lateinit var navigationState: TextView
+    private lateinit var onRouteVoiceLabel: TextView
     private var selectedRoute: Uri? = null
     private var selectedRouteSummary: String? = null
     private var onRouteVoiceEnabled = false
@@ -40,6 +45,11 @@ class MainActivity : AppCompatActivity() {
 
     private val ribbonReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: android.content.Context, intent: Intent) {
+            if (intent.action == TrailForegroundService.ACTION_SERVICE_STATE_UPDATE) {
+                applyServiceState(intent.getStringExtra(TrailForegroundService.EXTRA_SERVICE_STATE)
+                    ?: NavigationPreferences.STATE_IDLE)
+                return
+            }
             if (intent.action == TrailForegroundService.ACTION_ROUTE_PREPARATION_UPDATE) {
                 routeRibbon.updatePreparation(
                     RoutePreparationStage.fromWire(
@@ -144,16 +154,31 @@ class MainActivity : AppCompatActivity() {
             text = "경로 파일 가져오기"
             setOnClickListener { openGpx.launch(ROUTE_PICKER_MIME_TYPES) }
         }
-        val start = Button(this).apply {
+        startButton = Button(this).apply {
             text = "안내 시작"
             setOnClickListener { ensurePermissionAndStart() }
         }
-        val stop = Button(this).apply {
-            text = "안내 중지"
+        pauseResumeButton = Button(this).apply {
+            text = "안내 일시중지"
             setOnClickListener {
-                stopService(Intent(this@MainActivity, TrailForegroundService::class.java))
-                routeRibbon.updatePreparation(RoutePreparationStage.PREPARING)
-                status.text = "안내를 중지했습니다"
+                if (NavigationPreferences.state(this@MainActivity) == NavigationPreferences.STATE_PAUSED) {
+                    sendServiceAction(TrailForegroundService.ACTION_RESUME_GUIDANCE, "ui")
+                } else {
+                    sendServiceAction(TrailForegroundService.ACTION_PAUSE_GUIDANCE, "ui")
+                }
+            }
+        }
+        endButton = Button(this).apply {
+            text = "안내 종료"
+            setOnClickListener {
+                androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("안내 종료")
+                    .setMessage("안내를 종료하시겠습니까?")
+                    .setNegativeButton("취소", null)
+                    .setPositiveButton("종료") { _, _ ->
+                        sendServiceAction(TrailForegroundService.ACTION_END_GUIDANCE, "ui")
+                    }
+                    .show()
             }
         }
         routes = ArrayAdapter(this, android.R.layout.simple_list_item_activated_1, mutableListOf())
@@ -161,7 +186,7 @@ class MainActivity : AppCompatActivity() {
             adapter = routes
             choiceMode = ListView.CHOICE_MODE_SINGLE
         }
-        val onRouteVoiceLabel = TextView(this).apply {
+        onRouteVoiceLabel = TextView(this).apply {
             text = "경로 위 주기 음성: 끄기"
         }
         val onRouteVoicePresets = LinearLayout(this).apply {
@@ -178,7 +203,14 @@ class MainActivity : AppCompatActivity() {
                 setOnClickListener {
                     onRouteVoiceIntervalSeconds = intervalSeconds
                     onRouteVoiceEnabled = intervalSeconds > 0L
-                    onRouteVoiceLabel.text = "경로 위 주기 음성: $label"
+                    NavigationPreferences.saveVoice(this@MainActivity, onRouteVoiceEnabled, intervalSeconds)
+                    renderVoiceLabel()
+                    if (NavigationPreferences.state(this@MainActivity) != NavigationPreferences.STATE_IDLE) {
+                        sendServiceAction(
+                            TrailForegroundService.ACTION_UPDATE_ON_ROUTE_VOICE,
+                            "ui",
+                        )
+                    }
                 }
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
@@ -188,8 +220,15 @@ class MainActivity : AppCompatActivity() {
         root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(onRouteVoiceLabel)
         root.addView(onRouteVoicePresets)
-        root.addView(start)
-        root.addView(stop)
+        navigationState = TextView(this).apply {
+            text = "안내 대기 중"
+            textSize = 20f
+            gravity = Gravity.CENTER
+        }
+        root.addView(navigationState)
+        root.addView(startButton)
+        root.addView(pauseResumeButton)
+        root.addView(endButton)
         setContentView(root)
         val horizontalPadding = dp(24f)
         val bottomPadding = dp(24f)
@@ -205,6 +244,8 @@ class MainActivity : AppCompatActivity() {
         }
         ViewCompat.requestApplyInsets(root)
         restoreUiState(savedInstanceState)
+        renderVoiceLabel()
+        applyServiceState(NavigationPreferences.state(this))
     }
 
     private fun updateGpsIndicator(accuracyMeters: Double) {
@@ -232,6 +273,7 @@ class MainActivity : AppCompatActivity() {
         val filter = IntentFilter(TrailForegroundService.ACTION_ROUTE_RIBBON_UPDATE).apply {
             addAction(TrailForegroundService.ACTION_ROUTE_PREPARATION_UPDATE)
             addAction(TrailForegroundService.ACTION_GPS_SIGNAL_UPDATE)
+            addAction(TrailForegroundService.ACTION_SERVICE_STATE_UPDATE)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(ribbonReceiver, filter, RECEIVER_NOT_EXPORTED)
@@ -239,6 +281,7 @@ class MainActivity : AppCompatActivity() {
             @Suppress("DEPRECATION")
             registerReceiver(ribbonReceiver, filter)
         }
+        sendServiceAction(TrailForegroundService.ACTION_QUERY_SERVICE_STATE, "ui")
     }
 
     override fun onStop() {
@@ -273,6 +316,56 @@ class MainActivity : AppCompatActivity() {
         }
         if (routes.count == 0) selectedRouteSummary?.let(routes::add)
         savedInstanceState.getString(KEY_STATUS)?.let { status.text = it }
+        val storedVoice = NavigationPreferences.voice(this)
+        onRouteVoiceEnabled = storedVoice.enabled
+        onRouteVoiceIntervalSeconds = storedVoice.intervalSeconds
+    }
+
+    private fun renderVoiceLabel() {
+        val label = when (onRouteVoiceIntervalSeconds) {
+            60L -> "1분"
+            180L -> "3분"
+            300L -> "5분"
+            else -> "끄기"
+        }
+        onRouteVoiceLabel.text = "경로 위 주기 음성: $label"
+    }
+
+    private fun applyServiceState(state: String) {
+        when (state) {
+            NavigationPreferences.STATE_RUNNING -> {
+                navigationState.text = "안내 중"
+                startButton.isEnabled = false
+                pauseResumeButton.visibility = android.view.View.VISIBLE
+                pauseResumeButton.text = "안내 일시중지"
+                endButton.visibility = android.view.View.VISIBLE
+            }
+            NavigationPreferences.STATE_PAUSED -> {
+                navigationState.text = "안내 일시중지 중"
+                startButton.isEnabled = false
+                pauseResumeButton.visibility = android.view.View.VISIBLE
+                pauseResumeButton.text = "안내 재개"
+                endButton.visibility = android.view.View.VISIBLE
+            }
+            else -> {
+                navigationState.text = "안내 대기 중"
+                startButton.isEnabled = true
+                pauseResumeButton.visibility = android.view.View.GONE
+                endButton.visibility = android.view.View.GONE
+            }
+        }
+        val storedVoice = NavigationPreferences.voice(this)
+        onRouteVoiceEnabled = storedVoice.enabled
+        onRouteVoiceIntervalSeconds = storedVoice.intervalSeconds
+        renderVoiceLabel()
+    }
+
+    private fun sendServiceAction(action: String, source: String) {
+        startService(
+            Intent(this, TrailForegroundService::class.java)
+                .setAction(action)
+                .putExtra(TrailForegroundService.EXTRA_ACTION_SOURCE, source),
+        )
     }
 
     private fun ensurePermissionAndStart() {
@@ -300,11 +393,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
         routeRibbon.updatePreparation(RoutePreparationStage.PREPARING)
+        val voice = NavigationPreferences.voice(this)
         val intent = Intent(this, TrailForegroundService::class.java).putExtra(
             TrailForegroundService.EXTRA_ROUTE_URI,
             route.toString(),
-        ).putExtra(TrailForegroundService.EXTRA_ON_ROUTE_VOICE_ENABLED, onRouteVoiceEnabled)
-            .putExtra(TrailForegroundService.EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS, onRouteVoiceIntervalSeconds)
+        ).putExtra(TrailForegroundService.EXTRA_ON_ROUTE_VOICE_ENABLED, voice.enabled)
+            .putExtra(TrailForegroundService.EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS, voice.intervalSeconds)
         ContextCompat.startForegroundService(this, intent)
         status.text = "안내 서비스를 시작했습니다"
     }
