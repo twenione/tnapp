@@ -79,7 +79,8 @@ class DynamicGuidanceTest {
         check(second.guidance is Guidance.Sunset)
         check(second.reason.details["thresholdMinutes"] == "30")
         val after = guide(second.nextState, atThirtyTwoMinutes.copy(timestamp = epoch("2026-09-21T09:40:00Z")))
-        check(after.guidance !is Guidance.Sunset)
+        check(after.guidance is Guidance.Sunset)
+        check((after.guidance as Guidance.Sunset).afterSunset)
     }
 
     @Test
