@@ -192,7 +192,7 @@ private fun evaluateDynamicGuidance(
     if (milestoneCount > 0) {
         val crossed = (oldMilestoneCount + 1..milestoneCount).toList()
         next = next.copy(consumedMilestoneIndices = next.consumedMilestoneIndices + crossed)
-        if (config.milestoneEnabled && onRoute && forward && eventIntervalOpen && crossed.isNotEmpty()) {
+        if (config.milestoneEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && crossed.isNotEmpty()) {
             val index = crossed.maxOrNull()!!
             candidates += DynamicCandidate(
                 60, "event.milestone", Guidance.Milestone(index * config.milestoneIntervalMeters),

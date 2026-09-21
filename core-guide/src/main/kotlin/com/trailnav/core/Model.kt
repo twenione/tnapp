@@ -84,7 +84,8 @@ data class GuideConfig(
     val elevationRoundMeters: Double = 10.0,
     val waypointAnnounceLeadMeters: Double = 200.0,
     val sunsetAnnounceMinutes: List<Int> = listOf(60, 30),
-    val periodicEnabled: Boolean = true,
+    /** Existing app scheduler defaults to quiet mode; event types can be enabled explicitly. */
+    val periodicEnabled: Boolean = false,
     val milestoneEnabled: Boolean = true,
     val elapsedEnabled: Boolean = true,
     val remainingEnabled: Boolean = true,
