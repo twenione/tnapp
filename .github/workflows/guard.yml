@@ -143,6 +143,13 @@ jobs:
           code=$?
           set -e
           test "$code" -eq 0 || failures=$((failures + 1))
+          for fixture in testdata/violations/privacy_*; do
+            set +e
+            python tools/privacy_scan.py "$fixture"
+            code=$?
+            set -e
+            test "$code" -eq 1 || failures=$((failures + 1))
+          done
           test "$failures" -eq 0
       - name: Failure signature extractor fixtures
         run: python tools/test_preserve_failure_record.py
