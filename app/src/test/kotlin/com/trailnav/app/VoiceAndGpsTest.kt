@@ -12,6 +12,27 @@ import kotlin.test.assertTrue
 
 class VoiceAndGpsTest {
     @Test
+    fun pauseAvailabilityPromptsOnceAtFiveMinutesAndResetsAfterRecovery() {
+        val tracker = GuidancePauseAvailability()
+        assertFalse(tracker.onFrame(offRoute = true, nowMillis = 0L))
+        assertFalse(tracker.onFrame(offRoute = true, nowMillis = 299_999L))
+        assertTrue(tracker.onFrame(offRoute = true, nowMillis = 300_000L))
+        assertFalse(tracker.onFrame(offRoute = true, nowMillis = 600_000L))
+        assertFalse(tracker.onFrame(offRoute = false, nowMillis = 601_000L))
+        assertFalse(tracker.onFrame(offRoute = true, nowMillis = 601_000L))
+        assertTrue(tracker.onFrame(offRoute = true, nowMillis = 901_000L))
+    }
+
+    @Test
+    fun pausedVoiceGateSuppressesGuidanceRecoveryGpsAndOnRoute() {
+        VoiceKind.values().forEach { kind ->
+            assertFalse(GuidanceVoicePolicy.decide(paused = true, kind = kind).allowed)
+            assertEquals("paused", GuidanceVoicePolicy.decide(paused = true, kind = kind).suppressionReason)
+            assertTrue(GuidanceVoicePolicy.decide(paused = false, kind = kind).allowed)
+        }
+    }
+
+    @Test
     fun reverseStatusIsNeverMappedToSpeech() {
         assertNull(Guidance.Status("역방향 진행 중").toSpeech())
         assertTrue(Guidance.Status("다른 상태").toSpeech() == "다른 상태")

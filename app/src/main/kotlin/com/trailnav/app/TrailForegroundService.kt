@@ -41,8 +41,8 @@ class TrailForegroundService : Service() {
     private var previousOffRoute = false
     private var sessionStarted = false
     private var paused = false
-    private var offRouteSinceElapsed: Long? = null
     private var offRoutePausePrompted = false
+    private val pauseAvailability = GuidancePauseAvailability()
     private var endReason = "service-destroy"
     private var activeSessionId: String? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -167,7 +167,7 @@ class TrailForegroundService : Service() {
         routeStartupCoordinator = RouteStartupCoordinator(xml, config, SystemClock.elapsedRealtime())
         previousOffRoute = false
         paused = false
-        offRouteSinceElapsed = null
+        pauseAvailability.reset()
         offRoutePausePrompted = false
         endReason = "service-destroy"
         activeSessionId = sessionId
@@ -305,19 +305,20 @@ class TrailForegroundService : Service() {
             recoveryPrompt,
             if (periodic) ON_ROUTE_VOICE_PROMPT else null,
         )
-        val loggedSpeech = if (paused) null else speechCandidates.joinToString(" ").ifBlank { null }
+        val loggedSpeech = if (GuidanceVoicePolicy.decide(paused, VoiceKind.GUIDANCE).allowed) {
+            speechCandidates.joinToString(" ").ifBlank { null }
+        } else null
         logger?.appendEnvelope(location, "guide", "decision")
         logger?.appendGuide(location, decision.result, loggedSpeech, requireNotNull(sourceSeq))
         if (paused) {
-            speechCandidates.forEach { candidate ->
+            listOfNotNull(
+                spoken?.let { VoiceKind.GUIDANCE to it },
+                recoveryPrompt?.let { VoiceKind.RECOVERY to it },
+            ).forEach { (kind, candidate) ->
                 logger?.appendSystem(
                     "voice.suppressed",
                     mapOf(
-                        "type" to when (candidate) {
-                            spoken -> "guidance"
-                            recoveryPrompt -> "recovery"
-                            else -> "on-route"
-                        },
+                        "type" to kind.name.lowercase(),
                         "reason" to "paused",
                     ),
                 )
@@ -362,7 +363,7 @@ class TrailForegroundService : Service() {
         routeStartupCoordinator = null
         previousOffRoute = false
         paused = false
-        offRouteSinceElapsed = null
+        pauseAvailability.reset()
         offRoutePausePrompted = false
         activeSessionId = null
         sessionStarted = false
@@ -410,6 +411,7 @@ class TrailForegroundService : Service() {
 
     private fun pauseGuidance(source: String) {
         if (paused) return
+        tts?.speak("안내를 일시중지했습니다")
         paused = true
         onRouteVoiceScheduler?.reset()
         logger?.appendSystem("guidance.paused", mapOf("source" to source))
@@ -421,6 +423,7 @@ class TrailForegroundService : Service() {
     private fun resumeGuidance(source: String) {
         if (!paused) return
         paused = false
+        tts?.speak("안내를 다시 시작합니다")
         onRouteVoiceScheduler?.reset()
         logger?.appendSystem("guidance.resumed", mapOf("source" to source))
         NavigationPreferences.setState(this, NavigationPreferences.STATE_RUNNING, activeSessionId)
@@ -430,19 +433,8 @@ class TrailForegroundService : Service() {
 
     private fun updateOffRoutePauseAvailability(offRoute: Boolean) {
         val now = SystemClock.elapsedRealtime()
-        if (!offRoute) {
-            if (previousOffRoute) {
-                offRouteSinceElapsed = null
-                offRoutePausePrompted = false
-            }
-            return
-        }
-        if (!previousOffRoute) {
-            offRouteSinceElapsed = now
-            offRoutePausePrompted = false
-        }
-        val since = offRouteSinceElapsed ?: now.also { offRouteSinceElapsed = it }
-        if (!paused && !offRoutePausePrompted && now - since >= OFF_ROUTE_PAUSE_AFTER_MILLIS) {
+        if (!offRoute) offRoutePausePrompted = false
+        if (!paused && pauseAvailability.onFrame(offRoute, now)) {
             offRoutePausePrompted = true
             logger?.appendSystem("guidance.pause-available")
             tts?.speak("안내를 멈추려면 알림에서 일시중지를 누르세요")
@@ -457,7 +449,7 @@ class TrailForegroundService : Service() {
                 mapOf("accuracy_m" to event.accuracyMeters.toString()),
             )
         }
-        if (paused) {
+        if (!GuidanceVoicePolicy.decide(paused, VoiceKind.GPS).allowed) {
             logger?.appendSystem(
                 "voice.suppressed",
                 mapOf("type" to "gps", "reason" to "paused"),
@@ -580,7 +572,6 @@ class TrailForegroundService : Service() {
         private const val ROUTE_ORIENTATION_TIMEOUT_MILLIS = 30_000L
         private const val CHANNEL_ID = "trailnav.navigation"
         private const val NOTIFICATION_ID = 1001
-        private const val OFF_ROUTE_PAUSE_AFTER_MILLIS = 5 * 60 * 1_000L
     }
 }
 
