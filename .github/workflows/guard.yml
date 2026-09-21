@@ -108,9 +108,9 @@ jobs:
           set -euo pipefail
           for session in testdata/sessions/golden/*; do
             python tools/replay.py "$session" --cli replay/build/install/replay/bin/replay --strict
+          done
       - name: Replay reason and metadata negative controls
         run: python tools/test_replay_negative_controls.py --cli replay/build/install/replay/bin/replay
-          done
 
   negative-control:
     runs-on: ubuntu-latest
