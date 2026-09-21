@@ -88,23 +88,35 @@ def route_elevation_use(route_path: Path) -> dict[str, object]:
     return {"used": reason == "ok", "reason": reason}
 
 
-def details_match(recorded: object, actual: object) -> bool:
-    """Compare recorded reason details, allowing serialization-level float noise."""
-    if not isinstance(recorded, dict) or not isinstance(actual, dict):
-        return recorded == actual
-    for key, value in recorded.items():
-        if key not in actual:
-            return False
-        left, right = str(value), str(actual[key])
+def _numeric(value: object) -> float | None:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    if isinstance(value, str):
         try:
-            # Numeric geometry is recomputed independently by the JVM and
-            # the anonymized fixture. Presence of the key is the stable
-            # contract; exact decimal text is not.
-            float(left), float(right)
+            return float(value)
         except ValueError:
-            if left.casefold() != right.casefold():
-                return False
-    return True
+            return None
+    return None
+
+
+def details_match(recorded: object, actual: object, *, tolerance: float = 1e-6) -> bool:
+    """Compare detail payloads exactly, tolerating only numeric serialization noise."""
+    if isinstance(recorded, dict) or isinstance(actual, dict):
+        if not isinstance(recorded, dict) or not isinstance(actual, dict):
+            return False
+        if set(recorded) != set(actual):
+            return False
+        return all(details_match(recorded[key], actual[key], tolerance=tolerance) for key in recorded)
+    if isinstance(recorded, list) or isinstance(actual, list):
+        if not isinstance(recorded, list) or not isinstance(actual, list) or len(recorded) != len(actual):
+            return False
+        return all(details_match(left, right, tolerance=tolerance) for left, right in zip(recorded, actual))
+    left_number, right_number = _numeric(recorded), _numeric(actual)
+    if left_number is not None or right_number is not None:
+        return left_number is not None and right_number is not None and abs(left_number - right_number) <= tolerance
+    if isinstance(recorded, bool) or isinstance(actual, bool):
+        return type(recorded) is type(actual) and recorded == actual
+    return type(recorded) is type(actual) and recorded == actual
 
 
 def contract_probe(cli: Path) -> int:
@@ -151,9 +163,31 @@ def replay(root: Path, cli: Path, strict: bool, overrides: list[str] | None = No
         mismatches.append("trigger count")
         print(f"trigger count actual={len(trigger_trace)} recorded={len(recorded_triggers)}")
     loc_seq_set = {event.get("seq") for event in loc_events}
-    for trigger in recorded_triggers:
+    for index, trigger in enumerate(recorded_triggers):
         if trigger.get("src_seq") not in loc_seq_set:
             mismatches.append(f"trigger src_seq {trigger.get('src_seq')}")
+        if index >= len(trigger_trace):
+            continue
+        actual_trigger = trigger_trace[index]
+        if trigger.get("trigger") != actual_trigger.get("trigger"):
+            mismatches.append(f"trigger kind index {index}")
+        if trigger.get("src_seq") != actual_trigger.get("src_seq"):
+            mismatches.append(f"trigger src_seq index {index}")
+        if trigger.get("trigger") == "on-demand":
+            recorded_reason = trigger.get("reason") if isinstance(trigger.get("reason"), dict) else {}
+            recorded_details = recorded_reason.get("details") if isinstance(recorded_reason.get("details"), dict) else {}
+            if "source" not in recorded_details:
+                mismatches.append(f"on-demand source index {index}")
+            comparable_details = {key: value for key, value in recorded_details.items() if key != "source"}
+            actual_details = actual_trigger.get("status_details", {})
+            if recorded_reason.get("rule") != "on-demand.route-status":
+                mismatches.append(f"on-demand rule index {index}")
+            if not details_match(comparable_details, actual_details):
+                mismatches.append(f"on-demand details index {index}")
+                print(
+                    f"on-demand index={index} MISMATCH actual={json.dumps(actual_details, sort_keys=True)} "
+                    f"recorded={json.dumps(comparable_details, sort_keys=True)}"
+                )
     for index, item in enumerate(comparisons):
         expected_source_seq = loc_events[index].get("seq")
         if item.get("source_seq") != expected_source_seq:
