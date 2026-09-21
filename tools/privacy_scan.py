@@ -14,13 +14,17 @@ import json
 import re
 import sys
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
 
 KOREA_LAT = (33.0, 39.0)
 KOREA_LON = (124.0, 132.0)
-YEAR_2026_SECONDS = (1_767_225_600.0, 1_798_761_600.0)
+YEAR_2026_SECONDS = (
+    datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp(),
+    datetime(2027, 1, 1, tzinfo=timezone.utc).timestamp(),
+)
 YEAR_2026_MILLIS = (YEAR_2026_SECONDS[0] * 1000.0, YEAR_2026_SECONDS[1] * 1000.0)
 ISO_2026 = re.compile(r"^2026(?:-|T|$)")
 
