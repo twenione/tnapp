@@ -9,6 +9,11 @@ import com.trailnav.core.guide
 class GuideSession(route: RouteModel, private val config: GuideConfig = GuideConfig()) {
     private var state: GuideState = GuideState.initial(route)
 
+    /** Immutable snapshot used by app-layer status surfaces and on-demand voice. */
+    fun snapshot(): GuideState = state
+
+    fun routeStatus(): com.trailnav.core.RouteStatus? = com.trailnav.core.routeStatus(state, config)
+
     fun accept(location: TrailLocation): SessionDecision {
         val frame = location.toSensorFrame()
         val result = guide(state, frame, config)

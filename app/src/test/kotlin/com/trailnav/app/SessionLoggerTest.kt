@@ -25,6 +25,9 @@ class SessionLoggerTest {
             configHash = "sha256:config",
             routeHash = "sha256:route",
             appVersion = "test",
+            routeElevationUsed = true,
+            routeElevationReason = "ok",
+            routeWaypointCount = 2,
         ).use { logger ->
             val location = TrailLocation(1_000L, 10.0001, 20.0, 5f, 1f, null, "fake")
             val result = guide(GuideState.initial(route), location.toSensorFrame(), GuideConfig())
@@ -36,6 +39,9 @@ class SessionLoggerTest {
         }
         val manifest = File(directory, "manifest.json").readText()
         assertTrue(manifest.contains("\"upload_default\":false"))
+        assertTrue(manifest.contains("\"elevation_used\":true"))
+        assertTrue(manifest.contains("\"elevation_reason\":\"ok\""))
+        assertTrue(manifest.contains("\"waypoint_count\":2"))
         val events = File(directory, "events.ndjson").readLines().filter { it.isNotBlank() }
         assertEquals(5, events.size)
         assertTrue(events[0].contains("\"stream\":\"envelope\""))

@@ -30,6 +30,8 @@ import androidx.core.app.NotificationManagerCompat
 import com.trailnav.core.GuideConfig
 import com.trailnav.core.Guidance
 import com.trailnav.core.RouteModel
+import com.trailnav.core.GuideResult
+import com.trailnav.core.Reason
 import java.io.File
 import java.util.UUID
 
@@ -54,6 +56,8 @@ class TrailForegroundService : Service() {
     private val pauseAvailability = GuidancePauseAvailability()
     private var endReason = "service-destroy"
     private var activeSessionId: String? = null
+    private var lastLocation: TrailLocation? = null
+    private var lastLocationSeq: Long? = null
     private var onDemandConfig = OnDemandConfig()
     private var onDemandRouter = OnDemandRequestRouter(onDemandConfig)
     private var shakeDetector = ShakeDetector(onDemandConfig)
@@ -164,7 +168,7 @@ class TrailForegroundService : Service() {
             return
         }
         val config = GuideConfig()
-        try {
+        val parsedRoute = try {
             RouteModel.fromGpx(xml, config)
         } catch (error: Throwable) {
             logger?.appendError("route-parse", error.message ?: error::class.java.simpleName)
@@ -180,6 +184,9 @@ class TrailForegroundService : Service() {
             configHash = "sha256:${JsonlSessionLogger.sha256(config.toString())}",
             routeHash = "sha256:${JsonlSessionLogger.sha256(xml)}",
             appVersion = BuildConfig.VERSION_NAME,
+            routeElevationUsed = parsedRoute.elevationUsed,
+            routeElevationReason = parsedRoute.elevationReason,
+            routeWaypointCount = parsedRoute.waypoints.size,
         )
         tts = TtsController(this) { status -> logger?.appendSystem(status) }
         guideSession = null
@@ -192,6 +199,8 @@ class TrailForegroundService : Service() {
         offRoutePausePrompted = false
         endReason = "service-destroy"
         activeSessionId = sessionId
+        lastLocation = null
+        lastLocationSeq = null
         gpsSignalMonitor = GpsSignalMonitor().also { it.start() }
         onRouteVoiceScheduler = OnRouteVoiceScheduler(onRouteVoiceEnabled, onRouteVoiceIntervalSeconds)
         onDemandConfig = NavigationPreferences.onDemand(this)
@@ -271,6 +280,8 @@ class TrailForegroundService : Service() {
         gpsEvent?.let(::announceGpsSignal)
         logger?.appendEnvelope(location, "loc", "location")
         val locationSeq = logger?.appendLocation(location)
+        lastLocation = location
+        lastLocationSeq = locationSeq
         val startup = routeStartupCoordinator
         if (startup != null) {
             val update = startup.accept(location, SystemClock.elapsedRealtime(), locationSeq)
@@ -349,7 +360,13 @@ class TrailForegroundService : Service() {
             speechCandidates.joinToString(" ").ifBlank { null }
         } else null
         logger?.appendEnvelope(location, "guide", "decision")
-        logger?.appendGuide(location, decision.result, loggedSpeech, requireNotNull(sourceSeq))
+        logger?.appendGuide(
+            location,
+            decision.result,
+            loggedSpeech,
+            requireNotNull(sourceSeq),
+            trigger = if (periodic) "slot" else null,
+        )
         if (paused) {
             listOfNotNull(
                 spoken?.let { VoiceKind.GUIDANCE to it },
@@ -407,6 +424,8 @@ class TrailForegroundService : Service() {
         pauseAvailability.reset()
         offRoutePausePrompted = false
         activeSessionId = null
+        lastLocation = null
+        lastLocationSeq = null
         sessionStarted = false
         NavigationPreferences.setState(this, NavigationPreferences.STATE_IDLE)
         publishServiceState()
@@ -514,7 +533,9 @@ class TrailForegroundService : Service() {
                 .putExtra(EXTRA_RIBBON_ENTER_BAND_METERS, ribbon.enterBandMeters)
                 .putExtra(EXTRA_RIBBON_EXIT_BAND_METERS, ribbon.exitBandMeters)
                 .putExtra(EXTRA_RIBBON_ACCURACY_METERS, ribbon.accuracyRadiusMeters)
-                .putExtra(EXTRA_RIBBON_REMAINING_METERS, ribbon.remainingDistanceMeters),
+                .putExtra(EXTRA_RIBBON_REMAINING_METERS, ribbon.remainingDistanceMeters)
+                .putExtra(EXTRA_RIBBON_NEXT_TURN_DISTANCE_METERS, ribbon.nextTurn?.distanceMeters ?: -1.0)
+                .putExtra(EXTRA_RIBBON_NEXT_TURN_SIDE, ribbon.nextTurn?.side?.name.orEmpty()),
         )
     }
 
@@ -598,7 +619,34 @@ class TrailForegroundService : Service() {
         if (onDemandRouter.accept(source, SystemClock.elapsedRealtime()) == null) return
         logger?.appendSystem("ondemand.request", mapOf("source" to source.wireName, "paused" to paused.toString()))
         playAcknowledgementTone()
-        // P3-4 connects this hook to routeStatus() and appends the on-demand guide event.
+        val session = guideSession
+        val location = lastLocation
+        val sourceSeq = lastLocationSeq
+        if (session == null || location == null || sourceSeq == null) {
+            val text = GuidancePhrases.noLocationStatus()
+            if (!paused) tts?.speak(text)
+            logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-location"))
+            return
+        }
+        val status = session.routeStatus()
+        if (status == null) {
+            val text = GuidancePhrases.noLocationStatus()
+            if (!paused) tts?.speak(text)
+            logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-match"))
+            return
+        }
+        val text = GuidancePhrases.routeStatus(status)
+        val result = GuideResult(
+            guidance = Guidance.Status(text),
+            nextState = session.snapshot(),
+            reason = Reason(
+                rule = "on-demand.route-status",
+                details = mapOf("source" to source.wireName, "on_route" to status.onRoute.toString()),
+            ),
+        )
+        logger?.appendGuide(location, result, text, sourceSeq, trigger = "on-demand")
+        if (!paused) tts?.speak(text)
+        else logger?.appendSystem("voice.suppressed", mapOf("type" to "on-demand", "reason" to "paused"))
     }
 
     private fun appendShakeStats(snapshot: ShakeStatsSnapshot) {
@@ -726,6 +774,8 @@ class TrailForegroundService : Service() {
         const val EXTRA_RIBBON_EXIT_BAND_METERS = "ribbon_exit_band_meters"
         const val EXTRA_RIBBON_ACCURACY_METERS = "ribbon_accuracy_meters"
         const val EXTRA_RIBBON_REMAINING_METERS = "ribbon_remaining_meters"
+        const val EXTRA_RIBBON_NEXT_TURN_DISTANCE_METERS = "ribbon_next_turn_distance_meters"
+        const val EXTRA_RIBBON_NEXT_TURN_SIDE = "ribbon_next_turn_side"
         private const val LOCATION_FIX_TIMEOUT_MILLIS = 15_000L
         private const val ROUTE_ORIENTATION_TIMEOUT_MILLIS = 30_000L
         private const val CHANNEL_ID = "trailnav.navigation"
@@ -736,17 +786,19 @@ class TrailForegroundService : Service() {
 internal fun Guidance?.isReverseStatus(): Boolean = this is Guidance.Status && message == "역방향 진행 중"
 
 internal fun Guidance?.toSpeech(): String? = when (this) {
-    is Guidance.OffRoute -> "경로를 벗어났습니다. ${"%.0f".format(distance)}미터"
+    is Guidance.OffRoute -> GuidancePhrases.offRoute(distance)
     is Guidance.Status -> if (isReverseStatus()) null else message
-    Guidance.Arrived -> "목적지에 도착했습니다"
-    is Guidance.Milestone -> "${"%.0f".format(distanceMeters)}미터 지점입니다"
-    is Guidance.Elapsed -> "출발 ${hours}시간 경과"
-    is Guidance.Remaining -> "종착지까지 ${"%.0f".format(thresholdMeters)}미터"
-    is Guidance.Slope -> if (kind == com.trailnav.core.SlopeKind.ASCENT) "잠시 후 오르막입니다" else "잠시 후 내리막입니다"
-    is Guidance.Elevation -> "현재 고도 약 ${"%.0f".format(elevationMeters)}미터"
-    is Guidance.Waypoint -> "잠시 후 ${name}입니다"
-    is Guidance.Sunset -> if (afterSunset) "일몰 시각이 지났습니다" else "일몰까지 ${minutesRemaining ?: 0}분입니다"
-    is Guidance.TurnAhead, is Guidance.TurnNow, null -> null
+    Guidance.Arrived -> GuidancePhrases.arrived()
+    is Guidance.Milestone -> GuidancePhrases.milestone(distanceMeters)
+    is Guidance.Elapsed -> GuidancePhrases.elapsed(hours)
+    is Guidance.Remaining -> GuidancePhrases.remaining(thresholdMeters)
+    is Guidance.Slope -> GuidancePhrases.slope(kind)
+    is Guidance.Elevation -> GuidancePhrases.elevation(elevationMeters)
+    is Guidance.Waypoint -> GuidancePhrases.waypoint(name)
+    is Guidance.Sunset -> GuidancePhrases.sunset(minutesRemaining, afterSunset)
+    is Guidance.TurnAhead -> GuidancePhrases.turnAhead(distance, side)
+    is Guidance.TurnNow -> GuidancePhrases.turnNow(side)
+    null -> null
 }
 
 internal fun GpsSignalEvent.toSpeechPrompt(): String = when (this) {

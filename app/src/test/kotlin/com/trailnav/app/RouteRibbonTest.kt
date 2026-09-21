@@ -86,6 +86,22 @@ class RouteRibbonTest {
         assertEquals(RibbonSide.LEFT, leftOfCenter.side)
     }
 
+    @Test
+    fun ribbonExposesNextTurnFromCompiledRouteStatus() {
+        val route = RouteModel.fromGpx("""
+            <gpx><trk><trkseg>
+              <trkpt lat="10.000000" lon="20.000000"/>
+              <trkpt lat="10.000000" lon="20.001000"/>
+              <trkpt lat="10.001000" lon="20.001000"/>
+            </trkseg></trk></gpx>
+        """.trimIndent())
+        val config = GuideConfig(offRouteEnterDwellSeconds = 0.0)
+        val location = TrailLocation(0L, 10.000000, 20.0001, 5f, 1f, 90f, "test")
+        val result = guide(GuideState.initial(route), location.toSensorFrame(), config)
+        val ribbon = RouteRibbonCalculator.calculate(location, result, route, config)
+        assertEquals(route.turns.firstOrNull()?.side?.name, ribbon?.nextTurn?.side?.name)
+    }
+
     private fun route(): RouteModel = RouteModel.fromGpx(
         """<gpx><trk><trkseg>
             <trkpt lat="10.000000" lon="20.000000"/>

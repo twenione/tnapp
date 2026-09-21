@@ -148,6 +148,18 @@ class RouteRibbonView @JvmOverloads constructor(
         drawText(canvas, "복귀 ${formatMeters(current.exitBandMeters)}", right - dp(10f), ribbonTop + dp(22f), 14f, Color.LTGRAY, Paint.Align.RIGHT)
         drawText(canvas, "목적지까지 ${formatMeters(current.remainingDistanceMeters)}", left + dp(10f), ribbonBottom - dp(12f), 14f, Color.WHITE)
         drawText(canvas, "GPS 정확도 ${formatMeters(current.accuracyRadiusMeters)}", right - dp(10f), ribbonBottom - dp(12f), 13f, Color.LTGRAY, Paint.Align.RIGHT)
+        current.nextTurn?.let { next ->
+            val sideText = if (next.side == RibbonTurnSide.LEFT) "왼쪽" else "오른쪽"
+            drawText(
+                canvas,
+                "다음 꺾임 ${formatMeters(next.distanceMeters)} · $sideText",
+                centerX,
+                top + dp(68f),
+                14f,
+                Color.rgb(180, 225, 255),
+                Paint.Align.CENTER,
+            )
+        }
     }
 
     private fun drawText(

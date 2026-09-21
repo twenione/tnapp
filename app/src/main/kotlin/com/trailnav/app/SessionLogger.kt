@@ -14,7 +14,7 @@ import java.util.UUID
 interface SessionEventSink : Closeable {
     fun appendEnvelope(location: TrailLocation, eventStream: String, eventType: String)
     fun appendLocation(location: TrailLocation): Long
-    fun appendGuide(location: TrailLocation, result: GuideResult, spokenText: String?, sourceSeq: Long)
+    fun appendGuide(location: TrailLocation, result: GuideResult, spokenText: String?, sourceSeq: Long, trigger: String? = null)
     fun appendSystem(kind: String, details: Map<String, String> = emptyMap())
     fun appendError(kind: String, message: String)
 }
@@ -30,6 +30,9 @@ class JsonlSessionLogger(
     private val configHash: String,
     private val routeHash: String,
     private val appVersion: String,
+    private val routeElevationUsed: Boolean = false,
+    private val routeElevationReason: String = "absent",
+    private val routeWaypointCount: Int = 0,
 ) : SessionEventSink {
     private val eventsFile = File(directory, "events.ndjson")
     private val writer: BufferedWriter
@@ -62,7 +65,7 @@ class JsonlSessionLogger(
               "started_at_wall":"${java.time.Instant.now()}",
               "app":{"version":"${escape(appVersion)}","code_hash":"${escape(codeHash)}"},
               "engine":{"config":{"implementation":"core-guide","config_hash":"${escape(configHash)}"},"rng_seed":0},
-              "route":{"gpx_hash":"${escape(routeHash)}"},
+              "route":{"gpx_hash":"${escape(routeHash)}","elevation_used":$routeElevationUsed,"elevation_reason":"${escape(routeElevationReason)}","waypoint_count":$routeWaypointCount},
               "clock":{"monotonic_source":"location-frame-timestamp","timestamp_unit":"seconds","t_order":"per-stream","seq_order":"append"},
               "privacy":{"upload_default":false}
             }""".trimIndent() + "\n",
@@ -83,30 +86,32 @@ class JsonlSessionLogger(
             ),
         )
 
-    override fun appendGuide(location: TrailLocation, result: GuideResult, spokenText: String?, sourceSeq: Long) {
+    override fun appendGuide(location: TrailLocation, result: GuideResult, spokenText: String?, sourceSeq: Long, trigger: String?) {
+        val fields = linkedMapOf<String, Any?>(
+            "src_seq" to sourceSeq,
+            "inputs" to linkedMapOf(
+                "timestamp" to location.timestampMillis,
+                "lat" to location.latitude,
+                "lon" to location.longitude,
+                "accuracy" to location.accuracyMeters,
+                "speed_mps" to location.speedMps,
+                "bearing_deg" to location.bearingDegrees,
+            ),
+            "decision" to guidanceName(result),
+            "output_text" to (spokenText ?: ""),
+            "reason" to linkedMapOf(
+                "rule" to result.reason.rule,
+                "thresholds" to result.reason.thresholds,
+                "alternatives_considered" to result.reason.alternativesConsidered,
+                "details" to result.reason.details,
+            ),
+            "state_hash" to "sha256:${sha256(result.nextState.toString())}",
+        )
+        if (trigger != null) fields["trigger"] = trigger
         append(
             stream = "guide",
             timestamp = location.timestampMillis / 1000.0,
-            fields = linkedMapOf(
-                "src_seq" to sourceSeq,
-                "inputs" to linkedMapOf(
-                    "timestamp" to location.timestampMillis,
-                    "lat" to location.latitude,
-                    "lon" to location.longitude,
-                    "accuracy" to location.accuracyMeters,
-                    "speed_mps" to location.speedMps,
-                    "bearing_deg" to location.bearingDegrees,
-                ),
-                "decision" to guidanceName(result),
-                "output_text" to (spokenText ?: ""),
-                "reason" to linkedMapOf(
-                    "rule" to result.reason.rule,
-                    "thresholds" to result.reason.thresholds,
-                    "alternatives_considered" to result.reason.alternativesConsidered,
-                    "details" to result.reason.details,
-                ),
-                "state_hash" to "sha256:${sha256(result.nextState.toString())}",
-            ),
+            fields = fields,
         )
     }
 

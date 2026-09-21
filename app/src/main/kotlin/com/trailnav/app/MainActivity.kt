@@ -82,6 +82,18 @@ class MainActivity : AppCompatActivity() {
                 exitBandMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_EXIT_BAND_METERS, 0.0),
                 accuracyRadiusMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_ACCURACY_METERS, 0.0),
                 remainingDistanceMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_REMAINING_METERS, 0.0),
+                nextTurn = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_NEXT_TURN_DISTANCE_METERS, -1.0)
+                    .takeIf { it >= 0.0 }
+                    ?.let { distance ->
+                        RibbonNextTurn(
+                            distanceMeters = distance,
+                            side = if (intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_NEXT_TURN_SIDE) == RibbonTurnSide.LEFT.name) {
+                                RibbonTurnSide.LEFT
+                            } else {
+                                RibbonTurnSide.RIGHT
+                            },
+                        )
+                    },
             )
             routeRibbon.update(ribbonState)
             updateGpsIndicator(ribbonState.accuracyRadiusMeters)

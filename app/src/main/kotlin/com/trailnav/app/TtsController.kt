@@ -20,7 +20,7 @@ class TtsController(
         .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
         .build()
-    private val pending = ArrayDeque<String>()
+    private val pending = ArrayDeque<PendingUtterance>()
     private val tts = TextToSpeech(context.applicationContext, this)
     private var ready = false
 
@@ -36,30 +36,36 @@ class TtsController(
             }
             tts.language = Locale.KOREAN
             onStatus("tts.ready")
-            while (pending.isNotEmpty()) speakReady(pending.removeFirst())
+            while (pending.isNotEmpty()) {
+                val utterance = pending.removeFirst()
+                speakReady(utterance.text, utterance.flush)
+            }
         } else {
             onStatus("tts.init-failed:$status")
         }
     }
 
-    fun speak(text: String) {
+    fun speak(text: String, flush: Boolean = false) {
         if (text.isBlank()) return
         if (!ready) {
-            pending.addLast(text)
+            pending.addLast(PendingUtterance(text, flush))
             onStatus("tts.pending")
             return
         }
-        speakReady(text)
+        speakReady(text, flush)
     }
 
-    private fun speakReady(text: String) {
+    private fun speakReady(text: String, flush: Boolean) {
         if (!requestFocus()) {
             onStatus("tts.audio-focus-denied")
             return
         }
-        val result = tts.speak(text, TextToSpeech.QUEUE_ADD, null, "guide-${System.nanoTime()}")
+        val queueMode = if (flush) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+        val result = tts.speak(text, queueMode, null, "guide-${System.nanoTime()}")
         onStatus(if (result == TextToSpeech.SUCCESS) "tts.queued" else "tts.failed:$result")
     }
+
+    private data class PendingUtterance(val text: String, val flush: Boolean)
 
     fun close() {
         tts.stop()
