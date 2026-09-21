@@ -6,11 +6,14 @@ import kotlin.test.assertTrue
 
 class OnDemandTriggerTest {
     @Test
-    fun walkingLikeSamplesDoNotTriggerAndTwoHitsDo() {
+    fun walkingLikeSamplesDoNotTriggerAndThreeHitsDo() {
         val detector = ShakeDetector(OnDemandConfig())
-        assertFalse(detector.onSample(0L, 0.8))
-        assertFalse(detector.onSample(300L, 2.6))
-        assertTrue(detector.onSample(500L, 2.5))
+        assertFalse(detector.onSample(0L, 3.0))
+        assertFalse(detector.onSample(250L, 6.0))
+        assertFalse(detector.onSample(500L, 4.0))
+        assertFalse(detector.onSample(750L, 10.0))
+        assertFalse(detector.onSample(800L, 10.1))
+        assertTrue(detector.onSample(900L, 10.2))
     }
 
     @Test
@@ -34,5 +37,20 @@ class OnDemandTriggerTest {
         assertTrue(router.accept(OnDemandSource.MEDIA_BUTTON, 0L) == OnDemandSource.MEDIA_BUTTON)
         assertTrue(router.accept(OnDemandSource.MEDIA_BUTTON, 1_000L) == null)
         assertTrue(router.accept(OnDemandSource.SHAKE, 2_000L) == null)
+    }
+
+    @Test
+    fun shakeStatsEmitsOnlyAggregatesAtMinuteBoundary() {
+        val stats = ShakeStats(thresholdMetersPerSecondSquared = 10.0)
+        assertTrue(stats.record(0L, 3.0) == null)
+        assertTrue(stats.record(10_000L, 12.0) == null)
+        assertTrue(stats.record(20_000L, 8.0) == null)
+        val completed = stats.record(60_000L, 4.0)
+        assertTrue(completed != null)
+        assertTrue(completed.sampleCount == 3)
+        assertTrue(completed.maximumDeviation == 12.0)
+        assertTrue(completed.p95Deviation == 12.0)
+        assertTrue(completed.thresholdExceedances == 1)
+        assertTrue(stats.flush()?.sampleCount == 1)
     }
 }

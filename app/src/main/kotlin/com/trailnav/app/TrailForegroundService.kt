@@ -12,8 +12,9 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.media.AudioManager
-import android.media.ToneGenerator
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.media.session.MediaSession
 import android.view.KeyEvent
 import android.net.Uri
@@ -56,10 +57,11 @@ class TrailForegroundService : Service() {
     private var onDemandConfig = OnDemandConfig()
     private var onDemandRouter = OnDemandRequestRouter(onDemandConfig)
     private var shakeDetector = ShakeDetector(onDemandConfig)
+    private var shakeStats = ShakeStats(onDemandConfig.shakeThresholdMetersPerSecondSquared)
     private var mediaSession: MediaSession? = null
     private var sensorManager: SensorManager? = null
     private var shakeListener: SensorEventListener? = null
-    private var acknowledgementTone: ToneGenerator? = null
+    private var acknowledgementTone: AudioTrack? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val noLocationWarning = Runnable {
@@ -195,6 +197,7 @@ class TrailForegroundService : Service() {
         onDemandConfig = NavigationPreferences.onDemand(this)
         onDemandRouter = OnDemandRequestRouter(onDemandConfig)
         shakeDetector = ShakeDetector(onDemandConfig)
+        shakeStats = ShakeStats(onDemandConfig.shakeThresholdMetersPerSecondSquared)
         sessionStarted = true
         NavigationPreferences.setState(this, NavigationPreferences.STATE_RUNNING, activeSessionId)
         startForegroundCompat()
@@ -222,6 +225,8 @@ class TrailForegroundService : Service() {
                 "shake_threshold" to onDemandConfig.shakeThresholdMetersPerSecondSquared.toString(),
                 "shake_hits" to onDemandConfig.shakeHitsRequired.toString(),
                 "shake_window_ms" to onDemandConfig.shakeWindowMillis.toString(),
+                "shake_sampling" to "SENSOR_DELAY_GAME",
+                "shake_stats" to "per-minute-aggregates",
             ),
         )
         installOnDemandTriggers()
@@ -556,7 +561,10 @@ class TrailForegroundService : Service() {
                 val listener = object : SensorEventListener {
                     override fun onSensorChanged(event: SensorEvent) {
                         val magnitude = kotlin.math.sqrt(event.values.sumOf { it.toDouble() * it.toDouble() })
-                        if (shakeDetector.onSample(SystemClock.elapsedRealtime(), kotlin.math.abs(magnitude - SensorManager.GRAVITY_EARTH))) {
+                        val timestamp = SystemClock.elapsedRealtime()
+                        val deviation = kotlin.math.abs(magnitude - SensorManager.GRAVITY_EARTH)
+                        shakeStats.record(timestamp, deviation)?.let(::appendShakeStats)
+                        if (shakeDetector.onSample(timestamp, deviation)) {
                             handleOnDemand(OnDemandSource.SHAKE)
                         }
                     }
@@ -565,7 +573,7 @@ class TrailForegroundService : Service() {
                 }
                 shakeListener = listener
                 sensorManager = manager
-                manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+                manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
             }
         }
     }
@@ -578,16 +586,68 @@ class TrailForegroundService : Service() {
         if (manager != null && listener != null) manager.unregisterListener(listener)
         sensorManager = null
         shakeListener = null
-        acknowledgementTone?.release()
+        shakeStats.flush()?.let(::appendShakeStats)
+        acknowledgementTone?.run {
+            if (playState == AudioTrack.PLAYSTATE_PLAYING) stop()
+            release()
+        }
         acknowledgementTone = null
     }
 
     private fun handleOnDemand(source: OnDemandSource) {
         if (onDemandRouter.accept(source, SystemClock.elapsedRealtime()) == null) return
         logger?.appendSystem("ondemand.request", mapOf("source" to source.wireName, "paused" to paused.toString()))
-        if (acknowledgementTone == null) acknowledgementTone = ToneGenerator(AudioManager.STREAM_MUSIC, 60)
-        acknowledgementTone?.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
+        playAcknowledgementTone()
         // P3-4 connects this hook to routeStatus() and appends the on-demand guide event.
+    }
+
+    private fun appendShakeStats(snapshot: ShakeStatsSnapshot) {
+        logger?.appendSystem(
+            "ondemand.shake_stats",
+            mapOf(
+                "minute_index" to snapshot.minuteIndex.toString(),
+                "sample_count" to snapshot.sampleCount.toString(),
+                "maximum_deviation" to snapshot.maximumDeviation.toString(),
+                "p95_deviation" to snapshot.p95Deviation.toString(),
+                "threshold_exceedances" to snapshot.thresholdExceedances.toString(),
+            ),
+        )
+    }
+
+    private fun playAcknowledgementTone() {
+        val sampleRate = 8_000
+        val durationMillis = 150
+        val samples = sampleRate * durationMillis / 1_000
+        val pcm = ByteArray(samples * 2)
+        for (index in 0 until samples) {
+            val envelope = 1.0 - (index.toDouble() / samples)
+            val value = (kotlin.math.sin(2.0 * Math.PI * 880.0 * index / sampleRate) * envelope * Short.MAX_VALUE * 0.25).toInt().toShort()
+            pcm[index * 2] = (value.toInt() and 0xff).toByte()
+            pcm[index * 2 + 1] = (value.toInt() shr 8).toByte()
+        }
+        acknowledgementTone?.run {
+            if (playState == AudioTrack.PLAYSTATE_PLAYING) stop()
+            release()
+        }
+        val attributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        val format = AudioFormat.Builder()
+            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+            .setSampleRate(sampleRate)
+            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+            .build()
+        acknowledgementTone = AudioTrack.Builder()
+            .setAudioAttributes(attributes)
+            .setAudioFormat(format)
+            .setTransferMode(AudioTrack.MODE_STATIC)
+            .setBufferSizeInBytes(pcm.size)
+            .build()
+            .also { track ->
+                track.write(pcm, 0, pcm.size)
+                track.play()
+            }
     }
 
     private fun notificationAction(action: String, requestCode: Int, label: String): NotificationCompat.Action {
