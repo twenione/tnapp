@@ -5,7 +5,7 @@
   "app": {
     "version": "0.1.0",
     "build": 0,
-    "code_hash": "sha256:synthetic"
+    "code_hash": "git:db7a36cd5c7ed0f1d99bd2fcd601045a929217fe"
   },
   "engine": {
     "config": {
@@ -18,7 +18,10 @@
   "route": {
     "gpx_id": "synthetic-base",
     "gpx_hash": "sha256:37a7737ddfc8aab96c1ecbd01c1513959de1859759496a6ca83f562c4cc06a53",
-    "point_count": 260
+    "point_count": 260,
+    "elevation_used": false,
+    "elevation_reason": "absent",
+    "waypoint_count": 0
   },
   "clock": {
     "monotonic_source": "synthetic-sequence",

@@ -5,7 +5,7 @@
   "app": {
     "version": "0.1.0",
     "build": 0,
-    "code_hash": "sha256:7a6aa4cb6c21ec2e3de8cad395a7077d3459efb6ffb8202acbc2801339c47b62"
+    "code_hash": "git:db7a36cd5c7ed0f1d99bd2fcd601045a929217fe"
   },
   "engine": {
     "config": {
@@ -18,17 +18,13 @@
   "route": {
     "gpx_id": "synthetic-base",
     "gpx_hash": "sha256:0266c1f6438b1e5daedcf0b0f7ecec7af44fd116a15fa7f0a6c63bc139f665cd",
-    "point_count": 31
+    "point_count": 31,
+    "elevation_used": false,
+    "elevation_reason": "absent",
+    "waypoint_count": 0
   },
   "clock": {
-    "monotonic_source": "synthetic-sequence",
-    "timestamp_unit": "seconds",
-    "frame_intervals_seconds": [
-      0.944,
-      0.997,
-      0.95,
-      0.999
-    ]
+    "monotonic_source": "synthetic-sequence"
   },
   "privacy": {
     "upload_default": false
@@ -41,5 +37,5 @@
     ]
   },
   "golden_status": "verified-engine-output",
-  "golden_verification": "phase1-accuracy"
+  "golden_verification": "replay+phase1-accuracy"
 }
