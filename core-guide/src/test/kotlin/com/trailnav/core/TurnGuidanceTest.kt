@@ -51,14 +51,18 @@ class TurnGuidanceTest {
     @Test
     fun reverseStationaryAndOffRouteFramesDoNotAnnounceTurns() {
         val route = route()
-        var state = GuideState.initial(route)
-        state = guide(state, SensorFrame(0L, 10.0, 20.0, 5f, 1f, null)).nextState
-        state = guide(state, SensorFrame(1_000L, 10.0013, 20.0, 5f, 1f, null)).nextState
-        state = guide(state, SensorFrame(1_500L, 10.0015, 20.0, 5f, 1f, null)).nextState
-        val reverse = guide(state, SensorFrame(2_000L, 10.0014, 20.0, 5f, 1f, null), GuideConfig(emaAlpha = 1.0))
+        var state = guide(GuideState.initial(route), SensorFrame(0L, 10.0015, 20.0, 5f, 1f, null)).nextState
+        val reverse = guide(state, SensorFrame(1_000L, 10.0014, 20.0, 5f, 1f, null), GuideConfig(emaAlpha = 1.0))
         assertTrue(reverse.guidance !is Guidance.TurnAhead && reverse.guidance !is Guidance.TurnNow)
 
         val metersPerDegreeLon = 6_371_008.8 * cos(Math.toRadians(10.0)) * Math.PI / 180.0
+        val east20 = 20.0 / metersPerDegreeLon
+        val offsetConfig = GuideConfig(offRouteEnterDwellSeconds = 100.0)
+        var offsetState = GuideState.initial(route)
+        offsetState = guide(offsetState, SensorFrame(0L, 10.0, 20.0, 5f, 1f, null), offsetConfig).nextState
+        val offset = guide(offsetState, SensorFrame(1_000L, 10.0013, 20.0 + east20, 5f, 1f, null), offsetConfig)
+        assertTrue(offset.guidance !is Guidance.TurnAhead && offset.guidance !is Guidance.TurnNow)
+
         val east30 = 30.0 / metersPerDegreeLon
         val offRouteConfig = GuideConfig(offRouteEnterDwellSeconds = 0.0)
         var offState = GuideState.initial(route)
