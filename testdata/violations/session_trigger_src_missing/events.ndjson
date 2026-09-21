@@ -1,0 +1,2 @@
+{"seq":0,"t":0,"stream":"loc","lat":10,"lon":20,"accuracy":5,"provider":"synthetic"}
+{"seq":1,"t":0.1,"stream":"guide","trigger":"slot","src_seq":99,"decision":"CONTINUE","inputs":{},"reason":{"rule":"slot"},"state_hash":"sha256:synthetic"}

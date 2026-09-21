@@ -53,11 +53,18 @@ fun main(args: Array<String>) {
             locCount += 1
             val distance = result.guidanceDistance() ?: result.reason.details["distanceMeters"]?.toDoubleOrNull()
             val sourceSeq = numberField(line, "seq")?.toLong() ?: error("loc event is missing seq")
-            latest = Output(locCount, t, decision(result.guidance), result.reason.rule, distance, result.nextState.direction.name.lowercase(), sourceSeq)
+            latest = Output(locCount, t, decision(result.guidance), result.reason.rule, distance, result.nextState.direction.name.lowercase(), sourceSeq, result.reason.details)
             locOutputs += latest!!
             if (options.everyFrame) println(latest!!.json())
         } else if (stream == "guide" && !options.everyFrame) {
             val seq = numberField(line, "seq")?.toLong() ?: -1L
+            val trigger = stringField(line, "trigger")
+            if (trigger != null) {
+                val triggerSourceSeq = numberField(line, "src_seq")?.toLong()
+                    ?: error("trigger guide event is missing src_seq at seq=$seq")
+                println("{\"kind\":\"trigger\",\"seq\":$seq,\"trigger\":\"${escape(trigger)}\",\"src_seq\":$triggerSourceSeq}")
+                return@forEach
+            }
             val recorded = stringField(line, "decision") ?: ""
             val output = locOutputs.getOrNull(guideCount)
                 ?: error("guide event count exceeds loc event count at seq=$seq")
@@ -65,7 +72,7 @@ fun main(args: Array<String>) {
             if (recordedSourceSeq != null && recordedSourceSeq != output.sourceSeq) {
                 error("guide src_seq=$recordedSourceSeq does not match loc seq=${output.sourceSeq} at guide seq=$seq")
             }
-            println("{\"kind\":\"guide\",\"seq\":$seq,\"loc_index\":${output.locIndex},\"source_seq\":${output.sourceSeq},\"recorded_src_seq\":${recordedSourceSeq ?: "null"},\"recorded_decision\":\"${escape(recorded)}\",\"decision\":\"${output.decision}\",\"reason_rule\":\"${escape(output.reasonRule)}\",\"distance_m\":${output.distance ?: "null"},\"direction\":\"${output.direction}\"}")
+            println("{\"kind\":\"guide\",\"seq\":$seq,\"loc_index\":${output.locIndex},\"source_seq\":${output.sourceSeq},\"recorded_src_seq\":${recordedSourceSeq ?: "null"},\"recorded_decision\":\"${escape(recorded)}\",\"decision\":\"${output.decision}\",\"reason_rule\":\"${escape(output.reasonRule)}\",\"reason_details\":${mapJson(output.details)},\"distance_m\":${output.distance ?: "null"},\"direction\":\"${output.direction}\"}")
             guideCount += 1
         }
     }
@@ -118,9 +125,10 @@ private data class Output(
     val reasonRule: String,
     val distance: Double?,
     val direction: String,
-    val sourceSeq: Long = -1L
+    val sourceSeq: Long = -1L,
+    val details: Map<String, String> = emptyMap()
 ) {
-    fun json(): String = "{\"kind\":\"frame\",\"loc_index\":$locIndex,\"source_seq\":${if (sourceSeq >= 0) sourceSeq else "null"},\"t\":$t,\"decision\":\"$decision\",\"reason_rule\":\"${escape(reasonRule)}\",\"distance_m\":${distance ?: "null"},\"direction\":\"$direction\"}"
+    fun json(): String = "{\"kind\":\"frame\",\"loc_index\":$locIndex,\"source_seq\":${if (sourceSeq >= 0) sourceSeq else "null"},\"t\":$t,\"decision\":\"$decision\",\"reason_rule\":\"${escape(reasonRule)}\",\"reason_details\":${mapJson(details)},\"distance_m\":${distance ?: "null"},\"direction\":\"$direction\"}"
 }
 
 private fun decision(guidance: Guidance?): String = when (guidance) {
@@ -182,7 +190,7 @@ private fun runConfigProbe(config: GuideConfig) {
         val result = guide(state, frame, config)
         state = result.nextState
         val distance = result.guidanceDistance() ?: result.reason.details["distanceMeters"]?.toDoubleOrNull()
-        val item = Output(index, frame.timestamp / 1000.0, decision(result.guidance), result.reason.rule, distance, result.nextState.direction.name.lowercase())
+        val item = Output(index, frame.timestamp / 1000.0, decision(result.guidance), result.reason.rule, distance, result.nextState.direction.name.lowercase(), details = result.reason.details)
         println(item.json())
     }
 }
@@ -196,7 +204,7 @@ private fun runSubsecondProbe(config: GuideConfig) {
         val result = guide(state, SensorFrame(timestamp, 10.0005, 20.0 + east30, 5f, 1f, null), config)
         state = result.nextState
         val distance = result.guidanceDistance() ?: result.reason.details["distanceMeters"]?.toDoubleOrNull()
-        Output(index, timestamp / 1000.0, decision(result.guidance), result.reason.rule, distance, state.direction.name.lowercase()).also { println(it.json()) }
+        Output(index, timestamp / 1000.0, decision(result.guidance), result.reason.rule, distance, state.direction.name.lowercase(), details = result.reason.details).also { println(it.json()) }
     }
 }
 
@@ -207,3 +215,6 @@ private fun stringField(json: String, key: String): String? =
     Regex("\\\"$key\\\"\\s*:\\s*\\\"([^\\\"]*)\\\"").find(json)?.groupValues?.get(1)
 
 private fun escape(value: String): String = value.replace("\\", "\\\\").replace("\"", "\\\"")
+
+private fun mapJson(values: Map<String, String>): String = values.entries.sortedBy { it.key }
+    .joinToString(prefix = "{", postfix = "}") { (key, value) -> "\"${escape(key)}\":\"${escape(value)}\"" }

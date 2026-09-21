@@ -14,14 +14,14 @@
         "schema_version": {"const": "0.1.0-draft"},
         "started_at_wall": {"type": "string", "format": "date-time"},
         "app": {"type": "object", "required": ["version", "code_hash"], "properties": {"version": {"type": "string"}, "build": {"type": "integer"}, "code_hash": {"type": "string"}}, "additionalProperties": true},
-        "engine": {"type": "object", "required": ["config", "rng_seed"], "properties": {"config": {"type": "object"}, "rng_seed": {"type": "integer"}}, "additionalProperties": true},
-        "route": {"type": "object", "required": ["gpx_hash"], "properties": {"gpx_id": {"type": "string"}, "gpx_hash": {"type": "string"}, "point_count": {"type": "integer"}}, "additionalProperties": true},
+        "engine": {"type": "object", "required": ["config", "rng_seed"], "properties": {"config": {"type": "object"}, "rng_seed": {"type": "integer"}, "periodic": {"type": "object"}, "config_changes": {"type": "array"}}, "additionalProperties": true},
+        "route": {"type": "object", "required": ["gpx_hash"], "properties": {"gpx_id": {"type": "string"}, "gpx_hash": {"type": "string"}, "point_count": {"type": "integer"}, "elevation_use": {"type": "object", "required": ["used", "reason"], "properties": {"used": {"type": "boolean"}, "reason": {"enum": ["absent", "partial", "unstable", "ok"]}}}, "elevation_used": {"type": "boolean"}, "elevation_reason": {"enum": ["absent", "partial", "unstable", "ok"]}, "waypoint_count": {"type": "integer", "minimum": 0}, "waypoint_names": {"type": "string"}}, "additionalProperties": true},
         "clock": {"type": "object", "required": ["monotonic_source"], "properties": {"monotonic_source": {"type": "string"}}, "additionalProperties": true}
       },
       "additionalProperties": true
     },
     "event_envelope": {"type": "object", "required": ["seq", "t", "stream"], "properties": {"seq": {"type": "integer", "minimum": 0}, "t": {"type": "number"}, "stream": {"type": "string"}}, "additionalProperties": true},
-    "streams": {"type": "object"},
+    "streams": {"type": "object", "properties": {"guide": {"type": "object", "properties": {"trigger": {"enum": ["on-demand", "slot"]}, "src_seq": {"type": "integer", "minimum": 0}, "reason": {"type": "object", "required": ["rule", "details"], "properties": {"rule": {"type": "string"}, "details": {"type": "object"}}}}}, "ondemand": {"type": "object", "properties": {"request": {"type": "object"}, "config": {"type": "object"}}}},
     "tags": {"type": "object"},
     "privacy": {"type": "object", "required": ["upload_default"], "properties": {"upload_default": {"const": false}}, "additionalProperties": true}
   },

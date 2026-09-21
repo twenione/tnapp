@@ -1,0 +1,1 @@
+{"session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","schema_version":"0.1.0-draft","started_at_wall":"2026-01-01T00:00:00Z","app":{"version":"synthetic","code_hash":"sha256:synthetic"},"engine":{"config":{},"rng_seed":1},"route":{"gpx_hash":"sha256:synthetic"},"clock":{"monotonic_source":"synthetic"},"privacy":{"upload_default":false}}

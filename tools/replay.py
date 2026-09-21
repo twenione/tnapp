@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+from xml.etree import ElementTree as ET
 from pathlib import Path
 
 
@@ -68,6 +69,25 @@ def invoke_subsecond_probe(cli: Path) -> list[dict]:
     return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
 
 
+def route_elevation_use(route_path: Path) -> dict[str, object]:
+    """Recompute the GPX-only elevation availability contract without using engine state."""
+    root = ET.fromstring(route_path.read_text(encoding="utf-8"))
+    points = [node for node in root.iter() if node.tag.rsplit("}", 1)[-1] in {"trkpt", "rtept"}]
+    values = [next((child.text for child in node if child.tag.rsplit("}", 1)[-1] == "ele"), None) for node in points]
+    present = sum(value is not None and value.strip() != "" for value in values)
+    if not values or present == 0:
+        reason = "absent"
+    elif present != len(values):
+        reason = "partial"
+    else:
+        try:
+            numeric = [float(value) for value in values if value is not None]
+            reason = "unstable" if any(abs(b - a) > 1000.0 for a, b in zip(numeric, numeric[1:])) else "ok"
+        except ValueError:
+            reason = "unstable"
+    return {"used": reason == "ok", "reason": reason}
+
+
 def contract_probe(cli: Path) -> int:
     """Check D-033 dwell and caller-config contracts through the real CLI."""
     dwell = invoke_probe(cli, ["offRouteEnterDwellSeconds=20"])
@@ -95,15 +115,26 @@ def replay(root: Path, cli: Path, strict: bool, overrides: list[str] | None = No
     events = [json.loads(line) for line in (root / "events.ndjson").read_text(encoding="utf-8").splitlines() if line.strip()]
     loc_events = [event for event in events if event.get("stream") == "loc"]
     guide_events = [event for event in events if event.get("stream") == "guide"]
-    if len(loc_events) != len(guide_events):
-        print(f"FAIL: loc event count {len(loc_events)} does not match guide event count {len(guide_events)}")
+    frame_guide_events = [event for event in guide_events if "trigger" not in event]
+    if len(loc_events) != len(frame_guide_events):
+        print(f"FAIL: loc event count {len(loc_events)} does not match frame guide event count {len(frame_guide_events)}")
         return 1
     trace = invoke(cli, root, overrides=overrides)
     comparisons = [item for item in trace if item.get("kind") == "guide"]
-    if len(comparisons) != len(guide_events):
-        print(f"FAIL: engine comparison count {len(comparisons)} does not match guide event count {len(guide_events)}")
+    trigger_trace = [item for item in trace if item.get("kind") == "trigger"]
+    if len(comparisons) != len(frame_guide_events):
+        print(f"FAIL: engine comparison count {len(comparisons)} does not match frame guide event count {len(frame_guide_events)}")
         return 1
     mismatches: list[str] = []
+    recorded_frame_guides = [event for event in guide_events if "trigger" not in event]
+    recorded_triggers = [event for event in guide_events if "trigger" in event]
+    if len(recorded_triggers) != len(trigger_trace):
+        mismatches.append("trigger count")
+        print(f"trigger count actual={len(trigger_trace)} recorded={len(recorded_triggers)}")
+    loc_seq_set = {event.get("seq") for event in loc_events}
+    for trigger in recorded_triggers:
+        if trigger.get("src_seq") not in loc_seq_set:
+            mismatches.append(f"trigger src_seq {trigger.get('src_seq')}")
     for index, item in enumerate(comparisons):
         expected_source_seq = loc_events[index].get("seq")
         if item.get("source_seq") != expected_source_seq:
@@ -113,17 +144,35 @@ def replay(root: Path, cli: Path, strict: bool, overrides: list[str] | None = No
         if recorded_source_seq is not None and recorded_source_seq != expected_source_seq:
             mismatches.append(f"recorded src_seq index {index}")
             print(f"guide index={index} MISMATCH recorded_src_seq={recorded_source_seq} expected={expected_source_seq}")
-        recorded = item.get("recorded_decision", "")
+        recorded_event = recorded_frame_guides[index] if index < len(recorded_frame_guides) else {}
+        recorded = recorded_event.get("decision", item.get("recorded_decision", ""))
         actual = item.get("decision", "")
-        status = "MATCH" if recorded == actual else "MISMATCH"
+        recorded_rule = recorded_event.get("reason", {}).get("rule", "") if isinstance(recorded_event.get("reason"), dict) else ""
+        actual_rule = item.get("reason_rule", "")
+        recorded_details = recorded_event.get("reason", {}).get("details", {}) if isinstance(recorded_event.get("reason"), dict) else {}
+        actual_details = item.get("reason_details", {})
+        details_match = all(actual_details.get(str(key)) == str(value) for key, value in recorded_details.items())
+        status = "MATCH" if recorded == actual and recorded_rule == actual_rule and details_match else "MISMATCH"
         print(
             f"guide seq={item.get('seq')} {status} actual={json.dumps(actual, sort_keys=True)} "
-            f"recorded={json.dumps(recorded, sort_keys=True)} reason_rule={item.get('reason_rule')} "
+            f"recorded={json.dumps(recorded, sort_keys=True)} reason_rule={actual_rule} recorded_rule={recorded_rule} "
             f"loc_index={item.get('loc_index')}"
         )
         if status == "MISMATCH":
             mismatches.append(f"seq {item.get('seq')}")
-    print(f"RESULT comparisons={len(comparisons)} mismatches={len(mismatches)} strict={strict}")
+    manifest_path = root / "manifest.json"
+    if manifest_path.is_file():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        recorded_use = manifest.get("route", {}).get("elevation_use") or {
+            "used": manifest.get("route", {}).get("elevation_used"),
+            "reason": manifest.get("route", {}).get("elevation_reason"),
+        }
+        if recorded_use.get("reason"):
+            actual_use = route_elevation_use(root / "route.gpx")
+            if recorded_use.get("reason") != actual_use["reason"] or bool(recorded_use.get("used")) != bool(actual_use["used"]):
+                mismatches.append("manifest elevation_use")
+                print(f"elevation_use MISMATCH actual={actual_use} recorded={recorded_use}")
+    print(f"RESULT comparisons={len(comparisons)} triggers={len(trigger_trace)} mismatches={len(mismatches)} strict={strict}")
     if mismatches and strict:
         print("FAIL: " + ", ".join(mismatches))
         return 1
@@ -144,7 +193,7 @@ def main(argv: list[str]) -> int:
         try:
             return contract_probe(resolve_cli(args.cli))
         except (OSError, RuntimeError, json.JSONDecodeError) as exc:
-            print(f"ERROR: contract probe failed: {exc}", file=sys.stderr)
+            print(f"FAIL: contract probe failed: {exc}", file=sys.stderr)
             return 2
     if args.session_dir is None:
         print("ERROR: session directory is required unless --contract is used", file=sys.stderr)
@@ -155,7 +204,7 @@ def main(argv: list[str]) -> int:
     try:
         return replay(args.session_dir, resolve_cli(args.cli), args.strict, args.config)
     except (OSError, RuntimeError, json.JSONDecodeError) as exc:
-        print(f"ERROR: replay failed: {exc}", file=sys.stderr)
+        print(f"FAIL: replay failed: {exc}", file=sys.stderr)
         return 2
 
 

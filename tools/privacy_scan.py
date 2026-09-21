@@ -31,6 +31,7 @@ FIELD_KINDS = frozenset({
     "loc.lat", "loc.lon", "loc.t",
     "guide.inputs.lat", "guide.inputs.lon", "guide.inputs.timestamp", "guide.t",
     "envelope.t", "sys.t", "manifest.started_at_wall", "route.gpx.coordinate",
+    "route.gpx.elevation", "route.gpx.waypoint_name",
 })
 STREAM_FIELDS = {
     "loc": {"lat", "lon", "t"},
@@ -109,6 +110,9 @@ def scan_session(session: Path, route: Path | None = None) -> Counter[str]:
     route_path = route or session / "route.gpx"
     if route_path.is_file():
         root = ET.fromstring(route_path.read_text(encoding="utf-8"))
+        marker_manifest = json.loads(manifest.read_text(encoding="utf-8")) if manifest.is_file() else {}
+        elevation_marked = marker_manifest.get("route", {}).get("elevation_source") == "synthetic" or marker_manifest.get("elevation_source") == "synthetic"
+        waypoint_marked = marker_manifest.get("route", {}).get("waypoint_names") == "synthetic" or marker_manifest.get("waypoint_names") == "synthetic"
         for point in root.iter():
             tag = point.tag.rsplit("}", 1)[-1]
             if tag not in {"trkpt", "rtept", "wpt"}:
@@ -120,6 +124,12 @@ def scan_session(session: Path, route: Path | None = None) -> Counter[str]:
                 continue
             if lat is not None and lon is not None and KOREA_LAT[0] <= lat <= KOREA_LAT[1] and KOREA_LON[0] <= lon <= KOREA_LON[1]:
                 counts["route.gpx.coordinate"] += 1
+            if tag == "wpt":
+                name = next((child.text for child in point if child.tag.rsplit("}", 1)[-1] == "name"), None)
+                if name and not waypoint_marked:
+                    counts["route.gpx.waypoint_name"] += 1
+            if not elevation_marked and any(child.tag.rsplit("}", 1)[-1] == "ele" and child.text for child in point):
+                counts["route.gpx.elevation"] += 1
     return counts
 
 

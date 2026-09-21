@@ -108,6 +108,8 @@ jobs:
           set -euo pipefail
           for session in testdata/sessions/golden/*; do
             python tools/replay.py "$session" --cli replay/build/install/replay/bin/replay --strict
+      - name: Replay reason and metadata negative controls
+        run: python tools/test_replay_negative_controls.py --cli replay/build/install/replay/bin/replay
           done
 
   negative-control:
@@ -144,7 +146,8 @@ jobs:
           for fixture in \
             testdata/violations/session_envelope_loc_time_regress \
             testdata/violations/session_envelope_guide_time_regress \
-            testdata/violations/session_envelope_missing_event_stream; do
+            testdata/violations/session_envelope_missing_event_stream \
+            testdata/violations/session_trigger_src_missing; do
             set +e
             python tools/validate_session.py "$fixture"
             code=$?
