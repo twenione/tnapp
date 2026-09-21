@@ -69,6 +69,18 @@ data class GuideConfig(
     val turnAheadDistanceMeters: Double = 60.0,
     val turnNowDistanceMeters: Double = 15.0,
     val turnOnRouteMaxOffsetMeters: Double = 15.0,
+    /** Maximum route look-ahead used while extracting deterministic E4 slope segments. */
+    val slopeLookaheadMeters: Double = 200.0,
+    /** Minimum smoothed elevation delta for an E4 segment. */
+    val slopeMinDeltaMeters: Double = 20.0,
+    /** Hysteresis used to close a slope segment after the trend flattens. */
+    val slopeHysteresisMeters: Double = 5.0,
+    /** Maximum perpendicular distance for an eligible waypoint. */
+    val waypointNearRouteMeters: Double = 50.0,
+    /** Maximum sanitized waypoint name length. */
+    val waypointNameMaxLength: Int = 80,
+    /** A residual above this value marks an elevation profile unstable. */
+    val elevationSpikeThresholdMeters: Double = 10.0,
     val spatialGridSizeMeters: Double = 100.0,
     val taggingOffRouteDistanceMeters: Double = 30.0,
     val taggingOffRouteDwellSeconds: Double = 60.0,
@@ -90,6 +102,12 @@ data class GuideConfig(
         require(turnNowDistanceMeters > 0.0)
         require(turnNowDistanceMeters < turnAheadDistanceMeters)
         require(turnOnRouteMaxOffsetMeters > 0.0)
+        require(slopeLookaheadMeters > 0.0)
+        require(slopeMinDeltaMeters > 0.0)
+        require(slopeHysteresisMeters >= 0.0)
+        require(waypointNearRouteMeters >= 0.0)
+        require(waypointNameMaxLength > 0)
+        require(elevationSpikeThresholdMeters > 0.0)
     }
 
     companion object {
@@ -120,6 +138,12 @@ data class GuideConfig(
             "turnLookbackMeters" to "turn extraction criterion for Phase 3",
             "turnLookaheadMeters" to "turn extraction criterion for Phase 3",
             "turnAngleThresholdDegrees" to "fixed Phase 1 turn extraction criterion",
+            "slopeLookaheadMeters" to "covered by ElevationRouteTest.slopeProfileUsesLookahead",
+            "slopeMinDeltaMeters" to "covered by ElevationRouteTest.slopeProfileUsesThreshold",
+            "slopeHysteresisMeters" to "covered by ElevationRouteTest.slopeProfileUsesHysteresis",
+            "waypointNearRouteMeters" to "covered by ElevationRouteTest.waypointNearRouteFilter",
+            "waypointNameMaxLength" to "covered by ElevationRouteTest.waypointNameIsSanitized",
+            "elevationSpikeThresholdMeters" to "covered by ElevationRouteTest.spikeIsUnstable",
             "spatialGridSizeMeters" to "route index implementation parameter",
             "taggingOffRouteDistanceMeters" to "Phase 0 tagging parameter; not consumed by guide",
             "taggingOffRouteDwellSeconds" to "Phase 0 tagging parameter; not consumed by guide",
