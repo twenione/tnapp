@@ -1,47 +1,29 @@
 {
-  "session_id": "72bbafd6-cccc-56eb-9646-1dc007034a00",
+  "session_id": "a65300fc-b17d-5dd2-8066-b28d64884917",
   "schema_version": "0.1.0-draft",
-  "started_at_wall": "2026-01-01T00:00:00Z",
+  "started_at_wall": "2018-11-04T21:56:41.446887Z",
   "app": {
     "version": "0.1.0",
-    "build": 0,
-    "code_hash": "git:unknown"
+    "code_hash": "sha256:6ad9613a455798d6d92e5f5f390ab4baa70596bc869ed6b17f5cdd2b28635f06"
   },
   "engine": {
     "config": {
-      "stub": false,
-      "variant": "golden",
-      "implementation": "core-guide"
+      "implementation": "core-guide",
+      "config_hash": "sha256:4f8a6116f58d498cf0c3d8e75b8e3e304d386dfcc257e8e0c7b1445491e099a2"
     },
-    "rng_seed": 100
+    "rng_seed": 0
   },
   "route": {
-    "gpx_id": "synthetic-base",
-    "gpx_hash": "sha256:0266c1f6438b1e5daedcf0b0f7ecec7af44fd116a15fa7f0a6c63bc139f665cd",
-    "point_count": 31
+    "gpx_hash": "sha256:bb422a6c5570f6ad31ebbcfb6c602fcd6143e8259497f14feec89685c1d3e41e"
   },
   "clock": {
-    "monotonic_source": "synthetic-sequence",
-    "timestamp_unit": "seconds",
-    "frame_intervals_seconds": [
-      0.944,
-      0.997,
-      0.95,
-      0.999
-    ]
+    "monotonic_source": "location-frame-timestamp"
   },
   "privacy": {
     "upload_default": false
   },
-  "device": {
-    "model": "synthetic",
-    "os": "test",
-    "sensors": [
-      "gps"
-    ]
-  },
-  "golden_status": "regenerated-after-D-043",
-  "golden_verification": "phase1-accuracy",
   "fixture_purpose": "log-shape-regression",
-  "derived_src_seq": true
+  "golden_status": "regenerated-after-D-043",
+  "derived_src_seq": true,
+  "guide_output_text": "cleared"
 }

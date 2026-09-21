@@ -90,12 +90,48 @@ def _transform_route(source: Path, target: Path, lat_offset: float, lon_offset: 
     return data
 
 
-def _scalar_values(session: Path) -> set[str]:
+SENSITIVE_SCALAR_KEYS = {
+    "lat", "lon", "latitude", "longitude", "t", "timestamp", "started_at_wall", "gpx_hash",
+}
+
+
+def _sensitive_scalars(value: object, key: str | None = None) -> set[str]:
     values: set[str] = set()
-    for path in (session / "manifest.json", session / "events.ndjson"):
-        if path.is_file():
-            values.update(part for part in path.read_text(encoding="utf-8").replace("\n", " ").split() if len(part) >= 8)
+    if isinstance(value, dict):
+        for child_key, child in value.items():
+            values.update(_sensitive_scalars(child, child_key))
+    elif isinstance(value, list):
+        for child in value:
+            values.update(_sensitive_scalars(child, key))
+    elif key in SENSITIVE_SCALAR_KEYS and value is not None:
+        values.add(str(value))
     return values
+
+
+def _scalar_values(session: Path) -> set[str]:
+    """Return only transformed source scalars, excluding stable schema text.
+
+    Structural strings such as ``matching.stationary`` and fixed identifiers
+    intentionally remain unchanged in a fixture.  Comparing every whitespace
+    token therefore rejects valid output.  The fail-closed intersection is
+    limited to fields that the anonymizer is required to transform.
+    """
+    values: set[str] = set()
+    manifest_path = session / "manifest.json"
+    if manifest_path.is_file():
+        values.update(_sensitive_scalars(json.loads(manifest_path.read_text(encoding="utf-8"))))
+    events_path = session / "events.ndjson"
+    if events_path.is_file():
+        for line in events_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                values.update(_sensitive_scalars(json.loads(line)))
+    route_path = session / "route.gpx"
+    if route_path.is_file():
+        root = ET.fromstring(route_path.read_text(encoding="utf-8"))
+        for point in root.iter():
+            if point.tag.rsplit("}", 1)[-1] in {"trkpt", "rtept", "wpt"}:
+                values.update(point.attrib.get(name, "") for name in ("lat", "lon"))
+    return {value for value in values if value}
 
 
 def anonymize(source: Path, output: Path) -> None:

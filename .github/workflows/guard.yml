@@ -52,6 +52,10 @@ jobs:
         with:
           python-version: '3.12'
       - run: python tools/validate_session.py testdata/sessions/golden testdata/sessions/synth
+      - name: Check anonymized log-shape fixture
+        run: |
+          python tools/privacy_scan.py testdata/sessions/golden/log_shape_fixture
+          python tools/fixture_shape_check.py testdata/sessions/golden/log_shape_fixture
 
   core-guide-build:
     runs-on: ubuntu-latest
@@ -199,7 +203,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for session in testdata/sessions/synth/*; do
+          for session in testdata/sessions/synth/* testdata/sessions/golden/log_shape_fixture; do
             python tools/replay.py "$session" --cli replay/build/install/replay/bin/replay --strict > first.out
             python tools/replay.py "$session" --cli replay/build/install/replay/bin/replay --strict > second.out
             diff -u first.out second.out
