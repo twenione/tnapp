@@ -1,0 +1,31 @@
+2026-09-15T23:08:55.1448923Z ##[group]Run gradle/actions/setup-gradle@v4
+2026-09-15T23:08:55.1449705Z with:
+2026-09-15T23:08:55.1450300Z   gradle-version: 8.14
+2026-09-15T23:08:55.1451235Z   cache-disabled: false
+2026-09-15T23:08:55.1451893Z   cache-read-only: true
+2026-09-15T23:08:55.1452735Z   cache-write-only: false
+2026-09-15T23:08:55.1453426Z   cache-overwrite-existing: false
+2026-09-15T23:08:55.1454133Z   cache-cleanup: on-success
+2026-09-15T23:08:55.1454993Z   gradle-home-cache-includes: caches
+notifications
+
+2026-09-15T23:08:55.1455796Z   add-job-summary: always
+2026-09-15T23:08:55.1456474Z   add-job-summary-as-pr-comment: never
+2026-09-15T23:08:55.1457278Z   dependency-graph: disabled
+2026-09-15T23:08:55.1458067Z   dependency-graph-report-dir: dependency-graph-reports
+2026-09-15T23:08:55.1458948Z   dependency-graph-continue-on-failure: true
+2026-09-15T23:08:55.1459755Z   build-scan-publish: false
+2026-09-15T23:08:55.1460413Z   validate-wrappers: true
+2026-09-15T23:08:55.1461273Z   allow-snapshot-wrappers: false
+2026-09-15T23:08:55.1461993Z   gradle-home-cache-strict-match: false
+2026-09-15T23:08:55.1462713Z   workflow-job-context: null
+2026-09-15T23:08:55.1467649Z   github-[REDACTED]
+2026-09-15T23:08:55.1468263Z env:
+2026-09-15T23:08:55.1469016Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+2026-09-15T23:08:55.1470128Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+2026-09-15T23:08:55.1471694Z ##[endgroup]
+2026-09-21T00:00:00.0000000Z ##[group]Run fixture command
+2026-09-21T00:00:00.0000000Z command
+2026-09-21T00:00:00.0000000Z ##[endgroup]
+2026-09-15T23:10:35.2592373Z > Task :app:compileDebugKotlin FAILED
+2026-09-15T23:10:35.8361638Z ##[error]Process completed with exit code 1.

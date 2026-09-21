@@ -129,6 +129,10 @@ jobs:
             test "$code" -eq 1 || failures=$((failures + 1))
           done
           test "$failures" -eq 0
+      - name: Failure signature extractor fixtures
+        run: python tools/test_preserve_failure_record.py
+      - name: Failure signature extractor legacy mutation must fail
+        run: python tools/test_preserve_failure_record.py --legacy-negative-control
 
   negative-control-engine:
     runs-on: ubuntu-latest
