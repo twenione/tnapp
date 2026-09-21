@@ -59,6 +59,26 @@ VARIANTS = {
         "if (projection.distanceMeters <= config.waypointNearRouteMeters) {",
         "if (true /* D-033 waypoint near-route filter removed */) {",
     ),
+    "sunset-drop-pending": (
+        "pendingSunsetThresholds = state.pendingSunsetThresholds + newlyCrossed",
+        "pendingSunsetThresholds = emptySet() /* D-033 E7 pending dropped */",
+    ),
+    "sunset-periodic-gate": (
+        "if (!config.sunsetEnabled) return SunsetEvaluation(state, null)",
+        "if (!config.sunsetEnabled || !config.periodicEnabled) return SunsetEvaluation(state, null) /* D-033 E7 incorrectly gated */",
+    ),
+    "sunset-no-start": (
+        "val firstEvaluation = !previous.sunsetEvaluated",
+        "val firstEvaluation = false /* D-033 E7 start announcement removed */",
+    ),
+    "sunset-epoch-day": (
+        "val dayOfYear = localDate.dayOfYear",
+        "val dayOfYear = localDate.toEpochDay() - LocalDate.of(2000, 1, 1).toEpochDay() /* D-033 seasonal epoch drift */",
+    ),
+    "sunset-skip-accuracy": (
+        "val sunset = evaluateSunsetStandalone(initializedState, frame, config, higherPriority = false)",
+        'val sunset = StandaloneSunsetEvaluation(initializedState, null, Reason("event.none")) /* D-033 skip E7 on accuracy frames */',
+    ),
 }
 
 
@@ -118,13 +138,17 @@ def main() -> int:
                 continue
             commands = [("replay", ["python", "tools/replay.py", "--cli", str(cli), "--contract"])]
             route_preprocessing_variants = {"elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter"}
-            if name not in {"turn-consumption", "turn-direction-gate", *route_preprocessing_variants}:
+            sunset_variants = {
+                "sunset-drop-pending", "sunset-periodic-gate", "sunset-no-start",
+                "sunset-epoch-day", "sunset-skip-accuracy",
+            }
+            if name not in {"turn-consumption", "turn-direction-gate", *route_preprocessing_variants, *sunset_variants}:
                 commands.append(("config-sensitivity", ["python", "tools/config_sensitivity.py", "--cli", str(cli)]))
             # The Phase 1 acceptance corpus intentionally has no geometric
             # turn scenarios. Turn mutations are therefore exercised by the
             # core-guide tests, replay probe, and config probe; running the
             # Phase 1 score would be a false negative by construction.
-            if not name.startswith("turn-") and name not in route_preprocessing_variants:
+            if not name.startswith("turn-") and name not in { *route_preprocessing_variants, *sunset_variants }:
                 commands.insert(1, (
                     "phase1-accuracy",
                     ["python", "tools/phase1_accuracy.py", "--cli", str(cli), "--contract", "--run-id", "d033", "--commit-sha", "fixture"],

@@ -238,6 +238,9 @@ data class GuideState(
     val consumedWaypointIndices: Set<Int> = emptySet(),
     val consumedSunsetThresholds: Set<Int> = emptySet(),
     val pendingSunsetThresholds: Set<Int> = emptySet(),
+    val pendingSunsetDelayReason: String? = null,
+    /** True after the first eligible E7 evaluation in this session. */
+    val sunsetEvaluated: Boolean = false,
     val lastPeriodicEventAt: Long? = null,
     val lastElevationAnnouncementMeters: Double? = null,
 ) {
