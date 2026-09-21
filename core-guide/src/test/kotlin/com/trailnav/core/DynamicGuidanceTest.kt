@@ -138,7 +138,7 @@ class DynamicGuidanceTest {
             SensorFrame(0L, 10.0, 20.0, 5f, 1f, null),
             config,
         ).nextState
-        val result = guide(primed, SensorFrame(1_000L, 10.00135, 20.0, 5f, 1f, null), config)
+        val result = guide(primed, SensorFrame(1_000L, 10.0009, 20.0, 5f, 1f, null), config)
         check(result.guidance is Guidance.Slope)
         val repeat = guide(result.nextState, SensorFrame(1_000L, 10.0, 20.0, 5f, 1f, null),
             GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0))
