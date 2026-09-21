@@ -27,7 +27,7 @@ def run(root: Path, expected: int) -> bool:
 def main() -> int:
     failures = 0
     failures += not run(SOURCE, 0)
-    temp = Path(tempfile.mkdtemp(prefix=".privacy-coverage-negative-", dir=ROOT))
+    temp = Path(tempfile.mkdtemp(prefix="tnapp-privacy-coverage-negative-"))
     try:
         for fixture in SOURCE.glob("privacy_*"):
             if fixture.is_dir():
@@ -37,7 +37,10 @@ def main() -> int:
     finally:
         shutil.rmtree(temp, ignore_errors=True)
     print(f"privacy_coverage cases=2 failures={failures}")
-    return 1 if failures else 0
+    if failures:
+        print(f"FAIL: privacy coverage negative controls failed ({failures} cases)")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

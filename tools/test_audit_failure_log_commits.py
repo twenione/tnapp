@@ -7,6 +7,9 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import patch
+
+import audit_failure_log_commits as audit_tool
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -42,8 +45,35 @@ def main() -> int:
             path = root / f"{name}.json"
             path.write_text(json.dumps(values), encoding="utf-8")
             failures += not run(path, 0 if name in {"valid", "legacy-only"} else 1)
-        print(f"audit_commit_cases=6 failures={failures}")
-        return 1 if failures else 0
+        commit_detail = {
+            "commit": {
+                "message": valid_message,
+                "author": {"name": "tnapp-failure-recorder", "email": "failure-recorder@tnapp.invalid"},
+                "committer": {"name": "tnapp-failure-recorder", "email": "failure-recorder@tnapp.invalid"},
+            },
+            "files": [{"filename": "records/1.json", "status": "added"}],
+        }
+        online_listing = [{"sha": "online", "commit": commit_detail["commit"]}]
+
+        def fake_get_json(url: str, token: str):
+            if url.endswith("/commits?per_page=50"):
+                return online_listing
+            if url.endswith("/commits/online"):
+                return commit_detail
+            if "/repos/twenione/tnapp/actions/runs/1" in url:
+                return {"id": 1, "name": "preserve-failure"}
+            raise AssertionError(f"unexpected URL: {url}")
+
+        with patch.object(audit_tool, "_get_json", side_effect=fake_get_json):
+            online_values = audit_tool.online("twenione/tnapp-failure-log", "token", 50)
+        failures += audit_tool.audit(online_values) != 0
+        mutated_online = [dict(online_values[0], files=[{"filename": "records/1.json", "status": "modified"}])]
+        failures += audit_tool.audit(mutated_online) != 1
+        print(f"audit_commit_cases=8 failures={failures} online_stub=PASS modified_online=PASS")
+        if failures:
+            print(f"FAIL: audit commit negative controls failed ({failures} cases)")
+            return 1
+        return 0
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

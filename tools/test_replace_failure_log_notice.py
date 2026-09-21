@@ -28,6 +28,10 @@ def main() -> int:
     assert "invalid for 1 records and valid for 1 records" in generated
     assert "2" in generated and "1" in generated
     assert build_notice(generated, records) == generated
+    actual_shape = prefix + HEADING + "\nold\x0c\x1b\n"
+    generated_actual_shape = build_notice(actual_shape, records)
+    assert generated_actual_shape.startswith(prefix)
+    assert "\x0c" not in generated_actual_shape and "\x1b" not in generated_actual_shape
     failures = 0
     for bad in (prefix, prefix + HEADING + "\n" + HEADING + "\n"):
         try:
@@ -36,12 +40,12 @@ def main() -> int:
             failures += 1
     assert failures == 2
     try:
-        build_notice(prefix + HEADING + "\n\x00", records)
+        build_notice(prefix + "\x00" + HEADING + "\nold\n", records)
     except ValueError:
         pass
     else:
         raise AssertionError("control character was accepted")
-    print("readme_notice cases=6 failures=0 valid_key_value_signature=PASS idempotent=PASS")
+    print("readme_notice cases=7 failures=0 actual_shape=PASS valid_key_value_signature=PASS idempotent=PASS")
     return 0
 
 

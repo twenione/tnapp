@@ -14,7 +14,7 @@ CHECKER = Path(__file__).with_name("check_synthetic_test_data.py")
 
 
 def run_case(relative: str, content: str, expected: int) -> bool:
-    root = Path(tempfile.mkdtemp(prefix=".synthetic-data-negative-", dir=Path(__file__).resolve().parents[1]))
+    root = Path(tempfile.mkdtemp(prefix="tnapp-synthetic-data-negative-"))
     try:
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -48,7 +48,10 @@ def main() -> int:
     ]
     failures = sum(not run_case(path, content, expected) for path, content, expected in cases)
     print(f"check_synthetic_test_data cases={len(cases)} failures={failures}")
-    return 1 if failures else 0
+    if failures:
+        print(f"FAIL: synthetic-data negative controls failed ({failures} cases)")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

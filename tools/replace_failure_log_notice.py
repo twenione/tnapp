@@ -20,6 +20,10 @@ HEADING = "## failrec-2.0.0 error_signature notice"
 WORKFLOW = "failure-log-readme"
 
 
+def _has_forbidden_control(value: str) -> bool:
+    return any((ord(char) < 32 and char != "\n") or ord(char) == 127 or char == "\ufffd" for char in value)
+
+
 def read_records(root: Path) -> list[dict]:
     values = []
     for path in sorted(root.glob("*.json")):
@@ -53,11 +57,11 @@ def _ids(values: list[dict]) -> str:
 
 
 def build_notice(readme: str, records: list[dict]) -> str:
-    if any((ord(char) < 32 and char != "\n") or ord(char) == 127 or char == "\ufffd" for char in readme):
-        raise ValueError("README contains a forbidden control character")
     if readme.count(HEADING) != 1:
         raise ValueError("README must contain exactly one failrec-2.0.0 heading")
     prefix = readme.split(HEADING, 1)[0]
+    if _has_forbidden_control(prefix):
+        raise ValueError("README prefix contains a forbidden control character")
     data = aggregate(records)
     invalid = data["invalid"]
     valid = data["valid"]
@@ -77,7 +81,7 @@ def build_notice(readme: str, records: list[dict]) -> str:
         "",
     ])
     result = prefix + notice
-    if any((ord(char) < 32 and char != "\n") or ord(char) == 127 or char == "\ufffd" for char in result):
+    if _has_forbidden_control(result):
         raise ValueError("README contains a forbidden control character")
     if not result.startswith(prefix) or any(not re.fullmatch(r"[^\n]*", str(item.get("created_at", ""))) for item in records):
         raise ValueError("README validation failed")
