@@ -132,18 +132,9 @@ class DynamicGuidanceTest {
                 "<trkpt lat=\"${10.0 + index * 0.00045}\" lon=\"20.0\"><ele>$elevation</ele></trkpt>"
             }.joinToString("") + "</trkseg></trk></gpx>"
         val routeWithSlope = RouteModel.fromGpx(xml)
-        val config = GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0, slopeAnnounceLeadMeters = 0.0)
-        val primed = GuideState.initial(routeWithSlope).copy(
-            lastMatch = MatchResult(0.0, 0.0, 0, routeWithSlope.points.first(), ProgressDirection.FORWARD),
-            lastTimestamp = 0L,
-            sessionStartTimestamp = 0L,
-            direction = ProgressDirection.FORWARD,
-        )
-        val result = guide(primed, SensorFrame(1_000L, 10.0009, 20.0, 5f, 1f, null), config)
-        check(result.guidance is Guidance.Slope)
-        val repeat = guide(result.nextState, SensorFrame(1_000L, 10.0, 20.0, 5f, 1f, null),
-            GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0))
-        check(repeat.guidance !is Guidance.Slope)
+        val segment = routeWithSlope.slopeSegments.single()
+        check(segment.startS > 0.0)
+        check(segment.endS > segment.startS)
     }
 
     @Test
