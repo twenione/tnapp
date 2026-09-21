@@ -128,6 +128,21 @@ jobs:
             set -e
             test "$code" -eq 1 || failures=$((failures + 1))
           done
+          for fixture in \
+            testdata/violations/session_envelope_loc_time_regress \
+            testdata/violations/session_envelope_guide_time_regress \
+            testdata/violations/session_envelope_missing_event_stream; do
+            set +e
+            python tools/validate_session.py "$fixture"
+            code=$?
+            set -e
+            test "$code" -eq 1 || failures=$((failures + 1))
+          done
+          set +e
+          python tools/validate_session.py testdata/violations/session_envelope_cross_stream_interleave
+          code=$?
+          set -e
+          test "$code" -eq 0 || failures=$((failures + 1))
           test "$failures" -eq 0
       - name: Failure signature extractor fixtures
         run: python tools/test_preserve_failure_record.py
