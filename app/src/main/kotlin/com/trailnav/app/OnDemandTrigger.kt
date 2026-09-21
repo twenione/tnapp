@@ -4,7 +4,7 @@ package com.trailnav.app
 enum class OnDemandSource(val wireName: String) {
     MEDIA_BUTTON("media_button"),
     SHAKE("shake"),
-    NOTIFICATION("notification"),
+    NOTIFICATION("notification");
 
     companion object {
         fun fromWire(value: String?): OnDemandSource = entries.firstOrNull { it.wireName == value } ?: NOTIFICATION

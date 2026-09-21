@@ -13,8 +13,8 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.media.AudioManager
-import android.media.MediaSession
 import android.media.ToneGenerator
+import android.media.session.MediaSession
 import android.view.KeyEvent
 import android.net.Uri
 import android.os.BatteryManager
