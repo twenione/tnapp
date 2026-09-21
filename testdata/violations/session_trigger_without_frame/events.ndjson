@@ -1,0 +1,2 @@
+{"seq":0,"t":1.0,"stream":"loc","lat":10.0,"lon":20.0,"accuracy":5.0,"provider":"synthetic"}
+{"seq":1,"t":1.0,"stream":"guide","src_seq":0,"trigger":"slot","decision":"CONTINUE","inputs":{},"reason":{"rule":"matching.on-route","details":{}},"state_hash":"sha256:synthetic","output_text":"경로 위입니다"}

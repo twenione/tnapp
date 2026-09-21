@@ -55,6 +55,8 @@ jobs:
       - run: python tools/check_synthetic_test_data.py
       - run: python tools/check_privacy_coverage.py
       - run: python tools/check_failure_rule_versions.py
+      - name: Validate app-shaped frame and slot event streams
+        run: python tools/test_app_session_shape.py
       - name: Check failure rule-version append-only history
         if: github.event_name == 'pull_request'
         shell: bash
@@ -147,7 +149,8 @@ jobs:
             testdata/violations/session_envelope_loc_time_regress \
             testdata/violations/session_envelope_guide_time_regress \
             testdata/violations/session_envelope_missing_event_stream \
-            testdata/violations/session_trigger_src_missing; do
+            testdata/violations/session_trigger_src_missing \
+            testdata/violations/session_trigger_without_frame; do
             set +e
             python tools/validate_session.py "$fixture"
             code=$?
