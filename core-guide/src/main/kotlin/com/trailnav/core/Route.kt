@@ -434,7 +434,9 @@ internal object GpxRouteParser {
             }
             if (current == null) {
                 active = Active(index - 1, index, sign)
-            } else if (current.sign == sign && cumulative[index] - cumulative[current.start] <= config.slopeLookaheadMeters) {
+            } else if (current.sign == sign &&
+                cumulative[index] - cumulative[current.start] <= config.slopeLookaheadMeters + config.minimumPointSpacingMeters
+            ) {
                 current.end = index
             } else {
                 flush()

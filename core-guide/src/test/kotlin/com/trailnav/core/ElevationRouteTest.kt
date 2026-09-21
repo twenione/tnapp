@@ -54,7 +54,7 @@ class ElevationRouteTest {
 
     @Test
     fun waypointIsSanitizedProjectedAndNeverBecomesRouteGeometry() {
-        val rawName = "  Summit" + 1.toChar() + "   View  "
+        val rawName = "  Summit\t   View  "
         val xml = "<gpx><wpt lat=\"10.00045\" lon=\"20.0\"><name>$rawName</name></wpt>" +
             "<wpt lat=\"10.003\" lon=\"20.0\"><name>far away</name></wpt>" +
             "<trk><trkseg>${pointXml(0)}${pointXml(1)}${pointXml(2)}</trkseg></trk></gpx>"
