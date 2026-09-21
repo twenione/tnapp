@@ -89,6 +89,8 @@ data class RouteModel(
     val warnings: List<RouteWarning>,
     /** Elevation values paired with [points]; null is retained for a missing value. */
     val elevationMeters: List<Double?> = emptyList(),
+    /** The deterministic profile used by both E4 slope extraction and E5 slots. */
+    val smoothedElevationMeters: List<Double> = emptyList(),
     val elevationUse: ElevationUse = ElevationUse(false, "absent"),
     val slopeSegments: List<SlopeSegment> = emptyList(),
     val waypoints: List<Waypoint> = emptyList(),
@@ -113,6 +115,10 @@ data class RouteModel(
     val elevationSamples: List<Double?>
         get() = elevationMeters
 
+    /** Smoothed samples used for deterministic slope and slot calculations. */
+    val smoothedElevationProfile: List<Double>
+        get() = smoothedElevationMeters
+
     val e4Segments: List<SlopeSegment>
         get() = slopeSegments
 
@@ -131,6 +137,7 @@ data class RouteModel(
             spatialIndex = SpatialIndex.empty(),
             warnings = emptyList(),
             elevationMeters = emptyList(),
+            smoothedElevationMeters = emptyList(),
             elevationUse = ElevationUse(false, "absent"),
             slopeSegments = emptyList(),
             waypoints = emptyList(),
@@ -325,6 +332,7 @@ internal object GpxRouteParser {
             spatialIndex = SpatialIndex.build(projected, config.spatialGridSizeMeters),
             warnings = warnings,
             elevationMeters = elevations,
+            smoothedElevationMeters = elevation.smoothed,
             elevationUse = ElevationUse(elevation.used, elevation.reason),
             slopeSegments = slopes,
             waypoints = eligibleWaypoints,
