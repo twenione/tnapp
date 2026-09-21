@@ -143,7 +143,10 @@ private fun GuideConfig.withOverrides(values: Map<String, Double>): GuideConfig 
     offRouteEnterDwellSeconds = values["offRouteEnterDwellSeconds"] ?: offRouteEnterDwellSeconds,
     offRouteExitDistMeters = values["offRouteExitDistMeters"] ?: offRouteExitDistMeters,
     offRouteExitDwellSeconds = values["offRouteExitDwellSeconds"] ?: offRouteExitDwellSeconds,
-    reannounceIntervalSeconds = values["reannounceIntervalSeconds"] ?: reannounceIntervalSeconds
+    reannounceIntervalSeconds = values["reannounceIntervalSeconds"] ?: reannounceIntervalSeconds,
+    turnAheadDistanceMeters = values["turnAheadDistanceMeters"] ?: turnAheadDistanceMeters,
+    turnNowDistanceMeters = values["turnNowDistanceMeters"] ?: turnNowDistanceMeters,
+    turnOnRouteMaxOffsetMeters = values["turnOnRouteMaxOffsetMeters"] ?: turnOnRouteMaxOffsetMeters
 )
 
 private fun runConfigProbe(config: GuideConfig) {

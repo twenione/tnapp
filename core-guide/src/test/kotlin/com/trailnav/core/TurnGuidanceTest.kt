@@ -55,7 +55,7 @@ class TurnGuidanceTest {
         state = guide(state, SensorFrame(0L, 10.0, 20.0, 5f, 1f, null)).nextState
         state = guide(state, SensorFrame(1_000L, 10.0013, 20.0, 5f, 1f, null)).nextState
         state = guide(state, SensorFrame(1_500L, 10.0015, 20.0, 5f, 1f, null)).nextState
-        val reverse = guide(state, SensorFrame(2_000L, 10.0014, 20.0, 5f, 1f, null))
+        val reverse = guide(state, SensorFrame(2_000L, 10.0014, 20.0, 5f, 1f, null), GuideConfig(emaAlpha = 1.0))
         assertTrue(reverse.guidance !is Guidance.TurnAhead && reverse.guidance !is Guidance.TurnNow)
 
         val metersPerDegreeLon = 6_371_008.8 * cos(Math.toRadians(10.0)) * Math.PI / 180.0
