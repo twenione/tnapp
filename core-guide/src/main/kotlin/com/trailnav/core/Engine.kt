@@ -1,5 +1,15 @@
 package com.trailnav.core
 
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.floor
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sin
+
 /** Pure Phase 1 guidance engine. It reads no clock, random source, or I/O. */
 object Engine {
     fun guide(state: GuideState, frame: SensorFrame, config: GuideConfig = GuideConfig()): GuideResult =
@@ -123,6 +133,11 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
     turnEvaluation.guidance?.let { guidance ->
         return GuideResult(guidance, next, turnEvaluation.reason)
     }
+    val dynamic = evaluateDynamicGuidance(initializedState, next, directedMatch, frame, config)
+    if (dynamic.guidance != null) {
+        return GuideResult(dynamic.guidance, dynamic.state, dynamic.reason)
+    }
+    next = dynamic.state
     return GuideResult(
         null,
         next,
@@ -134,6 +149,174 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
             )
         )
     )
+}
+
+private data class DynamicEvaluation(
+    val state: GuideState,
+    val guidance: Guidance?,
+    val reason: Reason,
+)
+
+private data class DynamicCandidate(
+    val priority: Int,
+    val kind: String,
+    val guidance: Guidance,
+    val reason: Reason,
+    val sunsetThreshold: Int? = null,
+)
+
+/** Evaluate frame-derived Phase 3 events after arrival/off-route/turn gates. */
+private fun evaluateDynamicGuidance(
+    previous: GuideState,
+    state: GuideState,
+    match: MatchResult,
+    frame: SensorFrame,
+    config: GuideConfig,
+): DynamicEvaluation {
+    var next = state
+    val oldProgress = previous.lastMatch?.projectedMeters
+    val oldRemaining = oldProgress?.let { (state.route.totalLengthMeters - it).coerceAtLeast(0.0) }
+    val remaining = (state.route.totalLengthMeters - match.projectedMeters).coerceAtLeast(0.0)
+    val candidates = mutableListOf<DynamicCandidate>()
+    val onRoute = !state.offRoute
+    val forward = state.direction == ProgressDirection.FORWARD || state.direction == ProgressDirection.STATIONARY
+    val eventIntervalOpen = state.lastPeriodicEventAt == null ||
+        elapsedSeconds(frame.timestamp, state.lastPeriodicEventAt) >= config.eventMinIntervalSeconds
+
+    fun reason(rule: String, kind: String, details: Map<String, String> = emptyMap()) =
+        Reason(rule, thresholds = mapOf("eventMinIntervalSeconds" to config.eventMinIntervalSeconds), details = details + ("event" to kind))
+
+    // E1: distance milestones are based on projected route distance.
+    val milestoneCount = floor(match.projectedMeters / config.milestoneIntervalMeters).toInt()
+    val oldMilestoneCount = oldProgress?.let { floor(it / config.milestoneIntervalMeters).toInt() } ?: milestoneCount
+    if (milestoneCount > 0) {
+        val crossed = (oldMilestoneCount + 1..milestoneCount).toList()
+        next = next.copy(consumedMilestoneIndices = next.consumedMilestoneIndices + crossed)
+        if (config.milestoneEnabled && onRoute && forward && eventIntervalOpen && crossed.isNotEmpty()) {
+            val index = crossed.maxOrNull()!!
+            candidates += DynamicCandidate(
+                60, "event.milestone", Guidance.Milestone(index * config.milestoneIntervalMeters),
+                reason("event.milestone", "E1", mapOf("index" to index.toString(), "thresholdMeters" to (index * config.milestoneIntervalMeters).toString()))
+            )
+        }
+    }
+
+    // E2: elapsed time uses the first session frame as its origin.
+    val start = state.sessionStartTimestamp
+    if (start != null) {
+        val elapsed = elapsedSeconds(frame.timestamp, start)
+        val count = floor(elapsed / config.elapsedAnnounceIntervalSeconds).toInt()
+        val oldCount = previous.lastTimestamp?.let { floor(elapsedSeconds(it, start) / config.elapsedAnnounceIntervalSeconds).toInt() } ?: count
+        val crossed = (oldCount + 1..count).toList()
+        next = next.copy(consumedElapsedIndices = next.consumedElapsedIndices + crossed)
+        if (config.elapsedEnabled && config.periodicEnabled && eventIntervalOpen && crossed.isNotEmpty()) {
+            val index = crossed.maxOrNull()!!
+            candidates += DynamicCandidate(
+                50, "event.elapsed", Guidance.Elapsed(index),
+                reason("event.elapsed", "E2", mapOf("hours" to index.toString()))
+            )
+        }
+    }
+
+    // E3: remaining-distance thresholds are consumed while moving forward.
+    val oldRemainingValue = oldRemaining ?: remaining
+    val crossedRemaining = config.remainingAnnounceMeters.filter { oldRemainingValue > it && remaining <= it }
+    next = next.copy(consumedRemainingThresholds = next.consumedRemainingThresholds + crossedRemaining)
+    if (config.remainingEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && crossedRemaining.isNotEmpty()) {
+        val threshold = crossedRemaining.minOrNull()!!
+        candidates += DynamicCandidate(
+            70, "event.remaining", Guidance.Remaining(threshold),
+            reason("event.remaining", "E3", mapOf("thresholdMeters" to threshold.toString(), "remainingMeters" to remaining.toString()))
+        )
+    }
+
+    // E4: the precomputed elevation segments are approached once.
+    state.route.slopeSegments.forEachIndexed { index, segment ->
+        val distance = segment.startS - match.projectedMeters
+        if (distance < 0.0) next = next.copy(consumedSlopeIndices = next.consumedSlopeIndices + index)
+        else if (distance <= config.slopeAnnounceLeadMeters) {
+            next = next.copy(consumedSlopeIndices = next.consumedSlopeIndices + index)
+            if (config.slopeEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedSlopeIndices) {
+                candidates += DynamicCandidate(
+                    80, "event.slope", Guidance.Slope(segment.kind, segment.deltaMeters),
+                    reason("event.slope", "E4", mapOf("segmentIndex" to index.toString(), "startS" to segment.startS.toString(), "deltaMeters" to segment.deltaMeters.toString()))
+                )
+            }
+        }
+    }
+
+    // E6: eligible waypoints are approached once; their names were sanitized at load time.
+    state.route.waypoints.forEachIndexed { index, waypoint ->
+        val distance = waypoint.s - match.projectedMeters
+        if (distance < 0.0) next = next.copy(consumedWaypointIndices = next.consumedWaypointIndices + index)
+        else if (distance <= config.waypointAnnounceLeadMeters) {
+            next = next.copy(consumedWaypointIndices = next.consumedWaypointIndices + index)
+            if (config.waypointEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedWaypointIndices) {
+                candidates += DynamicCandidate(
+                    65, "event.waypoint", Guidance.Waypoint(index, waypoint.name, distance),
+                    reason("event.waypoint", "E6", mapOf("waypointIndex" to index.toString(), "name" to waypoint.name, "distanceMeters" to distance.toString()))
+                )
+            }
+        }
+    }
+
+    // E7 is independent of periodicEnabled and is the sole deferred event.
+    if (config.sunsetEnabled) {
+        val sunset = sunsetEpochSeconds(frame.timestamp, frame.lat, frame.lon)
+        if (sunset != null) {
+            val minutes = (sunset - frame.timestamp / 1000.0) / 60.0
+            if (minutes <= 0.0) {
+                if (0 !in previous.consumedSunsetThresholds && previous.lastTimestamp == null) {
+                    next = next.copy(consumedSunsetThresholds = next.consumedSunsetThresholds + 0)
+                    candidates += DynamicCandidate(100, "event.sunset", Guidance.Sunset(null, true), reason("event.sunset", "E7", mapOf("afterSunset" to "true")), 0)
+                }
+            } else {
+                val crossed = config.sunsetAnnounceMinutes.filter { threshold ->
+                    val oldMinutes = previous.lastTimestamp?.let { (sunset - it / 1000.0) / 60.0 } ?: minutes
+                    oldMinutes > threshold && minutes <= threshold && threshold !in previous.consumedSunsetThresholds
+                }
+                next = next.copy(consumedSunsetThresholds = next.consumedSunsetThresholds + crossed)
+                if (crossed.isNotEmpty()) {
+                    val threshold = crossed.minOrNull()!!
+                    if (eventIntervalOpen) {
+                        candidates += DynamicCandidate(100, "event.sunset", Guidance.Sunset(max(0, minutes.toInt())), reason("event.sunset", "E7", mapOf("thresholdMinutes" to threshold.toString(), "minutesRemaining" to minutes.toInt().toString())), threshold)
+                    } else {
+                        next = next.copy(pendingSunsetThresholds = next.pendingSunsetThresholds + threshold)
+                    }
+                }
+            }
+        }
+    }
+
+    val selected = candidates.maxByOrNull { it.priority }
+    if (selected == null) {
+        return DynamicEvaluation(next, null, reason("event.none", "none"))
+    }
+    // A higher-priority candidate delays E7; all other candidates are consumed.
+    val pending = next.pendingSunsetThresholds - (selected.sunsetThreshold ?: Int.MIN_VALUE)
+    next = next.copy(
+        pendingSunsetThresholds = pending,
+        lastPeriodicEventAt = frame.timestamp,
+    )
+    return DynamicEvaluation(next, selected.guidance, selected.reason)
+}
+
+/** Deterministic NOAA-style sunset approximation; null denotes polar no-sunset. */
+private fun sunsetEpochSeconds(timestamp: Long, latitude: Double, longitude: Double): Double? {
+    val instant = Instant.ofEpochMilli(timestamp)
+    val localDate = instant.atZone(ZoneOffset.UTC).plusSeconds((longitude * 240.0).toLong()).toLocalDate()
+    val day = localDate.toEpochDay() - LocalDate.of(2000, 1, 1).toEpochDay()
+    val gamma = 2.0 * Math.PI / 365.0 * (day + 0.5)
+    val declination = 0.006918 - 0.399912 * cos(gamma) + 0.070257 * sin(gamma) - 0.006758 * cos(2 * gamma) + 0.000907 * sin(2 * gamma)
+    val equation = 229.18 * (0.000075 + 0.001868 * cos(gamma) - 0.032077 * sin(gamma) - 0.014615 * cos(2 * gamma) - 0.040849 * sin(2 * gamma))
+    val zenith = Math.toRadians(90.833)
+    val latitudeRadians = Math.toRadians(latitude)
+    val cosHour = (cos(zenith) - sin(latitudeRadians) * sin(declination)) / (cos(latitudeRadians) * cos(declination))
+    if (cosHour !in -1.0..1.0) return null
+    val hourAngleMinutes = Math.toDegrees(kotlin.math.acos(cosHour)) * 4.0
+    val sunsetMinutesUtc = 720.0 - 4.0 * longitude + hourAngleMinutes - equation
+    val midnight = localDate.atStartOfDay(ZoneOffset.UTC).toEpochSecond()
+    return midnight + sunsetMinutesUtc * 60.0
 }
 
 private data class TurnEvaluation(
