@@ -59,6 +59,26 @@ VARIANTS = {
         "if (projection.distanceMeters <= config.waypointNearRouteMeters) {",
         "if (true /* D-033 waypoint near-route filter removed */) {",
     ),
+    "sunset-drop-pending": (
+        "pendingSunsetThresholds = state.pendingSunsetThresholds + newlyCrossed",
+        "pendingSunsetThresholds = emptySet() /* D-033 E7 pending dropped */",
+    ),
+    "sunset-periodic-gate": (
+        "if (!config.sunsetEnabled) return SunsetEvaluation(state, null)",
+        "if (!config.sunsetEnabled || !config.periodicEnabled) return SunsetEvaluation(state, null) /* D-033 E7 incorrectly gated */",
+    ),
+    "sunset-no-start": (
+        "val firstEvaluation = !previous.sunsetEvaluated",
+        "val firstEvaluation = false /* D-033 E7 start announcement removed */",
+    ),
+    "sunset-epoch-day": (
+        "val dayOfYear = localDate.dayOfYear",
+        "val dayOfYear = localDate.toEpochDay() - LocalDate.of(2000, 1, 1).toEpochDay() /* D-033 seasonal epoch drift */",
+    ),
+    "sunset-skip-accuracy": (
+        "val sunset = evaluateSunsetStandalone(initializedState, frame, config, higherPriority = false)",
+        'val sunset = StandaloneSunsetEvaluation(initializedState, null, Reason("event.none")) /* D-033 skip E7 on accuracy frames */',
+    ),
 }
 
 

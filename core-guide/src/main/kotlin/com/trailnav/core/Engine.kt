@@ -30,9 +30,11 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         return GuideResult(null, initializedState, Reason("arrived.already-complete"))
     }
     if (frame.accuracy.toDouble() > config.accuracyRejectMeters) {
+        val sunset = evaluateSunsetStandalone(initializedState, frame, config, higherPriority = false)
+        if (sunset.guidance != null) return sunset.toResult("input.accuracy-filter")
         return GuideResult(
             null,
-            initializedState,
+            sunset.state,
             Reason(
                 rule = "input.accuracy-filter",
                 thresholds = mapOf("accuracyRejectMeters" to config.accuracyRejectMeters),
@@ -41,7 +43,11 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         )
     }
     val match = RouteMatcher.nearest(initializedState.route, frame, initializedState.lastMatch?.projectedMeters, config)
-        ?: return GuideResult(null, initializedState, Reason("matching.no-route-segment"))
+    if (match == null) {
+        val sunset = evaluateSunsetStandalone(initializedState, frame, config, higherPriority = false)
+        return if (sunset.guidance != null) sunset.toResult("matching.no-route-segment")
+        else GuideResult(null, sunset.state, Reason("matching.no-route-segment"))
+    }
     val directedMatch = RouteMatcher.withDirection(initializedState, match, frame, config)
     val ema = RouteMatcher.updatedEma(initializedState, directedMatch, config)
     val stationary = frame.speed != null && frame.speed.toDouble() < config.stationarySpeedMps
@@ -88,7 +94,8 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
             elapsedSeconds(frame.timestamp, next.lastAnnouncementAt) >= config.reannounceIntervalSeconds ||
             (next.lastAnnouncementDistance != null && directedMatch.distanceMeters > next.lastAnnouncementDistance * 2.0)
         if (shouldAnnounce) {
-            next = next.copy(
+            val sunset = evaluateSunsetStandalone(next, frame, config, higherPriority = true)
+            next = sunset.state.copy(
                 lastAnnouncementAt = frame.timestamp,
                 lastAnnouncementDistance = directedMatch.distanceMeters
             )
@@ -108,9 +115,11 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
                 )
             )
         }
+        val sunset = evaluateSunsetStandalone(next, frame, config, higherPriority = false)
+        if (sunset.guidance != null) return sunset.toResult("off-route.holding")
         return GuideResult(
             null,
-            next,
+            sunset.state,
             Reason("off-route.holding", details = mapOf("distanceMeters" to directedMatch.distanceMeters.toString()))
         )
     }
@@ -118,9 +127,10 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
     val reverseWarning = reverseSince != null &&
         elapsedSeconds(frame.timestamp, reverseSince) >= config.reverseWarningDwellSeconds
     if (reverseWarning) {
+        val sunset = evaluateSunsetStandalone(next, frame, config, higherPriority = true)
         return GuideResult(
             Guidance.Status("역방향 진행 중", directedMatch.distanceMeters, direction.name.lowercase()),
-            next,
+            sunset.state,
             Reason(
                 rule = "matching.reverse-dwell",
                 thresholds = mapOf("reverseWarningDwellSeconds" to config.reverseWarningDwellSeconds)
@@ -131,7 +141,8 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
     val turnEvaluation = evaluateTurnGuidance(next, directedMatch, direction, config)
     next = turnEvaluation.state
     turnEvaluation.guidance?.let { guidance ->
-        return GuideResult(guidance, next, turnEvaluation.reason)
+        val sunset = evaluateSunsetStandalone(next, frame, config, higherPriority = true)
+        return GuideResult(guidance, sunset.state, turnEvaluation.reason)
     }
     val dynamic = evaluateDynamicGuidance(initializedState, next, directedMatch, frame, config)
     if (dynamic.guidance != null) {
@@ -162,7 +173,7 @@ private data class DynamicCandidate(
     val kind: String,
     val guidance: Guidance,
     val reason: Reason,
-    val sunsetThreshold: Int? = null,
+    val sunsetThresholds: Set<Int> = emptySet(),
 )
 
 /** Evaluate frame-derived Phase 3 events after arrival/off-route/turn gates. */
@@ -261,52 +272,136 @@ private fun evaluateDynamicGuidance(
     }
 
     // E7 is independent of periodicEnabled and is the sole deferred event.
-    if (config.sunsetEnabled) {
-        val sunset = sunsetEpochSeconds(frame.timestamp, frame.lat, frame.lon)
-        if (sunset != null) {
-            val minutes = (sunset - frame.timestamp / 1000.0) / 60.0
-            if (minutes <= 0.0) {
-                if (0 !in previous.consumedSunsetThresholds && previous.lastTimestamp == null) {
-                    next = next.copy(consumedSunsetThresholds = next.consumedSunsetThresholds + 0)
-                    candidates += DynamicCandidate(100, "event.sunset", Guidance.Sunset(null, true), reason("event.sunset", "E7", mapOf("afterSunset" to "true")), 0)
-                }
-            } else {
-                val crossed = config.sunsetAnnounceMinutes.filter { threshold ->
-                    val oldMinutes = previous.lastTimestamp?.let { (sunset - it / 1000.0) / 60.0 } ?: minutes
-                    oldMinutes > threshold && minutes <= threshold && threshold !in previous.consumedSunsetThresholds
-                }
-                next = next.copy(consumedSunsetThresholds = next.consumedSunsetThresholds + crossed)
-                if (crossed.isNotEmpty()) {
-                    val threshold = crossed.minOrNull()!!
-                    if (eventIntervalOpen) {
-                        candidates += DynamicCandidate(100, "event.sunset", Guidance.Sunset(max(0, minutes.toInt())), reason("event.sunset", "E7", mapOf("thresholdMinutes" to threshold.toString(), "minutesRemaining" to minutes.toInt().toString())), threshold)
-                    } else {
-                        next = next.copy(pendingSunsetThresholds = next.pendingSunsetThresholds + threshold)
-                    }
-                }
-            }
-        }
-    }
+    val sunsetEvaluation = evaluateSunset(previous, next, frame, config, eventIntervalOpen, candidates.isNotEmpty())
+    next = sunsetEvaluation.state
+    sunsetEvaluation.candidate?.let { candidates += it }
 
     val selected = candidates.maxByOrNull { it.priority }
     if (selected == null) {
         return DynamicEvaluation(next, null, reason("event.none", "none"))
     }
     // A higher-priority candidate delays E7; all other candidates are consumed.
-    val pending = next.pendingSunsetThresholds - (selected.sunsetThreshold ?: Int.MIN_VALUE)
+    val pending = next.pendingSunsetThresholds - selected.sunsetThresholds
     next = next.copy(
         pendingSunsetThresholds = pending,
+        pendingSunsetDelayReason = if (selected.sunsetThresholds.isNotEmpty()) null else next.pendingSunsetDelayReason,
         lastPeriodicEventAt = frame.timestamp,
     )
     return DynamicEvaluation(next, selected.guidance, selected.reason)
+}
+
+private data class SunsetEvaluation(
+    val state: GuideState,
+    val candidate: DynamicCandidate?,
+)
+
+private data class StandaloneSunsetEvaluation(
+    val state: GuideState,
+    val guidance: Guidance?,
+    val reason: Reason,
+) {
+    fun toResult(rule: String): GuideResult =
+        GuideResult(guidance, state, reason.copy(rule = rule))
+}
+
+/** Evaluate E7 on every frame, including frames rejected by matching. */
+private fun evaluateSunsetStandalone(
+    state: GuideState,
+    frame: SensorFrame,
+    config: GuideConfig,
+    higherPriority: Boolean,
+): StandaloneSunsetEvaluation {
+    if (!config.sunsetEnabled) return StandaloneSunsetEvaluation(state, null, Reason("event.none"))
+    val intervalOpen = state.lastPeriodicEventAt == null ||
+        elapsedSeconds(frame.timestamp, state.lastPeriodicEventAt) >= config.eventMinIntervalSeconds
+    val evaluation = evaluateSunset(state, state, frame, config, intervalOpen, higherPriority)
+    val candidate = evaluation.candidate
+    if (candidate == null) return StandaloneSunsetEvaluation(evaluation.state, null, Reason("event.none", details = mapOf("event" to "none")))
+    val next = evaluation.state.copy(
+        pendingSunsetThresholds = evaluation.state.pendingSunsetThresholds - candidate.sunsetThresholds,
+        pendingSunsetDelayReason = if (candidate.sunsetThresholds.isNotEmpty()) null else evaluation.state.pendingSunsetDelayReason,
+        lastPeriodicEventAt = frame.timestamp,
+    )
+    return StandaloneSunsetEvaluation(next, candidate.guidance, candidate.reason)
+}
+
+/** Build an E7 candidate, retaining pending thresholds until a frame can speak. */
+private fun evaluateSunset(
+    previous: GuideState,
+    state: GuideState,
+    frame: SensorFrame,
+    config: GuideConfig,
+    eventIntervalOpen: Boolean,
+    higherPriority: Boolean,
+): SunsetEvaluation {
+    if (!config.sunsetEnabled) return SunsetEvaluation(state, null)
+    val sunset = sunsetEpochSeconds(frame.timestamp, frame.lat, frame.lon)
+        ?: return SunsetEvaluation(state.copy(sunsetEvaluated = true), null)
+    val minutes = (sunset - frame.timestamp / 1000.0) / 60.0
+    val oldMinutes = previous.lastTimestamp?.let { (sunset - it / 1000.0) / 60.0 } ?: minutes
+    val firstEvaluation = !previous.sunsetEvaluated
+    val newlyCrossed = if (minutes <= 0.0) {
+        if (0 !in previous.consumedSunsetThresholds) setOf(0) else emptySet()
+    } else if (firstEvaluation) {
+        config.sunsetAnnounceMinutes.filter { minutes <= it && it !in previous.consumedSunsetThresholds }.toSet()
+    } else {
+        config.sunsetAnnounceMinutes.filter { oldMinutes > it && minutes <= it && it !in previous.consumedSunsetThresholds }.toSet()
+    }
+    val pendingReason = when {
+        state.pendingSunsetThresholds.isNotEmpty() -> state.pendingSunsetDelayReason
+        higherPriority -> "higher-priority-event"
+        !eventIntervalOpen -> "event-min-interval"
+        else -> null
+    }
+    var next = state.copy(
+        sunsetEvaluated = true,
+        consumedSunsetThresholds = state.consumedSunsetThresholds + newlyCrossed,
+        pendingSunsetThresholds = state.pendingSunsetThresholds + newlyCrossed,
+        pendingSunsetDelayReason = pendingReason,
+    )
+    val pending = next.pendingSunsetThresholds
+    if (pending.isEmpty() || higherPriority || !eventIntervalOpen) return SunsetEvaluation(next, null)
+    val afterSunset = minutes <= 0.0 || pending.contains(0)
+    val thresholds = pending.filter { it != 0 }.sortedDescending()
+    val thresholdText = if (afterSunset) "after-sunset" else thresholds.joinToString(",")
+    val delayed = previous.pendingSunsetThresholds.isNotEmpty()
+    val delayReason = when {
+        !delayed -> "none"
+        else -> next.pendingSunsetDelayReason ?: "pending"
+    }
+    val details = mapOf(
+        "event" to "E7",
+        "thresholdMinutes" to thresholdText,
+        "minutesRemaining" to if (afterSunset) "0" else max(0, minutes.toInt()).toString(),
+        "startAnnouncement" to firstEvaluation.toString(),
+        "delayed" to delayed.toString(),
+        "delayReason" to delayReason,
+        "afterSunset" to afterSunset.toString(),
+        "sunsetEpochSeconds" to sunset.toString(),
+    )
+    val guidance = Guidance.Sunset(if (afterSunset) null else max(0, minutes.toInt()), afterSunset)
+    val candidate = DynamicCandidate(
+        priority = 100,
+        kind = "event.sunset",
+        guidance = guidance,
+        reason = Reason(
+            rule = "event.sunset",
+            thresholds = mapOf("eventMinIntervalSeconds" to config.eventMinIntervalSeconds),
+            details = details,
+        ),
+        sunsetThresholds = pending,
+    )
+    return SunsetEvaluation(next, candidate)
 }
 
 /** Deterministic NOAA-style sunset approximation; null denotes polar no-sunset. */
 private fun sunsetEpochSeconds(timestamp: Long, latitude: Double, longitude: Double): Double? {
     val instant = Instant.ofEpochMilli(timestamp)
     val localDate = instant.atZone(ZoneOffset.UTC).plusSeconds((longitude * 240.0).toLong()).toLocalDate()
-    val day = localDate.toEpochDay() - LocalDate.of(2000, 1, 1).toEpochDay()
-    val gamma = 2.0 * Math.PI / 365.0 * (day + 0.5)
+    // NOAA's fractional year uses the local day-of-year, never days since
+    // an arbitrary epoch (which introduces a multi-day seasonal drift).
+    val dayOfYear = localDate.dayOfYear
+    val gamma = 2.0 * Math.PI / 365.0 * (dayOfYear - 1 + 0.5)
     val declination = 0.006918 - 0.399912 * cos(gamma) + 0.070257 * sin(gamma) - 0.006758 * cos(2 * gamma) + 0.000907 * sin(2 * gamma)
     val equation = 229.18 * (0.000075 + 0.001868 * cos(gamma) - 0.032077 * sin(gamma) - 0.014615 * cos(2 * gamma) - 0.040849 * sin(2 * gamma))
     val zenith = Math.toRadians(90.833)
