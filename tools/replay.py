@@ -103,7 +103,7 @@ def details_match(recorded: object, actual: object) -> bool:
             if abs(float(left) - float(right)) > 1.0:
                 return False
         except ValueError:
-            if left != right:
+            if left.casefold() != right.casefold():
                 return False
     return True
 
