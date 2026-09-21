@@ -235,15 +235,25 @@ class DynamicGuidanceTest {
 
     @Test
     fun reverseGateSuppressesMilestoneAnnouncement() {
-        val config = GuideConfig(periodicEnabled = true, sunsetEnabled = false, eventMinIntervalSeconds = 0.0, milestoneIntervalMeters = 50.0)
-        val primed = GuideState.initial(route).copy(
-            lastMatch = MatchResult(0.0, 120.0, 0, route.points.first(), ProgressDirection.FORWARD),
+        val reverseRoute = RouteModel.fromGpx(
+            "<gpx><trk><trkseg>" +
+                "<trkpt lat=\"10.0\" lon=\"20.0\"><ele>0</ele></trkpt>" +
+                "<trkpt lat=\"10.0005\" lon=\"20.0\"><ele>0</ele></trkpt>" +
+                "<trkpt lat=\"10.001\" lon=\"20.0\"><ele>0</ele></trkpt>" +
+                "<trkpt lat=\"10.0015\" lon=\"20.0\"><ele>10</ele></trkpt>" +
+                "<trkpt lat=\"10.002\" lon=\"20.0\"><ele>20</ele></trkpt>" +
+                "</trkseg></trk></gpx>"
+        )
+        check(reverseRoute.slopeSegments.isNotEmpty())
+        val config = GuideConfig(periodicEnabled = true, sunsetEnabled = false, eventMinIntervalSeconds = 0.0)
+        val primed = GuideState.initial(reverseRoute).copy(
+            lastMatch = MatchResult(0.0, reverseRoute.cumulativeMeters[2] + 20.0, 2, reverseRoute.points[2], ProgressDirection.FORWARD),
             lastTimestamp = 0L,
             sessionStartTimestamp = 0L,
             direction = ProgressDirection.FORWARD,
         )
-        val result = guide(primed, SensorFrame(1_000L, 10.0005, 20.0, 5f, 1f, null), config)
-        check(result.guidance !is Guidance.Milestone)
+        val result = guide(primed, SensorFrame(1_000L, 10.0009, 20.0, 5f, 1f, null), config)
+        check(result.guidance !is Guidance.Slope)
     }
 
     @Test
