@@ -27,6 +27,17 @@ YEAR_2026_SECONDS = (
 )
 YEAR_2026_MILLIS = (YEAR_2026_SECONDS[0] * 1000.0, YEAR_2026_SECONDS[1] * 1000.0)
 ISO_2026 = re.compile(r"^2026(?:-|T|$)")
+FIELD_KINDS = frozenset({
+    "loc.lat", "loc.lon", "loc.t",
+    "guide.inputs.lat", "guide.inputs.lon", "guide.inputs.timestamp", "guide.t",
+    "envelope.t", "sys.t", "manifest.started_at_wall", "route.gpx.coordinate",
+})
+STREAM_FIELDS = {
+    "loc": {"lat", "lon", "t"},
+    "guide": {"t"},
+    "envelope": {"t"},
+    "sys": {"t"},
+}
 
 
 def _numeric(value: object) -> float | None:
@@ -48,8 +59,12 @@ def _in_2026(value: object, *, milliseconds: bool = False) -> bool:
 def _kind_for(path: tuple[str, ...], key: str) -> str:
     if path and path[0] in {"loc", "guide", "envelope", "sys"}:
         if path[0] == "guide" and len(path) >= 2 and path[1] == "inputs":
-            return "guide.inputs." + key
-        return path[0] + "." + key
+            candidate = "guide.inputs." + key
+        else:
+            candidate = path[0] + "." + key
+        if candidate in FIELD_KINDS and key in STREAM_FIELDS.get(path[0], set()) | ({"lat", "lon", "timestamp"} if path[0] == "guide" and len(path) >= 2 and path[1] == "inputs" else set()):
+            return candidate
+        return "unknown." + ".".join((*path, key))
     if key == "started_at_wall":
         return "manifest.started_at_wall"
     return "unknown." + ".".join((*path, key))

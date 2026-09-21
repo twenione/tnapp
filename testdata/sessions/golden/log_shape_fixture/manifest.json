@@ -1,7 +1,7 @@
 {
-  "session_id": "a65300fc-b17d-5dd2-8066-b28d64884917",
+  "session_id": "225b8a0f-8713-5fe3-b5e0-923feae43e1d",
   "schema_version": "0.1.0-draft",
-  "started_at_wall": "2018-11-04T21:56:41.446887Z",
+  "started_at_wall": "2019-10-29T04:40:59.258567Z",
   "app": {
     "version": "0.1.0",
     "code_hash": "sha256:6ad9613a455798d6d92e5f5f390ab4baa70596bc869ed6b17f5cdd2b28635f06"
@@ -14,7 +14,7 @@
     "rng_seed": 0
   },
   "route": {
-    "gpx_hash": "sha256:bb422a6c5570f6ad31ebbcfb6c602fcd6143e8259497f14feec89685c1d3e41e"
+    "gpx_hash": "sha256:0514dab891837a89f002d91728375a777edd9893ebdd31631c29659d163a11bd"
   },
   "clock": {
     "monotonic_source": "location-frame-timestamp"
@@ -23,6 +23,9 @@
     "upload_default": false
   },
   "fixture_purpose": "log-shape-regression",
+  "removed_events": {
+    "sys.voice.recovered": 1
+  },
   "golden_status": "regenerated-after-D-043",
   "derived_src_seq": true,
   "guide_output_text": "cleared"
