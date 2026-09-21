@@ -188,7 +188,7 @@ class DynamicGuidanceTest {
             slopeAnnounceLeadMeters = 100.0,
         )
         var state = guide(GuideState.initial(routeWithSlope), SensorFrame(0L, 10.0, 20.0, 5f, 1f, null), config).nextState
-        val result = guide(state, SensorFrame(1_000L, 10.0009, 20.0, 5f, 1f, null), config)
+        val result = guide(state, SensorFrame(1_000L, 10.0013, 20.0, 5f, 1f, null), config)
         check(result.guidance is Guidance.Remaining)
         check(result.reason.details["event"] == "E3")
     }
