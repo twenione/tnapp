@@ -37,7 +37,7 @@ VARIANTS = {
     ),
     "turn-direction-gate": (
         "if (direction != ProgressDirection.FORWARD || match.distanceMeters >= config.turnOnRouteMaxOffsetMeters)",
-        "if (false /* D-033 direction gate removed */ || match.distanceMeters >= config.turnOnRouteMaxOffsetMeters)",
+        "if (true /* D-033 direction gate mutation */)",
     ),
     "turn-off-route-gate": (
         "if (next.offRoute) {",
