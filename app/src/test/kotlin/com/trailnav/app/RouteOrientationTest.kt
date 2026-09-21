@@ -148,7 +148,7 @@ class RouteOrientationTest {
     @Test
     fun reversePreservesElevationSamplesAndWaypointNames() {
         val source = """
-            <gpx version="1.1"><wpt lat="10.0005" lon="20.0005"><name>쉼터 &amp; 전망대</name></wpt>
+            <gpx version="1.1"><wpt lat="10.0000" lon="20.0005"><name>쉼터 &amp; 전망대</name></wpt>
               <trk><trkseg>
                 <trkpt lat="10.000000" lon="20.000000"><ele>101.5</ele></trkpt>
                 <trkpt lat="10.000000" lon="20.001000"><ele>108.0</ele></trkpt>
