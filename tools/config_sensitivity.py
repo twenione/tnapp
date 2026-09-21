@@ -9,15 +9,6 @@ from pathlib import Path
 
 from replay import invoke, invoke_subsecond_probe, resolve_cli
 
-REQUIRED = (
-    "offRouteEnterDistMeters",
-    "offRouteEnterDwellSeconds",
-    "offRouteExitDistMeters",
-    "offRouteExitDwellSeconds",
-    "reannounceIntervalSeconds",
-)
-
-
 def field_names(source: Path) -> tuple[set[str], set[str]]:
     text = source.read_text(encoding="utf-8")
     block = re.search(r"data class GuideConfig\((.*?)\)\s*\{", text, re.S)
@@ -29,6 +20,14 @@ def field_names(source: Path) -> tuple[set[str], set[str]]:
     required = set(re.findall(r'"([A-Za-z][A-Za-z0-9_]*)"', required_block.group(1))) if required_block else set()
     excluded = set(re.findall(r'"([A-Za-z][A-Za-z0-9_]*)"\s+to', excluded_block.group(1))) if excluded_block else set()
     return fields, required | excluded
+
+
+def required_fields(source: Path) -> set[str]:
+    text = source.read_text(encoding="utf-8")
+    block = re.search(r"sensitivityRequired\s*:\s*List<String>\s*=\s*listOf\((.*?)\)", text, re.S)
+    if not block:
+        raise ValueError("sensitivityRequired declaration not found")
+    return set(re.findall(r'"([A-Za-z][A-Za-z0-9_]*)"', block.group(1)))
 
 
 def assert_coverage(fields: set[str], declared: set[str]) -> None:
@@ -61,7 +60,8 @@ def main() -> int:
     args = parser.parse_args()
     fields, declared = field_names(args.source)
     assert_coverage(fields, declared)
-    if set(REQUIRED) - declared:
+    required = required_fields(args.source)
+    if required - declared:
         raise AssertionError("a required sensitivity field is absent from GuideConfig declarations")
     subsecond_decisions = [item.get("decision") for item in invoke_subsecond_probe(resolve_cli(args.cli))]
     if subsecond_decisions != ["CONTINUE", "CONTINUE", "CONTINUE"]:
@@ -74,7 +74,16 @@ def main() -> int:
         "offRouteExitDistMeters": {"offRouteExitDistMeters": 5.0},
         "offRouteExitDwellSeconds": {"offRouteExitDwellSeconds": 120.0},
         "reannounceIntervalSeconds": {"reannounceIntervalSeconds": 5.0},
+        "turnAheadDistanceMeters": {"turnAheadDistanceMeters": 40.0},
+        "turnNowDistanceMeters": {"turnNowDistanceMeters": 5.0},
+        "turnOnRouteMaxOffsetMeters": {"turnOnRouteMaxOffsetMeters": 1.0},
     }
+    missing_probes = required - probes.keys()
+    if missing_probes:
+        raise AssertionError(f"required sensitivity fields lack probes: {sorted(missing_probes)}")
+    extra_probes = set(probes) - required
+    if extra_probes:
+        raise AssertionError(f"probe list contains non-required fields: {sorted(extra_probes)}")
     print("parameter | baseline_engine_trace | changed_engine_trace | changed")
     for name, overrides in probes.items():
         changed = engine_output(cli, overrides)
@@ -83,16 +92,20 @@ def main() -> int:
         if not did_change:
             raise AssertionError(f"config value {name} did not change actual engine output")
     omitted = set(declared)
-    omitted.remove(REQUIRED[0])
+    omitted.remove(sorted(required)[0])
     try:
         assert_coverage(fields, omitted)
     except AssertionError as exc:
         print(f"omission_probe=PASS ({exc})")
     else:
         raise AssertionError("field omission probe unexpectedly passed")
-    print(f"RESULT fields={len(fields)} sensitivity={len(REQUIRED)} engine_cli={cli} status=PASS")
+    print(f"RESULT fields={len(fields)} sensitivity={len(required)} engine_cli={cli} status=PASS")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        print(f"FAIL: config sensitivity: {exc}")
+        raise SystemExit(1)

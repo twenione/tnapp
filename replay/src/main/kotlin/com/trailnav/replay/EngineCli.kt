@@ -147,7 +147,10 @@ private fun GuideConfig.withOverrides(values: Map<String, Double>): GuideConfig 
 )
 
 private fun runConfigProbe(config: GuideConfig) {
-    val route = RouteModel.fromGpx("<gpx><trk><trkseg><trkpt lat=\"10.0\" lon=\"20.0\"/><trkpt lat=\"10.002\" lon=\"20.0\"/></trkseg></trk></gpx>", config)
+    // One right-angle turn makes the three turn thresholds observable by the
+    // real compiled engine. The preceding off-route/recovery frames retain
+    // the Phase 1 probes used by the existing sensitivity checks.
+    val route = RouteModel.fromGpx("<gpx><trk><trkseg><trkpt lat=\"10.0\" lon=\"20.0\"/><trkpt lat=\"10.0018\" lon=\"20.0\"/><trkpt lat=\"10.0018\" lon=\"20.0018\"/></trkseg></trk></gpx>", config)
     var state = GuideState.initial(route)
     val eastOffset = 30.0 / (6_371_008.8 * cos(Math.toRadians(10.0))) * 180.0 / Math.PI
     val frames = listOf(
@@ -156,7 +159,10 @@ private fun runConfigProbe(config: GuideConfig) {
         SensorFrame(25_000, 10.0002, 20.0 + eastOffset, 5f, 1f, null),
         SensorFrame(30_000, 10.0003, 20.0 + eastOffset, 5f, 1f, null),
         SensorFrame(40_000, 10.0004, 20.0 + eastOffset / 3.0, 5f, 1f, null),
-        SensorFrame(50_000, 10.0005, 20.0 + eastOffset / 3.0, 5f, 1f, null)
+        SensorFrame(50_000, 10.0005, 20.0 + eastOffset / 3.0, 5f, 1f, null),
+        SensorFrame(51_000, 10.0013, 20.0, 5f, 1f, null),
+        SensorFrame(52_000, 10.0017, 20.0, 5f, 1f, null),
+        SensorFrame(53_000, 10.00175, 20.0, 5f, 1f, null)
     )
     frames.forEachIndexed { index, frame ->
         val result = guide(state, frame, config)

@@ -31,6 +31,22 @@ VARIANTS = {
         "return (now - then) / 1_000.0",
         "val delta = now - then\n    return if (delta >= 1_000L) delta / 1_000.0 else delta.toDouble() /* D-033 unit heuristic */",
     ),
+    "turn-consumption": (
+        "next.copy(completedTurnAheadIndices = next.completedTurnAheadIndices + index)",
+        "next.copy(completedTurnAheadIndices = next.completedTurnAheadIndices) /* D-033 turn consumption removed */",
+    ),
+    "turn-direction-gate": (
+        "if (direction != ProgressDirection.FORWARD || match.distanceMeters >= config.turnOnRouteMaxOffsetMeters)",
+        "if (false /* D-033 direction gate removed */ || match.distanceMeters >= config.turnOnRouteMaxOffsetMeters)",
+    ),
+    "turn-off-route-gate": (
+        "if (next.offRoute) {",
+        "if (false /* D-033 off-route gate removed */) {",
+    ),
+    "turn-offset-gate": (
+        "if (direction != ProgressDirection.FORWARD || match.distanceMeters >= config.turnOnRouteMaxOffsetMeters)",
+        "if (direction != ProgressDirection.FORWARD || false /* D-033 on-route offset ignored */)",
+    ),
 }
 
 
