@@ -17,8 +17,10 @@ data class OnDemandConfig(
     val shakeEnabled: Boolean = true,
     val notificationEnabled: Boolean = true,
     val debounceMillis: Long = 1_500L,
-    val shakeThresholdMetersPerSecondSquared: Double = 2.5,
-    val shakeHitsRequired: Int = 2,
+    // Conservative starting point: walking-like 3-6 m/s² samples do not trigger;
+    // a deliberate shake must exceed 10 m/s² three times in the window.
+    val shakeThresholdMetersPerSecondSquared: Double = 10.0,
+    val shakeHitsRequired: Int = 3,
     val shakeWindowMillis: Long = 700L,
 )
 
@@ -63,5 +65,71 @@ class ShakeDetector(private val config: OnDemandConfig) {
         if (hits.size < config.shakeHitsRequired) return false
         hits.clear()
         return true
+    }
+}
+
+/**
+ * Bounded per-minute shake telemetry. Raw samples never leave this object;
+ * only aggregate values are emitted by the service.
+ */
+data class ShakeStatsSnapshot(
+    val minuteIndex: Long,
+    val sampleCount: Int,
+    val maximumDeviation: Double,
+    val p95Deviation: Double,
+    val thresholdExceedances: Int,
+)
+
+class ShakeStats(
+    private val thresholdMetersPerSecondSquared: Double,
+    private val bucketMillis: Long = 60_000L,
+) {
+    private var minuteIndex: Long? = null
+    private val samples = ArrayList<Double>()
+    private var thresholdExceedances = 0
+
+    fun record(timestampMillis: Long, deviationMetersPerSecondSquared: Double): ShakeStatsSnapshot? {
+        val currentMinute = timestampMillis / bucketMillis
+        val previousMinute = minuteIndex
+        if (previousMinute == null) {
+            minuteIndex = currentMinute
+        } else if (currentMinute != previousMinute) {
+            val completed = snapshot(previousMinute)
+            minuteIndex = currentMinute
+            samples.clear()
+            thresholdExceedances = 0
+            add(deviationMetersPerSecondSquared)
+            return completed
+        }
+        add(deviationMetersPerSecondSquared)
+        return null
+    }
+
+    fun flush(): ShakeStatsSnapshot? {
+        val currentMinute = minuteIndex ?: return null
+        if (samples.isEmpty()) return null
+        val completed = snapshot(currentMinute)
+        minuteIndex = null
+        samples.clear()
+        thresholdExceedances = 0
+        return completed
+    }
+
+    private fun add(value: Double) {
+        if (!value.isFinite()) return
+        samples += value
+        if (value >= thresholdMetersPerSecondSquared) thresholdExceedances += 1
+    }
+
+    private fun snapshot(index: Long): ShakeStatsSnapshot {
+        val ordered = samples.sorted()
+        val p95Index = (kotlin.math.ceil(ordered.size * 0.95).toInt() - 1).coerceIn(0, ordered.lastIndex)
+        return ShakeStatsSnapshot(
+            minuteIndex = index,
+            sampleCount = ordered.size,
+            maximumDeviation = ordered.lastOrNull() ?: 0.0,
+            p95Deviation = ordered.getOrElse(p95Index) { 0.0 },
+            thresholdExceedances = thresholdExceedances,
+        )
     }
 }
