@@ -361,6 +361,8 @@ class TrailForegroundService : Service() {
         previousOffRoute = decision.result.nextState.offRoute
         val reverseStatus = guidance.isReverseStatus()
         val spoken = guidance.toSpeech()
+        val guidanceVoiceKind = if (guidance is Guidance.Sunset) VoiceKind.SUNSET else VoiceKind.GUIDANCE
+        val guidanceVoiceAllowed = GuidanceVoicePolicy.decide(paused, guidanceVoiceKind).allowed
         val gpsAccuracyRejected = decision.result.reason.rule == "input.accuracy-filter"
         val periodic = if (paused) {
             onRouteVoiceScheduler?.reset()
@@ -374,27 +376,23 @@ class TrailForegroundService : Service() {
             arrived = decision.result.nextState.arrived,
             suppressAnnouncement = reverseStatus,
         ) == true
-        val speechCandidates = listOfNotNull(
-            spoken,
-            recoveryPrompt,
-            if (periodic && onRouteVoiceMode == NavigationPreferences.PeriodicVoiceMode.PROMPT) ON_ROUTE_VOICE_PROMPT else null,
-        )
-        val loggedSpeech = if (GuidanceVoicePolicy.decide(paused, VoiceKind.GUIDANCE).allowed) {
-            speechCandidates.joinToString(" ").ifBlank { null }
-        } else null
+        val frameSpeech = listOfNotNull(
+            spoken?.takeIf { guidanceVoiceAllowed },
+            recoveryPrompt?.takeIf { !paused },
+        ).joinToString(" ").ifBlank { null }
         logger?.appendEnvelope(location, "guide", "decision")
         logger?.appendGuide(
             location,
             decision.result,
-            loggedSpeech,
+            frameSpeech,
             requireNotNull(sourceSeq),
-            trigger = if (periodic) "slot" else null,
+            trigger = null,
         )
         if (paused) {
             listOfNotNull(
-                spoken?.let { VoiceKind.GUIDANCE to it },
+                spoken?.takeIf { !guidanceVoiceAllowed }?.let { guidanceVoiceKind to it },
                 recoveryPrompt?.let { VoiceKind.RECOVERY to it },
-            ).forEach { (kind, candidate) ->
+            ).forEach { (kind, _) ->
                 logger?.appendSystem(
                     "voice.suppressed",
                     mapOf(
@@ -403,6 +401,7 @@ class TrailForegroundService : Service() {
                     ),
                 )
             }
+            if (guidanceVoiceAllowed && !spoken.isNullOrBlank()) tts?.speak(spoken)
         } else if (!spoken.isNullOrBlank()) tts?.speak(spoken)
         if (!paused && recoveryPrompt != null) {
             logger?.appendSystem(
@@ -421,6 +420,15 @@ class TrailForegroundService : Service() {
         if (!paused && periodic && onRouteVoiceMode == NavigationPreferences.PeriodicVoiceMode.TONE) {
             logger?.appendSystem("voice.on-route-tone", mapOf("mode" to "TONE"))
             playAcknowledgementTone()
+        }
+        if (periodic) {
+            logger?.appendGuide(
+                location,
+                decision.result,
+                if (onRouteVoiceMode == NavigationPreferences.PeriodicVoiceMode.PROMPT) ON_ROUTE_VOICE_PROMPT else null,
+                requireNotNull(sourceSeq),
+                trigger = "slot",
+            )
         }
         updateNotification(decision.result.guidance)
     }
@@ -651,15 +659,15 @@ class TrailForegroundService : Service() {
         val sourceSeq = lastLocationSeq
         if (session == null || location == null || sourceSeq == null) {
             val text = GuidancePhrases.noLocationStatus()
-            if (!paused) tts?.speak(text)
-            logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-location"))
+            tts?.speak(text)
+            logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-location", "paused" to paused.toString()))
             return
         }
         val status = session.routeStatus()
         if (status == null) {
             val text = GuidancePhrases.noLocationStatus()
-            if (!paused) tts?.speak(text)
-            logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-match"))
+            tts?.speak(text)
+            logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-match", "paused" to paused.toString()))
             return
         }
         val text = GuidancePhrases.routeStatus(status)
@@ -668,12 +676,22 @@ class TrailForegroundService : Service() {
             nextState = session.snapshot(),
             reason = Reason(
                 rule = "on-demand.route-status",
-                details = mapOf("source" to source.wireName, "on_route" to status.onRoute.toString()),
+                details = linkedMapOf(
+                    "source" to source.wireName,
+                    "on_route" to status.onRoute.toString(),
+                    "off_route_distance_m" to (status.offRouteDistanceMeters?.toString() ?: ""),
+                    "direction" to status.direction.name,
+                    "remaining_m" to status.remainingMeters.toString(),
+                    "arrived" to status.arrived.toString(),
+                    "next_turn_index" to (status.nextTurn?.index?.toString() ?: ""),
+                    "next_turn_side" to (status.nextTurn?.side?.name ?: ""),
+                    "next_turn_distance_m" to (status.nextTurn?.distanceMeters?.toString() ?: ""),
+                ),
             ),
         )
         logger?.appendGuide(location, result, text, sourceSeq, trigger = "on-demand")
-        if (!paused) tts?.speak(text)
-        else logger?.appendSystem("voice.suppressed", mapOf("type" to "on-demand", "reason" to "paused"))
+        tts?.speak(text)
+        logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "route-status", "paused" to paused.toString()))
     }
 
     private fun appendShakeStats(snapshot: ShakeStatsSnapshot) {

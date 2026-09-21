@@ -186,6 +186,10 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
                 errors.append(f"events.ndjson: guide src_seq {src_seq} is not strictly increasing")
         if len(loc_sequences) == len(src_values) and src_values != loc_sequences:
             errors.append("events.ndjson: guide src_seq does not match loc order")
+    if loc_sequences and (src_values or trigger_guides) and len(loc_sequences) != len(frame_guides):
+        errors.append(
+            f"events.ndjson: loc/frame guide count mismatch ({len(loc_sequences)} loc vs {len(frame_guides)} frame guides)"
+        )
     return errors, warnings, count
 
 
