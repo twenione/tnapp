@@ -47,6 +47,18 @@ VARIANTS = {
         "if (direction != ProgressDirection.FORWARD || match.distanceMeters >= config.turnOnRouteMaxOffsetMeters)",
         "if (direction != ProgressDirection.FORWARD || false /* D-033 on-route offset ignored */)",
     ),
+    "elevation-waypoint-mix": (
+        "val sourcePoints = usable.map { it.point }",
+        "val sourcePoints = usable.map { it.point } + rawWaypoints.map { it.point } /* D-033 wpt mixed into route */",
+    ),
+    "elevation-always-ok": (
+        "val elevation = classifyElevation(elevations, cumulative, config)",
+        "val elevation = classifyElevation(elevations, cumulative, config).copy(used = true, reason = \"ok\") /* D-033 fallback removed */",
+    ),
+    "waypoint-near-filter": (
+        "if (projection.distanceMeters <= config.waypointNearRouteMeters) {",
+        "if (true /* D-033 waypoint near-route filter removed */) {",
+    ),
 }
 
 
@@ -74,12 +86,16 @@ def main() -> int:
         copy_repo(source, workspace)
         engine = workspace / ENGINE
         original = engine.read_text(encoding="utf-8")
+        route = workspace / "core-guide/src/main/kotlin/com/trailnav/core/Route.kt"
+        route_original = route.read_text(encoding="utf-8")
         for name, (needle, replacement) in VARIANTS.items():
-            variant_engine = original.replace(needle, replacement, 1)
-            if variant_engine == original:
+            target = route if name in {"elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter"} else engine
+            target_original = route_original if target == route else original
+            variant_engine = target_original.replace(needle, replacement, 1)
+            if variant_engine == target_original:
                 failures.append(f"{name}: mutation needle not found")
                 continue
-            engine.write_text(variant_engine, encoding="utf-8")
+            target.write_text(variant_engine, encoding="utf-8")
             test_code, test_output = run([args.gradle, ":core-guide:test", "--no-daemon"], workspace)
             evidence.append(f"VARIANT {name} consumer=core-guide-test exit={test_code}\n{test_output}")
             if test_code == 0:
@@ -98,7 +114,7 @@ def main() -> int:
                 failures.append(f"{name}: replay CLI was not built")
                 failures.append(f"{name}: phase1-accuracy CLI was not built")
                 failures.append(f"{name}: config-sensitivity CLI was not built")
-                engine.write_text(original, encoding="utf-8")
+                target.write_text(target_original, encoding="utf-8")
                 continue
             commands = [("replay", ["python", "tools/replay.py", "--cli", str(cli), "--contract"])]
             if name not in {"turn-consumption", "turn-direction-gate"}:
@@ -117,7 +133,7 @@ def main() -> int:
                 evidence.append(f"VARIANT {name} consumer={consumer} exit={code}\n{output}")
                 if code == 0:
                     failures.append(f"{name}: {consumer} unexpectedly passed")
-            engine.write_text(original, encoding="utf-8")
+            target.write_text(target_original, encoding="utf-8")
 
         fixture = workspace / "testdata/sessions/golden/log_shape_fixture"
         if fixture.is_dir():
