@@ -15,7 +15,7 @@ def count_points(path: Path, tag: str) -> int:
 
 
 def run_case(name: str, xml: str, expected: int) -> bool:
-    root = Path(tempfile.mkdtemp(prefix=f".gpx-contract-{name}-", dir=Path(__file__).resolve().parents[1]))
+    root = Path(tempfile.mkdtemp(prefix=f"tnapp-gpx-contract-{name}-"))
     try:
         source = root / "source.gpx"
         target = root / "target.gpx"
@@ -39,7 +39,10 @@ def main() -> int:
     failures = sum(not run_case(name, xml, expected) for name, xml, expected in cases)
     print(f"old_reverse_gpx actual_points={old_points} expected_points=2 status=FAIL_EXPECTED")
     print(f"reverse_gpx cases={len(cases)} failures={failures}")
-    return 1 if failures else 0
+    if failures:
+        print(f"FAIL: reverse_gpx contract failed ({failures} cases)")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

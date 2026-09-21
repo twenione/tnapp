@@ -11,6 +11,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 
 SHAPE_CHECKS = (
@@ -18,13 +19,54 @@ SHAPE_CHECKS = (
     "global_envelope_regression",
     "envelope_key_monotonic",
     "subsecond_20pct",
+    "coordinates_valid",
     "route_orientation",
     "off_route_enter",
     "recovery",
 )
 
 
-def check_shape(events: list[dict]) -> tuple[dict[str, bool], tuple[int, int, int, int, int, int]]:
+def _valid_coordinate(value: object, *, lower: float, upper: float) -> bool:
+    if isinstance(value, bool) or value is None:
+        return False
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return False
+    return lower <= number <= upper
+
+
+def _coordinates_valid(events: list[dict], route: Path | None) -> bool:
+    for event in events:
+        if event.get("stream") == "loc":
+            if not (_valid_coordinate(event.get("lat"), lower=-90.0, upper=90.0)
+                    and _valid_coordinate(event.get("lon"), lower=-180.0, upper=180.0)):
+                return False
+        if event.get("stream") == "guide":
+            inputs = event.get("inputs")
+            if isinstance(inputs, dict) and not (
+                _valid_coordinate(inputs.get("lat"), lower=-90.0, upper=90.0)
+                and _valid_coordinate(inputs.get("lon"), lower=-180.0, upper=180.0)
+            ):
+                return False
+    if route is None or not route.is_file():
+        return True
+    try:
+        root = ET.parse(route).getroot()
+    except (OSError, ET.ParseError):
+        return False
+    for point in root.iter():
+        if point.tag.rsplit("}", 1)[-1] not in {"trkpt", "rtept", "wpt"}:
+            continue
+        if not (
+            _valid_coordinate(point.attrib.get("lat"), lower=-90.0, upper=90.0)
+            and _valid_coordinate(point.attrib.get("lon"), lower=-180.0, upper=180.0)
+        ):
+            return False
+    return True
+
+
+def check_shape(events: list[dict], route: Path | None = None) -> tuple[dict[str, bool], tuple[int, int, int, int, int, int]]:
     loc = [event for event in events if event.get("stream") == "loc"]
     guide = [event for event in events if event.get("stream") == "guide"]
     envelopes = [event for event in events if event.get("stream") == "envelope"]
@@ -55,6 +97,7 @@ def check_shape(events: list[dict]) -> tuple[dict[str, bool], tuple[int, int, in
         "global_envelope_regression": global_regressions > 0,
         "envelope_key_monotonic": envelope_regressions == 0,
         "subsecond_20pct": len(loc) > 1 and subsecond / (len(loc) - 1) >= 0.20,
+        "coordinates_valid": _coordinates_valid(events, route),
         "route_orientation": orientation,
         "off_route_enter": entered_index is not None,
         "recovery": recovered,
@@ -68,13 +111,17 @@ def main(argv: list[str]) -> int:
     parser.add_argument("session", type=Path)
     args = parser.parse_args(argv[1:])
     events = [json.loads(line) for line in (args.session / "events.ndjson").read_text(encoding="utf-8").splitlines() if line.strip()]
-    checks, metrics = check_shape(events)
+    checks, metrics = check_shape(events, args.session / "route.gpx")
     loc_count, guide_count, envelope_count, subsecond, global_regressions, envelope_regressions = metrics
     print(f"RESULT loc={loc_count} guide={guide_count} envelope={envelope_count} subsecond={subsecond} global_regressions={global_regressions} keyed_regressions={envelope_regressions}")
     for name in SHAPE_CHECKS:
         passed = checks[name]
         print(f"{name}={'PASS' if passed else 'FAIL'}")
-    return 0 if all(checks.values()) else 1
+    if not all(checks.values()):
+        failed = ",".join(name for name, passed in checks.items() if not passed)
+        print(f"FAIL: fixture shape check failed: {failed}")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
