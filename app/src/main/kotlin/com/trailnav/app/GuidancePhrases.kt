@@ -27,7 +27,12 @@ object GuidancePhrases {
     fun noLocationStatus(): String = "위치를 확인하는 중입니다. 잠시 기다려 주세요."
 
     fun routeStatus(status: RouteStatus): String {
-        val route = if (status.onRoute) "경로 위" else "경로 밖"
+        if (status.arrived) return arrived()
+        val route = if (status.onRoute) {
+            "경로 위"
+        } else {
+            "경로 밖, 경로에서 ${formatDistance(status.offRouteDistanceMeters ?: 0.0)} 떨어져 있습니다"
+        }
         val direction = when (status.direction) {
             ProgressDirection.FORWARD -> "정방향"
             ProgressDirection.REVERSE -> "역방향"
