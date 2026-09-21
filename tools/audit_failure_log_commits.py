@@ -14,8 +14,10 @@ from failure_log_identity import RECORDER_EMAIL, RECORDER_NAME
 
 KNOWN_MANUAL = "e19bf27d74d3e6872017def95a6d6ce1bd1f0827"
 WORKFLOW_RUN = re.compile(r"(?m)^Workflow-Run:\s*https://github\.com/[^/]+/[^/]+/actions/runs/(\d+)\s*$")
+WORKFLOW_REPOSITORY = re.compile(r"(?m)^Workflow-Run:\s*https://github\.com/([^/]+)/([^/]+)/actions/runs/(\d+)\s*$")
 WORKFLOW = re.compile(r"(?m)^Workflow:\s*(\S+)\s*$")
 ALLOWED_WORKFLOWS = {"preserve-failure", "failure-log-readme"}
+ALLOWED_WORKFLOW_REPOSITORY = "twenione/tnapp"
 
 
 def audit(values: list[dict]) -> int:
@@ -48,9 +50,12 @@ def audit(values: list[dict]) -> int:
             reasons.append("author/committer identity")
         workflow = WORKFLOW.search(message)
         run = WORKFLOW_RUN.search(message)
+        workflow_repository = WORKFLOW_REPOSITORY.search(message)
         run_info = item.get("workflow_run")
         if not workflow or workflow.group(1) not in ALLOWED_WORKFLOWS:
             reasons.append("workflow not allowed")
+        if not workflow_repository or "/".join(workflow_repository.groups()[:2]) != ALLOWED_WORKFLOW_REPOSITORY:
+            reasons.append("workflow repository not allowed")
         if not run or not isinstance(run_info, dict) or not run_info.get("exists"):
             reasons.append("workflow run missing")
         elif str(run_info.get("workflow")) != workflow.group(1):
@@ -73,36 +78,46 @@ def audit(values: list[dict]) -> int:
     return 1 if anomalies else 0
 
 
-def online(repository: str, token: str, limit: int) -> list[dict]:
+def _get_json(url: str, token: str) -> dict | list:
     request = urllib.request.Request(
-        f"https://api.github.com/repos/{repository}/commits?per_page={limit}",
+        url,
         headers={"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"},
     )
     with urllib.request.urlopen(request, timeout=30) as response:
-        commits = json.loads(response.read().decode("utf-8"))
+        return json.loads(response.read().decode("utf-8"))
+
+
+def online(repository: str, token: str, limit: int) -> list[dict]:
+    commits = _get_json(f"https://api.github.com/repos/{repository}/commits?per_page={limit}", token)
+    if not isinstance(commits, list):
+        raise ValueError("commit listing must be a list")
     values = []
     for commit in commits:
-        detail = commit.get("commit", {})
+        sha = commit.get("sha", "")
+        detail_payload = _get_json(f"https://api.github.com/repos/{repository}/commits/{sha}", token)
+        detail = detail_payload.get("commit", commit.get("commit", {})) if isinstance(detail_payload, dict) else commit.get("commit", {})
         message = detail.get("message", "")
         match = WORKFLOW_RUN.search(message)
         run_info = {"exists": False}
         if match:
             try:
-                run_request = urllib.request.Request(
-                    f"https://api.github.com/repos/{repository}/actions/runs/{match.group(1)}",
-                    headers={"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"},
+                workflow_repository = WORKFLOW_REPOSITORY.search(message)
+                if not workflow_repository:
+                    raise ValueError("workflow repository missing")
+                run_repository = "/".join(workflow_repository.groups()[:2])
+                run = _get_json(
+                    f"https://api.github.com/repos/{run_repository}/actions/runs/{workflow_repository.group(3)}",
+                    token,
                 )
-                with urllib.request.urlopen(run_request, timeout=30) as response:
-                    run = json.loads(response.read().decode("utf-8"))
                 run_info = {"exists": bool(run.get("id")), "workflow": run.get("name")}
-            except (OSError, json.JSONDecodeError):
+            except (OSError, ValueError, json.JSONDecodeError):
                 run_info = {"exists": False}
         values.append({
-            "sha": commit.get("sha"),
+            "sha": sha,
             "message": message,
             "author": detail.get("author", {}),
             "committer": detail.get("committer", {}),
-            "files": [{"filename": item.get("filename"), "status": item.get("status")} for item in commit.get("files", [])],
+            "files": [{"filename": item.get("filename"), "status": item.get("status")} for item in (detail_payload.get("files", []) if isinstance(detail_payload, dict) else [])],
             "workflow_run": run_info,
         })
     return values

@@ -23,7 +23,10 @@ def main() -> int:
     finally:
         missing.unlink(missing_ok=True)
     print(f"rule_versions m1_reordered_same_version={'FAIL' if m1 else 'FAIL_EXPECTED'} m2_version_only={'FAIL' if m2 else 'FAIL_EXPECTED'}")
-    return 1 if m1 or m2 else 0
+    if m1 or m2:
+        print("FAIL: failure rule-version negative control was accepted")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
