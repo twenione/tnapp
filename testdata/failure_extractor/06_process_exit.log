@@ -1,0 +1,36 @@
+2026-09-20T21:32:46.9406721Z ##[group]Run gradle/actions/setup-gradle@v4
+2026-09-20T21:32:46.9407019Z with:
+2026-09-20T21:32:46.9407230Z   gradle-version: 8.14
+2026-09-20T21:32:46.9407471Z   cache-disabled: false
+2026-09-20T21:32:46.9407697Z   cache-read-only: true
+2026-09-20T21:32:46.9407925Z   cache-write-only: false
+2026-09-20T21:32:46.9408178Z   cache-overwrite-existing: false
+2026-09-20T21:32:46.9408476Z   cache-cleanup: on-success
+2026-09-20T21:32:46.9408772Z   gradle-home-cache-includes: caches
+notifications
+
+2026-09-20T21:32:46.9409101Z   add-job-summary: always
+2026-09-20T21:32:46.9409359Z   add-job-summary-as-pr-comment: never
+2026-09-20T21:32:46.9409715Z   dependency-graph: disabled
+2026-09-20T21:32:46.9410399Z   dependency-graph-report-dir: dependency-graph-reports
+2026-09-20T21:32:46.9411541Z   dependency-graph-continue-on-failure: true
+2026-09-20T21:32:46.9412420Z   build-scan-publish: false
+2026-09-20T21:32:46.9412964Z   validate-wrappers: true
+2026-09-20T21:32:46.9413518Z   allow-snapshot-wrappers: false
+2026-09-20T21:32:46.9414371Z   gradle-home-cache-strict-match: false
+2026-09-20T21:32:46.9415038Z   workflow-job-context: null
+2026-09-20T21:32:46.9419736Z   github-[REDACTED]
+2026-09-20T21:32:46.9420029Z env:
+2026-09-20T21:32:46.9420531Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-20T21:32:46.9421303Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+2026-09-20T21:32:46.9458208Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-20T21:32:46.9458956Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-20T21:32:46.9459588Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-20T21:32:46.9460224Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+2026-09-20T21:32:46.9460952Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+2026-09-20T21:32:46.9461734Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+2026-09-20T21:32:46.9462328Z ##[endgroup]
+2026-09-21T00:00:00.0000000Z ##[group]Run fixture command
+2026-09-21T00:00:00.0000000Z command
+2026-09-21T00:00:00.0000000Z ##[endgroup]
+2026-09-20T21:34:53.5107141Z ##[error]Process completed with exit code 1.

@@ -11,6 +11,8 @@ import argparse
 import json
 from pathlib import Path
 
+SUPPORTED_FAILURE_SCHEMAS = {"failrec-2.0.0", "failrec-2.0.1"}
+
 
 def records(root: Path) -> list[dict]:
     result: list[dict] = []
@@ -19,7 +21,10 @@ def records(root: Path) -> list[dict]:
             value = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if isinstance(value, dict) and value.get("schema_version", "").startswith("failrec-"):
+        if isinstance(value, dict) and (
+            value.get("schema_version", "").startswith("failrec-resolution-")
+            or value.get("schema_version") in SUPPORTED_FAILURE_SCHEMAS
+        ):
             result.append(value)
     return result
 

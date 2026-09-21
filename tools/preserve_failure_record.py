@@ -13,7 +13,13 @@ from pathlib import Path
 
 MASKING_RULESET_VERSION = "mask-1.0.0"
 SECRET = re.compile(r"(?i)(?:gh[pousr]_[A-Za-z0-9_\-]{20,}|github_pat_[A-Za-z0-9_\-]{20,}|(?:token|secret|password|api[_-]?key)\s*[:=]\s*[^\s]+)")
-ERROR_LINE = re.compile(r"(?i)(?:##\[error\]|\b(?:fail(?:ed|ure)?|error|fatal)\s*:|\b(?:exception|traceback)\b)")
+KOTLIN_COMPILE_LINE = re.compile(r"(?i)^\s*e:\s+(?:file:///|/).+")
+TEST_FAILURE_LINE = re.compile(r"(?i)^\s*[^\r\n>]+>\s+[^\r\n]+\s+FAILED\s*$")
+EXPLICIT_FAILURE_LINE = re.compile(r"(?i)(?:\bFAIL\s*:|\bTraceback\b|\b[A-Za-z_$][\w$]*(?:Exception|Error)\b|\bAssertionError\b)")
+ERROR_LINE = re.compile(r"(?i)##\[error\]")
+GRADLE_FAILURE_LINE = re.compile(r"(?i)^\s*>\s*Task\s+\S+\s+FAILED\s*$")
+EXIT_FAILURE_LINE = re.compile(r"(?i)##\[error\]\s*Process completed with exit code\s+\d+\.")
+ACTION_INPUT_LINE = re.compile(r"^\s*[A-Za-z][A-Za-z0-9_.-]*:\s+\S")
 EMPTY_LOG_SHA256 = "sha256:e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855"
 ALLOWED_SOURCES = {"runtime", "declared", "unavailable"}
 
@@ -22,15 +28,75 @@ def sanitize(text: str) -> str:
     return SECRET.sub("[REDACTED]", text)
 
 
+def _without_run_echo(lines: list[str]) -> list[str]:
+    result: list[str] = []
+    in_run_echo = False
+    for line in lines:
+        if "##[group]Run " in line:
+            in_run_echo = True
+            continue
+        if in_run_echo:
+            if "##[endgroup]" in line:
+                in_run_echo = False
+            continue
+        result.append(line)
+    return result
+
+
+def _step_scope(lines: list[str]) -> list[str]:
+    """Limit selection to the failed step before the last Actions error line."""
+    error_indexes = [index for index, line in enumerate(lines) if ERROR_LINE.search(line)]
+    if not error_indexes:
+        return _without_run_echo(lines)
+    last_error = error_indexes[-1]
+    endgroups = [index for index in range(last_error + 1) if "##[endgroup]" in lines[index]]
+    start = (endgroups[-1] + 1) if endgroups else 0
+    return _without_run_echo(lines[start : last_error + 1])
+
+
+def _line_matches(line: str, pattern: re.Pattern[str]) -> bool:
+    # Actions timestamps and the log stream prefix are part of the preserved
+    # signature, but must not affect the classifier.
+    value = re.sub(r"^\d{4}-\d\d-\d\dT[^ ]+Z\s+", "", line)
+    return bool(pattern.search(value))
+
+
+def _candidate_lines(lines: list[str], pattern: re.Pattern[str]) -> list[str]:
+    return [line for line in lines if line.strip() and _line_matches(line, pattern)]
+
+
 def first_meaningful_line(text: str) -> str:
-    for line in text.splitlines():
-        if line.strip() and ERROR_LINE.search(line):
+    """Choose the first error line using the D-047 priority table.
+
+    The action input echo is deliberately removed before matching. Priority is
+    Kotlin/Java compile, test failure, explicit tool failure, Actions error,
+    Gradle task failure, then process-exit error. The original line is returned
+    unchanged except for the established secret masking rule.
+    """
+    lines = _step_scope(text.splitlines())
+    priorities = (
+        KOTLIN_COMPILE_LINE,
+        TEST_FAILURE_LINE,
+        EXPLICIT_FAILURE_LINE,
+        ERROR_LINE,
+        GRADLE_FAILURE_LINE,
+        EXIT_FAILURE_LINE,
+    )
+    for pattern in priorities:
+        for line in _candidate_lines(lines, pattern):
+            if pattern is ERROR_LINE and EXIT_FAILURE_LINE.search(line):
+                continue
             return sanitize(line)
-    for line in text.splitlines():
+    for line in lines:
         value = line.strip()
-        if value and not value.startswith("#"):
+        if value and not value.startswith("#") and not ACTION_INPUT_LINE.match(value):
             return sanitize(line)
     return "no meaningful error line found"
+
+
+def is_action_input_echo(line: str) -> bool:
+    value = re.sub(r"^\d{4}-\d\d-\d\dT[^ ]+Z\s+", "", line).strip()
+    return bool(ACTION_INPUT_LINE.fullmatch(value))
 
 
 def run_version(command: list[str], cwd: Path) -> str:
@@ -142,6 +208,25 @@ def failed_jobs(log_root: Path) -> list[str]:
     return names
 
 
+def failed_job_log_text(log_root: Path) -> str:
+    """Read only the first failed job when metadata identifies job logs.
+
+    A workflow can fail in several jobs. D-047 fixes the first failed job as
+    the signature source so the record remains deterministic across retries.
+    """
+    log_files = sorted(
+        p for p in log_root.rglob("*")
+        if p.is_file() and p.name != "failed_jobs.json" and p.suffix.lower() in {".log", ".txt"}
+    ) if log_root.exists() else []
+    jobs = failed_jobs(log_root)
+    if jobs:
+        for job in jobs:
+            matches = [path for path in log_files if path.stem.endswith("-" + job) or path.stem == job]
+            if matches:
+                return "\n".join(path.read_text(encoding="utf-8", errors="replace") for path in matches)
+    return "\n".join(path.read_text(encoding="utf-8", errors="replace") for path in log_files)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--logs", type=Path, required=True)
@@ -156,14 +241,14 @@ def main() -> int:
     args = parser.parse_args()
     log_files = (
         sorted(
-            p
-            for p in args.logs.rglob("*")
+            p for p in args.logs.rglob("*")
             if p.is_file() and p.name != "failed_jobs.json" and p.suffix.lower() in {".log", ".txt"}
         )
         if args.logs.exists()
         else []
     )
     raw = "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in log_files)
+    signature_source = failed_job_log_text(args.logs)
     sanitized_log = sanitize(raw)
     log_sha256 = "sha256:" + hashlib.sha256(sanitized_log.encode()).hexdigest()
     if not sanitized_log.strip() or log_sha256 == EMPTY_LOG_SHA256:
@@ -171,7 +256,7 @@ def main() -> int:
         return 1
     jobs = failed_jobs(args.logs)
     record = {
-        "schema_version": "failrec-2.0.0",
+        "schema_version": "failrec-2.0.1",
         "run_id": args.run_id,
         "commit_sha": args.commit_sha,
         "branch": args.branch,
@@ -180,11 +265,13 @@ def main() -> int:
         "trigger_event": args.trigger_event,
         "toolchain": toolchain(args.repo_root.resolve()),
         "failed_jobs": jobs,
-        "error_signature": first_meaningful_line(raw),
+        "error_signature": first_meaningful_line(signature_source),
         "masking_ruleset_version": MASKING_RULESET_VERSION,
         "log_sha256": log_sha256,
         "log": sanitized_log,
     }
+    if is_action_input_echo(record["error_signature"]):
+        print("::warning::error_signature matched an Actions input echo; record was still appended", flush=True)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"record={args.out}")

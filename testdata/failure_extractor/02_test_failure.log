@@ -1,0 +1,31 @@
+2026-09-18T14:50:46.5308538Z ##[group]Run gradle/actions/setup-gradle@v4
+2026-09-18T14:50:46.5308699Z with:
+2026-09-18T14:50:46.5308820Z   gradle-version: 8.14
+2026-09-18T14:50:46.5308951Z   cache-disabled: false
+2026-09-18T14:50:46.5309102Z   cache-read-only: true
+2026-09-18T14:50:46.5309235Z   cache-write-only: false
+2026-09-18T14:50:46.5309381Z   cache-overwrite-existing: false
+2026-09-18T14:50:46.5309534Z   cache-cleanup: on-success
+2026-09-18T14:50:46.5309704Z   gradle-home-cache-includes: caches
+notifications
+
+2026-09-18T14:50:46.5309892Z   add-job-summary: always
+2026-09-18T14:50:46.5310039Z   add-job-summary-as-pr-comment: never
+2026-09-18T14:50:46.5310249Z   dependency-graph: disabled
+2026-09-18T14:50:46.5310425Z   dependency-graph-report-dir: dependency-graph-reports
+2026-09-18T14:50:46.5310631Z   dependency-graph-continue-on-failure: true
+2026-09-18T14:50:46.5310806Z   build-scan-publish: false
+2026-09-18T14:50:46.5310950Z   validate-wrappers: true
+2026-09-18T14:50:46.5311199Z   allow-snapshot-wrappers: false
+2026-09-18T14:50:46.5311375Z   gradle-home-cache-strict-match: false
+2026-09-18T14:50:46.5312026Z   workflow-job-context: null
+2026-09-18T14:50:46.5313603Z   github-[REDACTED]
+2026-09-18T14:50:46.5313723Z env:
+2026-09-18T14:50:46.5314047Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+2026-09-18T14:50:46.5314328Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+2026-09-18T14:50:46.5314544Z ##[endgroup]
+2026-09-21T00:00:00.0000000Z ##[group]Run fixture command
+2026-09-21T00:00:00.0000000Z command
+2026-09-21T00:00:00.0000000Z ##[endgroup]
+2026-09-18T14:51:32.7891042Z RouteRibbonTest > snapshotCarriesDistanceDirectionOffRouteAccuracyAndRemainingDistance FAILED
+2026-09-18T14:51:33.1692359Z ##[error]Process completed with exit code 1.
