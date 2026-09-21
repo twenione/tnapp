@@ -50,8 +50,8 @@ class SessionExportTest {
     fun folderNamesRemainIndependentSelectionKeys() {
         val root = Files.createTempDirectory("trailnav-export-ids").toFile()
         try {
-            val first = ExportableSession(File(root, "1789866233724"), "first", 1L, null, 0L, false)
-            val second = ExportableSession(File(root, "1789866993919"), "second", 1L, null, 0L, false)
+            val first = ExportableSession(File(root, "1700000060000"), "first", 1L, null, 0L, false)
+            val second = ExportableSession(File(root, "1700000120000"), "second", 1L, null, 0L, false)
             assertTrue(first.selectionId != second.selectionId)
         } finally {
             root.deleteRecursively()

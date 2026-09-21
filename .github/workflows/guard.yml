@@ -52,6 +52,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python tools/validate_session.py testdata/sessions/golden testdata/sessions/synth
+      - run: python tools/check_synthetic_test_data.py
       - name: Check anonymized log-shape fixture
         run: |
           python tools/privacy_scan.py testdata/sessions/golden/log_shape_fixture
@@ -157,6 +158,8 @@ jobs:
           test "$failures" -eq 0
       - name: Failure signature extractor fixtures
         run: python tools/test_preserve_failure_record.py
+      - name: Synthetic test-data rule negative controls
+        run: python tools/test_check_synthetic_test_data.py
       - name: Failure signature extractor legacy mutation must fail
         run: python tools/test_preserve_failure_record.py --legacy-negative-control
 
