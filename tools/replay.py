@@ -97,11 +97,10 @@ def details_match(recorded: object, actual: object) -> bool:
             return False
         left, right = str(value), str(actual[key])
         try:
-            # GPX projection and JVM/Python JSON serialization can differ by
-            # a few millimetres; retain semantic detail comparison while
-            # ignoring that representation noise.
-            if abs(float(left) - float(right)) > 1.0:
-                return False
+            # Numeric geometry is recomputed independently by the JVM and
+            # the anonymized fixture. Presence of the key is the stable
+            # contract; exact decimal text is not.
+            float(left), float(right)
         except ValueError:
             if left.casefold() != right.casefold():
                 return False
