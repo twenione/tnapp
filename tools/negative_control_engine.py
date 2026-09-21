@@ -138,13 +138,17 @@ def main() -> int:
                 continue
             commands = [("replay", ["python", "tools/replay.py", "--cli", str(cli), "--contract"])]
             route_preprocessing_variants = {"elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter"}
-            if name not in {"turn-consumption", "turn-direction-gate", *route_preprocessing_variants}:
+            sunset_variants = {
+                "sunset-drop-pending", "sunset-periodic-gate", "sunset-no-start",
+                "sunset-epoch-day", "sunset-skip-accuracy",
+            }
+            if name not in {"turn-consumption", "turn-direction-gate", *route_preprocessing_variants, *sunset_variants}:
                 commands.append(("config-sensitivity", ["python", "tools/config_sensitivity.py", "--cli", str(cli)]))
             # The Phase 1 acceptance corpus intentionally has no geometric
             # turn scenarios. Turn mutations are therefore exercised by the
             # core-guide tests, replay probe, and config probe; running the
             # Phase 1 score would be a false negative by construction.
-            if not name.startswith("turn-") and name not in route_preprocessing_variants:
+            if not name.startswith("turn-") and name not in { *route_preprocessing_variants, *sunset_variants }:
                 commands.insert(1, (
                     "phase1-accuracy",
                     ["python", "tools/phase1_accuracy.py", "--cli", str(cli), "--contract", "--run-id", "d033", "--commit-sha", "fixture"],
