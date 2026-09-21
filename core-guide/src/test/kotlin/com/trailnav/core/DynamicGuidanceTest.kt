@@ -128,7 +128,7 @@ class DynamicGuidanceTest {
     @Test
     fun slopeWindow() {
         val xml = "<gpx><trk><trkseg>" +
-            listOf(0, 0, 0, 0, 12, 24, 36, 48).mapIndexed { index, elevation ->
+            listOf(0, 7, 15, 23, 30).mapIndexed { index, elevation ->
                 "<trkpt lat=\"${10.0 + index * 0.00045}\" lon=\"20.0\"><ele>$elevation</ele></trkpt>"
             }.joinToString("") + "</trkseg></trk></gpx>"
         val routeWithSlope = RouteModel.fromGpx(xml)
