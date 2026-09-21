@@ -31,6 +31,22 @@ VARIANTS = {
         "return (now - then) / 1_000.0",
         "val delta = now - then\n    return if (delta >= 1_000L) delta / 1_000.0 else delta.toDouble() /* D-033 unit heuristic */",
     ),
+    "turn-consumption": (
+        "next.copy(completedTurnAheadIndices = next.completedTurnAheadIndices + index)",
+        "next.copy(completedTurnAheadIndices = next.completedTurnAheadIndices) /* D-033 turn consumption removed */",
+    ),
+    "turn-direction-gate": (
+        "if (direction != ProgressDirection.FORWARD || match.distanceMeters >= config.turnOnRouteMaxOffsetMeters)",
+        "if (true /* D-033 direction gate mutation */)",
+    ),
+    "turn-off-route-gate": (
+        "if (next.offRoute) {",
+        "if (false /* D-033 off-route gate removed */) {",
+    ),
+    "turn-offset-gate": (
+        "if (direction != ProgressDirection.FORWARD || match.distanceMeters >= config.turnOnRouteMaxOffsetMeters)",
+        "if (direction != ProgressDirection.FORWARD || false /* D-033 on-route offset ignored */)",
+    ),
 }
 
 
@@ -84,20 +100,18 @@ def main() -> int:
                 failures.append(f"{name}: config-sensitivity CLI was not built")
                 engine.write_text(original, encoding="utf-8")
                 continue
-            commands = [
-                (
-                    "replay",
-                    ["python", "tools/replay.py", "--cli", str(cli), "--contract"],
-                ),
-                (
+            commands = [("replay", ["python", "tools/replay.py", "--cli", str(cli), "--contract"])]
+            if name not in {"turn-consumption", "turn-direction-gate"}:
+                commands.append(("config-sensitivity", ["python", "tools/config_sensitivity.py", "--cli", str(cli)]))
+            # The Phase 1 acceptance corpus intentionally has no geometric
+            # turn scenarios. Turn mutations are therefore exercised by the
+            # core-guide tests, replay probe, and config probe; running the
+            # Phase 1 score would be a false negative by construction.
+            if not name.startswith("turn-"):
+                commands.insert(1, (
                     "phase1-accuracy",
                     ["python", "tools/phase1_accuracy.py", "--cli", str(cli), "--contract", "--run-id", "d033", "--commit-sha", "fixture"],
-                ),
-                (
-                    "config-sensitivity",
-                    ["python", "tools/config_sensitivity.py", "--cli", str(cli)],
-                ),
-            ]
+                ))
             for consumer, command in commands:
                 code, output = run(command, workspace)
                 evidence.append(f"VARIANT {name} consumer={consumer} exit={code}\n{output}")

@@ -66,6 +66,9 @@ data class GuideConfig(
     val turnLookbackMeters: Double = 30.0,
     val turnLookaheadMeters: Double = 30.0,
     val turnAngleThresholdDegrees: Double = 45.0,
+    val turnAheadDistanceMeters: Double = 60.0,
+    val turnNowDistanceMeters: Double = 15.0,
+    val turnOnRouteMaxOffsetMeters: Double = 15.0,
     val spatialGridSizeMeters: Double = 100.0,
     val taggingOffRouteDistanceMeters: Double = 30.0,
     val taggingOffRouteDwellSeconds: Double = 60.0,
@@ -83,6 +86,10 @@ data class GuideConfig(
         require(douglasPeuckerEpsilonMeters >= 0.0)
         require(spatialGridSizeMeters > 0.0)
         require(minimumSessionSecondsBeforeArrival >= 0.0)
+        require(turnAheadDistanceMeters > 0.0)
+        require(turnNowDistanceMeters > 0.0)
+        require(turnNowDistanceMeters < turnAheadDistanceMeters)
+        require(turnOnRouteMaxOffsetMeters > 0.0)
     }
 
     companion object {
@@ -92,7 +99,10 @@ data class GuideConfig(
             "offRouteEnterDwellSeconds",
             "offRouteExitDistMeters",
             "offRouteExitDwellSeconds",
-            "reannounceIntervalSeconds"
+            "reannounceIntervalSeconds",
+            "turnAheadDistanceMeters",
+            "turnNowDistanceMeters",
+            "turnOnRouteMaxOffsetMeters"
         )
 
         /** Explicit exclusions required by D-029 for non-sensitivity fields. */
@@ -146,9 +156,55 @@ data class GuideState(
     val lastAnnouncementAt: Long? = null,
     val lastAnnouncementDistance: Double? = null,
     val reverseSince: Long? = null,
-    val arrived: Boolean = false
+    val arrived: Boolean = false,
+    val completedTurnAheadIndices: Set<Int> = emptySet(),
+    val completedTurnNowIndices: Set<Int> = emptySet()
 ) {
     companion object {
         fun initial(route: RouteModel): GuideState = GuideState(route)
     }
+}
+
+data class NextTurn(
+    val index: Int,
+    val side: Side,
+    val distanceMeters: Double,
+    val angleDegrees: Double
+)
+
+data class RouteStatus(
+    val onRoute: Boolean,
+    val offRouteDistanceMeters: Double?,
+    val direction: ProgressDirection,
+    val remainingMeters: Double,
+    val nextTurn: NextTurn?,
+    val arrived: Boolean
+)
+
+/** Pure state report shared by on-demand voice and the route ribbon. */
+fun routeStatus(state: GuideState, config: GuideConfig = GuideConfig()): RouteStatus? {
+    val match = state.lastMatch ?: return null
+    val nextTurn = if (state.direction == ProgressDirection.REVERSE) {
+        null
+    } else {
+        state.route.turns.asSequence()
+            .withIndex()
+            .firstOrNull { (_, turn) -> turn.s > match.projectedMeters }
+            ?.let { (index, turn) ->
+                NextTurn(
+                    index = index,
+                    side = turn.side,
+                    distanceMeters = turn.s - match.projectedMeters,
+                    angleDegrees = turn.angleDegrees
+                )
+            }
+    }
+    return RouteStatus(
+        onRoute = !state.offRoute,
+        offRouteDistanceMeters = if (state.offRoute) match.distanceMeters else null,
+        direction = state.direction,
+        remainingMeters = (state.route.totalLengthMeters - match.projectedMeters).coerceAtLeast(0.0),
+        nextTurn = nextTurn,
+        arrived = state.arrived
+    )
 }

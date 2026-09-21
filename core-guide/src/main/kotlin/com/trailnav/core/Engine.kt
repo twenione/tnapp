@@ -117,6 +117,12 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
             )
         )
     }
+
+    val turnEvaluation = evaluateTurnGuidance(next, directedMatch, direction, config)
+    next = turnEvaluation.state
+    turnEvaluation.guidance?.let { guidance ->
+        return GuideResult(guidance, next, turnEvaluation.reason)
+    }
     return GuideResult(
         null,
         next,
@@ -128,6 +134,74 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
             )
         )
     )
+}
+
+private data class TurnEvaluation(
+    val state: GuideState,
+    val guidance: Guidance?,
+    val reason: Reason
+)
+
+private fun evaluateTurnGuidance(
+    state: GuideState,
+    match: MatchResult,
+    direction: ProgressDirection,
+    config: GuideConfig
+): TurnEvaluation {
+    var next = state
+    // A turn already behind the projected position is consumed without a
+    // voice. This also handles a session that starts after a turn.
+    state.route.turns.forEachIndexed { index, turn ->
+        if (turn.s < match.projectedMeters) {
+            next = next.copy(
+                completedTurnAheadIndices = next.completedTurnAheadIndices + index,
+                completedTurnNowIndices = next.completedTurnNowIndices + index
+            )
+        }
+    }
+    if (direction != ProgressDirection.FORWARD || match.distanceMeters >= config.turnOnRouteMaxOffsetMeters) {
+        return TurnEvaluation(next, null, Reason("turn.ineligible", details = mapOf("direction" to direction.name.lowercase())))
+    }
+    val candidate = state.route.turns.asSequence()
+        .withIndex()
+        .map { (index, turn) -> Triple(index, turn, turn.s - match.projectedMeters) }
+        .filter { (_, _, remaining) -> remaining >= 0.0 && remaining <= config.turnAheadDistanceMeters }
+        .firstOrNull { (index, _, remaining) ->
+            remaining <= config.turnNowDistanceMeters && index !in next.completedTurnNowIndices ||
+                remaining > config.turnNowDistanceMeters && index !in next.completedTurnAheadIndices
+        }
+        ?: return TurnEvaluation(next, null, Reason("turn.none-eligible"))
+    val index = candidate.first
+    val turn = candidate.second
+    val remaining = candidate.third
+    val thresholds = mapOf(
+        "turnAheadDistanceMeters" to config.turnAheadDistanceMeters,
+        "turnNowDistanceMeters" to config.turnNowDistanceMeters,
+        "turnOnRouteMaxOffsetMeters" to config.turnOnRouteMaxOffsetMeters
+    )
+    val details = mapOf(
+        "turnIndex" to index.toString(),
+        "turnS" to turn.s.toString(),
+        "remainingMeters" to remaining.toString(),
+        "side" to turn.side.name,
+        "angleDegrees" to turn.angleDegrees.toString()
+    )
+    return if (remaining <= config.turnNowDistanceMeters) {
+        TurnEvaluation(
+            next.copy(
+                completedTurnAheadIndices = next.completedTurnAheadIndices + index,
+                completedTurnNowIndices = next.completedTurnNowIndices + index
+            ),
+            Guidance.TurnNow(turn.side),
+            Reason("turn.now", thresholds, details = details)
+        )
+    } else {
+        TurnEvaluation(
+            next.copy(completedTurnAheadIndices = next.completedTurnAheadIndices + index),
+            Guidance.TurnAhead(remaining, turn.side),
+            Reason("turn.ahead", thresholds, details = details)
+        )
+    }
 }
 
 private fun isArrived(
