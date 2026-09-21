@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Validate the v0 session envelope and append-only event stream.
 
-The D-040 time contract is explicit: ``t`` is the event timestamp and must
-be monotonic within each stream; ``seq`` is append order and must increase
-strictly across the complete file.  A cross-stream timestamp ordering is not
-required because providers can flush buffered streams at different times.
+The D-040/D-045 time contract is explicit: ``t`` is the event timestamp and
+must be monotonic within each provider stream. For an ``envelope`` event the
+provider is the pair ``(stream, event_stream)``; loc and guide envelopes may
+cross in time while each provider remains monotonic. ``seq`` is append order
+and must increase strictly across the complete file.
 """
 from __future__ import annotations
 
@@ -99,7 +100,7 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
         errors.append(f"events.ndjson: read error: {exc}")
         return errors, warnings, 0
     previous_seq = -1
-    previous_t_by_stream: dict[str, float] = {}
+    previous_t_by_key: dict[tuple[str, str | None], float] = {}
     loc_sequences: list[int] = []
     guide_events: list[tuple[int, int | None]] = []
     count = 0
@@ -130,11 +131,16 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
         elif not isinstance(stream, str):
             pass
         else:
-            previous_t = previous_t_by_stream.get(stream)
+            event_stream = event.get("event_stream") if stream == "envelope" else None
+            if stream == "envelope" and not isinstance(event_stream, str):
+                errors.append(f"events.ndjson:{line_number}: [envelope] event_stream must be a string for per-stream t ordering")
+            time_key = (stream, event_stream)
+            previous_t = previous_t_by_key.get(time_key)
+            key_label = f"({stream}, {event_stream})" if stream == "envelope" else stream
             if previous_t is not None and timestamp < previous_t:
-                errors.append(f"events.ndjson:{line_number}: [{stream}] t {timestamp} regresses from {previous_t}")
+                errors.append(f"events.ndjson:{line_number}: [{key_label}] t {timestamp} regresses from {previous_t} (D-045 key)")
             else:
-                previous_t_by_stream[stream] = float(timestamp)
+                previous_t_by_key[time_key] = float(timestamp)
         if stream not in STREAM_REQUIRED:
             errors.append(f"events.ndjson:{line_number}: unsupported stream: {stream!r}")
         else:
