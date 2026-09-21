@@ -22,6 +22,20 @@ EXIT_FAILURE_LINE = re.compile(r"(?i)##\[error\]\s*Process completed with exit c
 ACTION_INPUT_LINE = re.compile(r"^\s*[A-Za-z][A-Za-z0-9_.-]*:\s+\S")
 EMPTY_LOG_SHA256 = "sha256:e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855"
 ALLOWED_SOURCES = {"runtime", "declared", "unavailable"}
+SCHEMA_VERSION = "failrec-2.0.2"
+SELECTION_PRIORITY_PATTERNS = (
+    ("kotlin_compile", KOTLIN_COMPILE_LINE),
+    ("test_failure", TEST_FAILURE_LINE),
+    ("explicit_failure", EXPLICIT_FAILURE_LINE),
+    ("actions_error", ERROR_LINE),
+    ("gradle_failure", GRADLE_FAILURE_LINE),
+    ("process_exit", EXIT_FAILURE_LINE),
+)
+INLINE_RULE_CASES = (
+    ("what_went_wrong_next_nonempty", "first non-empty line after marker"),
+    ("what_went_wrong_marker_candidate", "skip ##[ marker"),
+    ("what_went_wrong_outside_scope", "ignore outside failed step"),
+)
 
 
 def sanitize(text: str) -> str:
@@ -65,6 +79,33 @@ def _candidate_lines(lines: list[str], pattern: re.Pattern[str]) -> list[str]:
     return [line for line in lines if line.strip() and _line_matches(line, pattern)]
 
 
+def _what_went_wrong_candidate(lines: list[str]) -> str | None:
+    """Return the first useful line after a failed step's Gradle marker."""
+    for index, line in enumerate(lines):
+        if not _line_matches(line, re.compile(r"^\s*\*\s*What went wrong:\s*$")):
+            continue
+        for candidate in lines[index + 1 :]:
+            if not candidate.strip():
+                continue
+            value = re.sub(r"^\d{4}-\d\d-\d\dT[^ ]+Z\s+", "", candidate).lstrip()
+            if value.startswith("##["):
+                break
+            return candidate
+    return None
+
+
+def selection_rule_fingerprint(
+    *,
+    priority_patterns: tuple[tuple[str, re.Pattern[str]], ...] = SELECTION_PRIORITY_PATTERNS,
+    inline_cases: tuple[tuple[str, str], ...] = INLINE_RULE_CASES,
+) -> str:
+    payload = {
+        "priority": [(name, pattern.pattern, pattern.flags) for name, pattern in priority_patterns],
+        "inline_cases": list(inline_cases),
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
 def first_meaningful_line(text: str) -> str:
     """Choose the first error line using the D-047 priority table.
 
@@ -74,19 +115,17 @@ def first_meaningful_line(text: str) -> str:
     unchanged except for the established secret masking rule.
     """
     lines = _step_scope(text.splitlines())
-    priorities = (
-        KOTLIN_COMPILE_LINE,
-        TEST_FAILURE_LINE,
-        EXPLICIT_FAILURE_LINE,
-        ERROR_LINE,
-        GRADLE_FAILURE_LINE,
-        EXIT_FAILURE_LINE,
-    )
+    priorities = tuple(pattern for _, pattern in SELECTION_PRIORITY_PATTERNS[:5])
     for pattern in priorities:
         for line in _candidate_lines(lines, pattern):
             if pattern is ERROR_LINE and EXIT_FAILURE_LINE.search(line):
                 continue
             return sanitize(line)
+    candidate = _what_went_wrong_candidate(lines)
+    if candidate is not None:
+        return sanitize(candidate)
+    for line in _candidate_lines(lines, EXIT_FAILURE_LINE):
+        return sanitize(line)
     for line in lines:
         value = line.strip()
         if value and not value.startswith("#") and not ACTION_INPUT_LINE.match(value):
@@ -94,9 +133,30 @@ def first_meaningful_line(text: str) -> str:
     return "no meaningful error line found"
 
 
-def is_action_input_echo(line: str) -> bool:
-    value = re.sub(r"^\d{4}-\d\d-\d\dT[^ ]+Z\s+", "", line).strip()
-    return bool(ACTION_INPUT_LINE.fullmatch(value))
+def signature_is_run_echo(log: str, signature: str) -> bool:
+    """Return true only when the signature occurs exclusively in a Run echo group."""
+    lines = log.splitlines()
+    matches = [index for index, line in enumerate(lines) if line == signature or sanitize(line) == signature]
+    if not matches:
+        return False
+    in_group = False
+    grouped: set[int] = set()
+    for index, line in enumerate(lines):
+        if "##[group]Run " in line:
+            in_group = True
+        elif in_group and "##[endgroup]" in line:
+            in_group = False
+        elif in_group and index in matches:
+            grouped.add(index)
+    return len(grouped) == len(matches)
+
+
+def is_action_input_echo(log: str, signature: str | None = None) -> bool:
+    """Compatibility wrapper for the position-based echo check."""
+    if signature is None:
+        signature = log
+        log = signature
+    return signature_is_run_echo(log, signature)
 
 
 def run_version(command: list[str], cwd: Path) -> str:
@@ -256,7 +316,7 @@ def main() -> int:
         return 1
     jobs = failed_jobs(args.logs)
     record = {
-        "schema_version": "failrec-2.0.1",
+        "schema_version": SCHEMA_VERSION,
         "run_id": args.run_id,
         "commit_sha": args.commit_sha,
         "branch": args.branch,
@@ -270,7 +330,7 @@ def main() -> int:
         "log_sha256": log_sha256,
         "log": sanitized_log,
     }
-    if is_action_input_echo(record["error_signature"]):
+    if is_action_input_echo(sanitized_log, record["error_signature"]):
         print("::warning::error_signature matched an Actions input echo; record was still appended", flush=True)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

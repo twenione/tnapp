@@ -11,7 +11,7 @@ import argparse
 import json
 from pathlib import Path
 
-SUPPORTED_FAILURE_SCHEMAS = {"failrec-2.0.0", "failrec-2.0.1"}
+SUPPORTED_FAILURE_SCHEMAS = {"failrec-2.0.0", "failrec-2.0.1", "failrec-2.0.2"}
 
 
 def records(root: Path) -> list[dict]:

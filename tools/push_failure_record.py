@@ -15,8 +15,16 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+try:
+    from failure_log_identity import RECORDER_EMAIL, RECORDER_NAME, allowed_record_path
+except ModuleNotFoundError:
+    from tools.failure_log_identity import RECORDER_EMAIL, RECORDER_NAME, allowed_record_path
+
 
 def upload(path: Path, remote_path: str, token: str, repository: str) -> int:
+    if not allowed_record_path(remote_path):
+        print("FAIL: path must be records/*.json or resolutions/*.json", file=sys.stderr)
+        return 2
     record = json.loads(path.read_text(encoding="utf-8"))
     required = {"schema_version", "run_id"}
     missing = sorted(required - record.keys())
@@ -25,9 +33,20 @@ def upload(path: Path, remote_path: str, token: str, repository: str) -> int:
         return 1
     body = json.dumps(record, ensure_ascii=False, indent=2).encode("utf-8")
     api = f"https://api.github.com/repos/{repository}/contents/{remote_path}"
+    message = (
+        f"ci: append {record['schema_version']} {record['run_id']}\n\n"
+        f"Workflow: {os.environ['GITHUB_WORKFLOW']}\n"
+        f"Workflow-Run: https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+    )
+    payload = {
+        "message": message,
+        "content": base64.b64encode(body).decode("ascii"),
+        "author": {"name": RECORDER_NAME, "email": RECORDER_EMAIL},
+        "committer": {"name": RECORDER_NAME, "email": RECORDER_EMAIL},
+    }
     request = urllib.request.Request(
         api,
-        data=json.dumps({"message": f"ci: append {record['schema_version']} {record['run_id']}", "content": base64.b64encode(body).decode("ascii")}).encode("utf-8"),
+        data=json.dumps(payload).encode("utf-8"),
         headers={"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json"},
         method="PUT",
     )
@@ -50,6 +69,10 @@ def main() -> int:
     parser.add_argument("--repository", default=os.environ.get("FAILURE_LOG_REPOSITORY", "twenione/tnapp-failure-log"))
     args = parser.parse_args()
     token = os.environ.get("FAILURE_LOG_TOKEN", "")
+    required_environment = ("GITHUB_ACTIONS", "GITHUB_RUN_ID", "GITHUB_REPOSITORY", "GITHUB_WORKFLOW")
+    if os.environ.get("GITHUB_ACTIONS", "").lower() != "true" or any(not os.environ.get(key) for key in required_environment[1:]):
+        print("ERROR: failure-log writes are allowed only inside GitHub Actions", file=sys.stderr)
+        return 2
     if not token:
         print("ERROR: FAILURE_LOG_TOKEN is not available", file=sys.stderr)
         return 2

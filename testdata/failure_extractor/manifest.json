@@ -5,5 +5,7 @@
   "04_actions_error": "2026-09-19T05:16:59.2697403Z ##[error]Error: read ECONNRESET",
   "05_gradle_failure": "2026-09-15T23:10:35.2592373Z > Task :app:compileDebugKotlin FAILED",
   "06_process_exit": "2026-09-20T21:34:53.5107141Z ##[error]Process completed with exit code 1.",
-  "07_multiple_priorities": "2026-09-18T14:51:32.7891042Z RouteRibbonTest > snapshotCarriesDistanceDirectionOffRouteAccuracyAndRemainingDistance FAILED"
+  "07_multiple_priorities": "2026-09-18T14:51:32.7891042Z RouteRibbonTest > snapshotCarriesDistanceDirectionOffRouteAccuracyAndRemainingDistance FAILED",
+  "08_gradle_what_went_wrong": "2026-09-14T00:08:16.2319704Z Plugin [id: 'org.jetbrains.kotlin.test'] was not found in any of the following sources:",
+  "09_gradle_plugin_resolution": "2026-09-15T23:05:49.3957442Z Error resolving plugin [id: 'org.jetbrains.kotlin.jvm', version: '2.2.20']"
 }
