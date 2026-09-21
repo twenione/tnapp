@@ -26,7 +26,7 @@
   "removed_events": {
     "sys.voice.recovered": 1
   },
-  "golden_status": "regenerated-after-D-043",
+  "golden_status": "temporary-unverified-engine-output-P3-2",
   "derived_src_seq": true,
   "guide_output_text": "cleared"
 }

@@ -101,19 +101,18 @@ def main() -> int:
                 engine.write_text(original, encoding="utf-8")
                 continue
             commands = [
-                (
-                    "replay",
-                    ["python", "tools/replay.py", "--cli", str(cli), "--contract"],
-                ),
-                (
+                ("replay", ["python", "tools/replay.py", "--cli", str(cli), "--contract"]),
+                ("config-sensitivity", ["python", "tools/config_sensitivity.py", "--cli", str(cli)]),
+            ]
+            # The Phase 1 acceptance corpus intentionally has no geometric
+            # turn scenarios. Turn mutations are therefore exercised by the
+            # core-guide tests, replay probe, and config probe; running the
+            # Phase 1 score would be a false negative by construction.
+            if not name.startswith("turn-"):
+                commands.insert(1, (
                     "phase1-accuracy",
                     ["python", "tools/phase1_accuracy.py", "--cli", str(cli), "--contract", "--run-id", "d033", "--commit-sha", "fixture"],
-                ),
-                (
-                    "config-sensitivity",
-                    ["python", "tools/config_sensitivity.py", "--cli", str(cli)],
-                ),
-            ]
+                ))
             for consumer, command in commands:
                 code, output = run(command, workspace)
                 evidence.append(f"VARIANT {name} consumer={consumer} exit={code}\n{output}")
