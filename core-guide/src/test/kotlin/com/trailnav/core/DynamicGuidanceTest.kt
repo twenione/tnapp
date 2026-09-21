@@ -133,11 +133,12 @@ class DynamicGuidanceTest {
             }.joinToString("") + "</trkseg></trk></gpx>"
         val routeWithSlope = RouteModel.fromGpx(xml)
         val config = GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0, slopeAnnounceLeadMeters = 0.0)
-        val primed = guide(
-            GuideState.initial(routeWithSlope),
-            SensorFrame(0L, 10.0, 20.0, 5f, 1f, null),
-            config,
-        ).nextState
+        val primed = GuideState.initial(routeWithSlope).copy(
+            lastMatch = MatchResult(0.0, 0.0, 0, routeWithSlope.points.first(), ProgressDirection.FORWARD),
+            lastTimestamp = 0L,
+            sessionStartTimestamp = 0L,
+            direction = ProgressDirection.FORWARD,
+        )
         val result = guide(primed, SensorFrame(1_000L, 10.0009, 20.0, 5f, 1f, null), config)
         check(result.guidance is Guidance.Slope)
         val repeat = guide(result.nextState, SensorFrame(1_000L, 10.0, 20.0, 5f, 1f, null),
@@ -170,11 +171,12 @@ class DynamicGuidanceTest {
             "<trk><trkseg>${pointXml(0)}${pointXml(1)}${pointXml(2)}</trkseg></trk></gpx>"
         val routeWithWaypoint = RouteModel.fromGpx(xml)
         val config = GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0, waypointAnnounceLeadMeters = 75.0)
-        val primed = guide(
-            GuideState.initial(routeWithWaypoint),
-            SensorFrame(0L, 10.0, 20.0, 5f, 1f, null),
-            config,
-        ).nextState
+        val primed = GuideState.initial(routeWithWaypoint).copy(
+            lastMatch = MatchResult(0.0, 0.0, 0, routeWithWaypoint.points.first(), ProgressDirection.FORWARD),
+            lastTimestamp = 0L,
+            sessionStartTimestamp = 0L,
+            direction = ProgressDirection.FORWARD,
+        )
         val result = guide(primed, SensorFrame(1_000L, 10.00045, 20.0, 5f, 1f, null), config)
         check(result.guidance is Guidance.Waypoint)
     }

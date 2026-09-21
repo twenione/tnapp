@@ -119,7 +119,7 @@ class ElevationRouteTest {
             listOf(0, 5, 5, 5, 24, 24).mapIndexed { index, elevation -> pointXml(index, elevation.toString()) }.joinToString("") +
             "</trkseg></trk></gpx>"
         val hysteresis = RouteModel.fromGpx(xml)
-        val noHysteresis = RouteModel.fromGpx(xml, GuideConfig(slopeHysteresisMeters = 0.0, slopeLookaheadMeters = 400.0))
+        val noHysteresis = RouteModel.fromGpx(xml, GuideConfig(slopeHysteresisMeters = 0.0, slopeLookaheadMeters = 400.0, slopeMinDeltaMeters = 1.0))
         check(hysteresis.slopeSegments.isEmpty())
         check(noHysteresis.slopeSegments.isNotEmpty())
     }
