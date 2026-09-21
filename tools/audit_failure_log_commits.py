@@ -83,13 +83,27 @@ def online(repository: str, token: str, limit: int) -> list[dict]:
     values = []
     for commit in commits:
         detail = commit.get("commit", {})
+        message = detail.get("message", "")
+        match = WORKFLOW_RUN.search(message)
+        run_info = {"exists": False}
+        if match:
+            try:
+                run_request = urllib.request.Request(
+                    f"https://api.github.com/repos/{repository}/actions/runs/{match.group(1)}",
+                    headers={"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"},
+                )
+                with urllib.request.urlopen(run_request, timeout=30) as response:
+                    run = json.loads(response.read().decode("utf-8"))
+                run_info = {"exists": bool(run.get("id")), "workflow": run.get("name")}
+            except (OSError, json.JSONDecodeError):
+                run_info = {"exists": False}
         values.append({
             "sha": commit.get("sha"),
-            "message": detail.get("message", ""),
+            "message": message,
             "author": detail.get("author", {}),
             "committer": detail.get("committer", {}),
             "files": [{"filename": item.get("filename"), "status": item.get("status")} for item in commit.get("files", [])],
-            "workflow_run": {"exists": False},
+            "workflow_run": run_info,
         })
     return values
 

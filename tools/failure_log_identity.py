@@ -2,8 +2,9 @@
 
 RECORDER_NAME = "tnapp-failure-recorder"
 RECORDER_EMAIL = "failure-recorder@tnapp.invalid"
-ALLOWED_WRITE_PREFIXES = ("records/", "resolutions/")
+from pathlib import PurePosixPath
 
 
 def allowed_record_path(path: str) -> bool:
-    return any(path.startswith(prefix) and path.endswith(".json") for prefix in ALLOWED_WRITE_PREFIXES)
+    parts = PurePosixPath(path).parts
+    return len(parts) == 2 and parts[0] in {"records", "resolutions"} and parts[1].endswith(".json")
