@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.AudioTrack
 import android.os.Build
 import android.speech.tts.TextToSpeech
 import java.util.ArrayDeque
@@ -53,6 +54,44 @@ class TtsController(
             return
         }
         speakReady(text, flush)
+    }
+
+    /** Plays the periodic signal with navigation attributes and without focus. */
+    fun playSignalTone() {
+        val sampleRate = 8_000
+        val durationMillis = 150
+        val samples = sampleRate * durationMillis / 1_000
+        val pcm = ByteArray(samples * 2)
+        for (index in 0 until samples) {
+            val envelope = 1.0 - (index.toDouble() / samples)
+            val value = (kotlin.math.sin(2.0 * Math.PI * 880.0 * index / sampleRate) * envelope * Short.MAX_VALUE * 0.25).toInt().toShort()
+            pcm[index * 2] = (value.toInt() and 0xff).toByte()
+            pcm[index * 2 + 1] = (value.toInt() shr 8).toByte()
+        }
+        val format = android.media.AudioFormat.Builder()
+            .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+            .setSampleRate(sampleRate)
+            .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO)
+            .build()
+        val toneAttributes = android.media.AudioAttributes.Builder()
+            .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        AudioTrack.Builder()
+            .setAudioAttributes(toneAttributes)
+            .setAudioFormat(format)
+            .setTransferMode(AudioTrack.MODE_STATIC)
+            .setBufferSizeInBytes(pcm.size)
+            .build()
+            .also { track ->
+                track.write(pcm, 0, pcm.size)
+                track.setNotificationMarkerPosition(samples)
+                track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
+                    override fun onMarkerReached(track: AudioTrack) = track.release()
+                    override fun onPeriodicNotification(track: AudioTrack) = Unit
+                })
+                track.play()
+            }
     }
 
     private fun speakReady(text: String, flush: Boolean) {

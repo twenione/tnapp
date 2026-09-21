@@ -46,6 +46,7 @@ class TrailForegroundService : Service() {
     private var tts: TtsController? = null
     private var gpsSignalMonitor: GpsSignalMonitor? = null
     private var onRouteVoiceScheduler: OnRouteVoiceScheduler? = null
+    private var onRouteVoiceMode = NavigationPreferences.PeriodicVoiceMode.OFF
     private var currentRoute: RouteModel? = null
     private var currentGuideConfig: GuideConfig? = null
     private var routeStartupCoordinator: RouteStartupCoordinator? = null
@@ -101,10 +102,13 @@ class TrailForegroundService : Service() {
                 if (intent.hasExtra(EXTRA_ON_ROUTE_VOICE_ENABLED) || intent.hasExtra(EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS)) {
                     val enabled = intent.getBooleanExtra(EXTRA_ON_ROUTE_VOICE_ENABLED, voice.enabled)
                     val interval = intent.getLongExtra(EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS, voice.intervalSeconds)
-                    NavigationPreferences.saveVoice(this, enabled, interval)
-                    if (sessionStarted) updateOnRouteVoiceConfiguration(enabled, interval)
+                    val mode = NavigationPreferences.PeriodicVoiceMode.fromWire(
+                        intent.getStringExtra(EXTRA_ON_ROUTE_VOICE_MODE) ?: voice.mode.name,
+                    )
+                    NavigationPreferences.saveVoice(this, enabled, interval, mode)
+                    if (sessionStarted) updateOnRouteVoiceConfiguration(enabled, interval, mode)
                 } else if (sessionStarted) {
-                    updateOnRouteVoiceConfiguration(voice.enabled, voice.intervalSeconds)
+                    updateOnRouteVoiceConfiguration(voice.enabled, voice.intervalSeconds, voice.mode)
                 }
                 publishServiceState()
                 return START_STICKY
@@ -140,15 +144,19 @@ class TrailForegroundService : Service() {
             val voiceEnabled = intent?.getBooleanExtra(EXTRA_ON_ROUTE_VOICE_ENABLED, storedVoice.enabled) ?: storedVoice.enabled
             val voiceIntervalSeconds = intent?.getLongExtra(EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS, storedVoice.intervalSeconds)
                 ?: storedVoice.intervalSeconds
-            NavigationPreferences.saveVoice(this, voiceEnabled, voiceIntervalSeconds)
+            val voiceMode = NavigationPreferences.PeriodicVoiceMode.fromWire(
+                intent?.getStringExtra(EXTRA_ON_ROUTE_VOICE_MODE) ?: storedVoice.mode.name,
+            )
+            NavigationPreferences.saveVoice(this, voiceEnabled, voiceIntervalSeconds, voiceMode)
             if (!sessionStarted) {
                 startSession(
                     routeUri = Uri.parse(routeUri),
                     onRouteVoiceEnabled = voiceEnabled,
                     onRouteVoiceIntervalSeconds = voiceIntervalSeconds,
+                    onRouteVoiceMode = voiceMode,
                 )
             } else {
-                updateOnRouteVoiceConfiguration(voiceEnabled, voiceIntervalSeconds)
+                updateOnRouteVoiceConfiguration(voiceEnabled, voiceIntervalSeconds, voiceMode)
             }
         }
         return START_STICKY
@@ -158,6 +166,7 @@ class TrailForegroundService : Service() {
         routeUri: Uri,
         onRouteVoiceEnabled: Boolean,
         onRouteVoiceIntervalSeconds: Long,
+        onRouteVoiceMode: NavigationPreferences.PeriodicVoiceMode,
     ) {
         val xml = try {
             contentResolver.openInputStream(routeUri)?.use { it.readBytes().toString(Charsets.UTF_8) }
@@ -202,7 +211,11 @@ class TrailForegroundService : Service() {
         lastLocation = null
         lastLocationSeq = null
         gpsSignalMonitor = GpsSignalMonitor().also { it.start() }
-        onRouteVoiceScheduler = OnRouteVoiceScheduler(onRouteVoiceEnabled, onRouteVoiceIntervalSeconds)
+        this.onRouteVoiceMode = onRouteVoiceMode
+        onRouteVoiceScheduler = OnRouteVoiceScheduler(
+            onRouteVoiceEnabled && onRouteVoiceMode != NavigationPreferences.PeriodicVoiceMode.OFF,
+            onRouteVoiceIntervalSeconds,
+        )
         onDemandConfig = NavigationPreferences.onDemand(this)
         onDemandRouter = OnDemandRequestRouter(onDemandConfig)
         shakeDetector = ShakeDetector(onDemandConfig)
@@ -222,6 +235,7 @@ class TrailForegroundService : Service() {
             mapOf(
                 "enabled" to (onRouteVoiceEnabled && onRouteVoiceIntervalSeconds > 0L).toString(),
                 "interval_seconds" to (if (onRouteVoiceIntervalSeconds > 0L) onRouteVoiceIntervalSeconds else 0L).toString(),
+                "mode" to onRouteVoiceMode.name,
             ),
         )
         logger?.appendSystem(
@@ -257,14 +271,23 @@ class TrailForegroundService : Service() {
 
     private fun formatDistance(value: Double?): String = value?.let { "%.2f".format(it) } ?: ""
 
-    private fun updateOnRouteVoiceConfiguration(enabled: Boolean, intervalSeconds: Long) {
-        onRouteVoiceScheduler?.configure(enabled, intervalSeconds)
-        NavigationPreferences.saveVoice(this, enabled, intervalSeconds)
+    private fun updateOnRouteVoiceConfiguration(
+        enabled: Boolean,
+        intervalSeconds: Long,
+        mode: NavigationPreferences.PeriodicVoiceMode,
+    ) {
+        onRouteVoiceMode = mode
+        onRouteVoiceScheduler?.configure(
+            enabled && mode != NavigationPreferences.PeriodicVoiceMode.OFF,
+            intervalSeconds,
+        )
+        NavigationPreferences.saveVoice(this, enabled, intervalSeconds, mode)
         logger?.appendSystem(
             "voice.on-route-config",
             mapOf(
                 "enabled" to (enabled && intervalSeconds > 0L).toString(),
                 "interval_seconds" to (if (intervalSeconds > 0L) intervalSeconds else 0L).toString(),
+                "mode" to mode.name,
                 "updated_while_running" to "true",
             ),
         )
@@ -354,7 +377,7 @@ class TrailForegroundService : Service() {
         val speechCandidates = listOfNotNull(
             spoken,
             recoveryPrompt,
-            if (periodic) ON_ROUTE_VOICE_PROMPT else null,
+            if (periodic && onRouteVoiceMode == NavigationPreferences.PeriodicVoiceMode.PROMPT) ON_ROUTE_VOICE_PROMPT else null,
         )
         val loggedSpeech = if (GuidanceVoicePolicy.decide(paused, VoiceKind.GUIDANCE).allowed) {
             speechCandidates.joinToString(" ").ifBlank { null }
@@ -388,12 +411,16 @@ class TrailForegroundService : Service() {
             )
             tts?.speak(recoveryPrompt)
         }
-        if (!paused && periodic) {
+        if (!paused && periodic && onRouteVoiceMode == NavigationPreferences.PeriodicVoiceMode.PROMPT) {
             logger?.appendSystem(
                 "voice.on-route",
                 mapOf("prompt" to ON_ROUTE_VOICE_PROMPT),
             )
             tts?.speak(ON_ROUTE_VOICE_PROMPT)
+        }
+        if (!paused && periodic && onRouteVoiceMode == NavigationPreferences.PeriodicVoiceMode.TONE) {
+            logger?.appendSystem("voice.on-route-tone", mapOf("mode" to "TONE"))
+            playAcknowledgementTone()
         }
         updateNotification(decision.result.guidance)
     }
@@ -717,7 +744,8 @@ class TrailForegroundService : Service() {
                 .putExtra(EXTRA_SERVICE_STATE, NavigationPreferences.state(this))
                 .putExtra(EXTRA_ACTIVE_SESSION_ID, activeSessionId)
                 .putExtra(EXTRA_ON_ROUTE_VOICE_ENABLED, NavigationPreferences.voice(this).enabled)
-                .putExtra(EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS, NavigationPreferences.voice(this).intervalSeconds),
+                .putExtra(EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS, NavigationPreferences.voice(this).intervalSeconds)
+                .putExtra(EXTRA_ON_ROUTE_VOICE_MODE, NavigationPreferences.voice(this).mode.name),
         )
     }
 
@@ -747,6 +775,7 @@ class TrailForegroundService : Service() {
         const val EXTRA_ROUTE_URI = "com.trailnav.app.ROUTE_URI"
         const val EXTRA_ON_ROUTE_VOICE_ENABLED = "com.trailnav.app.ON_ROUTE_VOICE_ENABLED"
         const val EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS = "com.trailnav.app.ON_ROUTE_VOICE_INTERVAL_SECONDS"
+        const val EXTRA_ON_ROUTE_VOICE_MODE = "com.trailnav.app.ON_ROUTE_VOICE_MODE"
         const val EXTRA_ACTION_SOURCE = "com.trailnav.app.ACTION_SOURCE"
         const val EXTRA_SERVICE_STATE = "com.trailnav.app.SERVICE_STATE"
         const val EXTRA_ACTIVE_SESSION_ID = "com.trailnav.app.ACTIVE_SESSION_ID"
