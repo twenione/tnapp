@@ -35,12 +35,14 @@ class VoiceAndGpsTest {
     }
 
     @Test
-    fun pausedVoiceGateSuppressesGuidanceRecoveryGpsAndOnRoute() {
-        VoiceKind.values().forEach { kind ->
+    fun pausedVoiceGateAllowsSunsetButSuppressesAutomaticVoices() {
+        VoiceKind.values().filterNot { it == VoiceKind.SUNSET }.forEach { kind ->
             assertFalse(GuidanceVoicePolicy.decide(paused = true, kind = kind).allowed)
             assertEquals("paused", GuidanceVoicePolicy.decide(paused = true, kind = kind).suppressionReason)
             assertTrue(GuidanceVoicePolicy.decide(paused = false, kind = kind).allowed)
         }
+        assertTrue(GuidanceVoicePolicy.decide(paused = true, kind = VoiceKind.SUNSET).allowed)
+        assertNull(GuidanceVoicePolicy.decide(paused = true, kind = VoiceKind.SUNSET).suppressionReason)
     }
 
     @Test

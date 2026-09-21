@@ -34,6 +34,7 @@ class SessionLoggerTest {
             logger.appendEnvelope(location, "loc", "location")
             val locationSeq = logger.appendLocation(location)
             logger.appendGuide(location, result, null, locationSeq)
+            logger.appendGuide(location, result, "경로 위입니다", locationSeq, trigger = "slot")
             logger.appendSystem("service.started", mapOf("battery_pct" to "90"))
             logger.appendError("test", "synthetic")
         }
@@ -43,17 +44,19 @@ class SessionLoggerTest {
         assertTrue(manifest.contains("\"elevation_reason\":\"ok\""))
         assertTrue(manifest.contains("\"waypoint_count\":2"))
         val events = File(directory, "events.ndjson").readLines().filter { it.isNotBlank() }
-        assertEquals(5, events.size)
+        assertEquals(6, events.size)
         assertTrue(events[0].contains("\"stream\":\"envelope\""))
         assertTrue(events[0].contains("\"event_stream\":\"loc\""))
         assertTrue(events[1].contains("\"stream\":\"loc\""))
         assertTrue(events[2].contains("\"stream\":\"guide\""))
         assertTrue(events[2].contains("\"src_seq\":1"))
         assertTrue(events[2].contains("\"rule\":\"matching.on-route\""))
-        assertTrue(events[3].contains("\"stream\":\"sys\""))
-        assertTrue(events[4].contains("\"stream\":\"err\""))
+        assertTrue(events[3].contains("\"stream\":\"guide\""))
+        assertTrue(events[3].contains("\"trigger\":\"slot\""))
+        assertTrue(events[4].contains("\"stream\":\"sys\""))
+        assertTrue(events[5].contains("\"stream\":\"err\""))
         val seqs = events.map { Regex("\"seq\":(\\d+)").find(it)!!.groupValues[1].toInt() }
-        assertEquals(listOf(0, 1, 2, 3, 4), seqs)
+        assertEquals(listOf(0, 1, 2, 3, 4, 5), seqs)
         directory.deleteRecursively()
     }
 

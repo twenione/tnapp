@@ -1,7 +1,7 @@
 package com.trailnav.app
 
 /** Voice categories that share the pause gate. Kept free of Android APIs for JVM tests. */
-internal enum class VoiceKind { GUIDANCE, RECOVERY, GPS, ON_ROUTE }
+internal enum class VoiceKind { GUIDANCE, RECOVERY, GPS, ON_ROUTE, SUNSET }
 
 internal data class VoiceDecision(
     val allowed: Boolean,
@@ -10,7 +10,7 @@ internal data class VoiceDecision(
 
 internal object GuidanceVoicePolicy {
     fun decide(paused: Boolean, kind: VoiceKind): VoiceDecision =
-        if (paused) VoiceDecision(allowed = false, suppressionReason = "paused")
+        if (paused && kind != VoiceKind.SUNSET) VoiceDecision(allowed = false, suppressionReason = "paused")
         else VoiceDecision(allowed = true)
 }
 
