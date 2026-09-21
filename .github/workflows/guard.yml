@@ -54,6 +54,13 @@ jobs:
       - run: python tools/validate_session.py testdata/sessions/golden testdata/sessions/synth
       - run: python tools/check_synthetic_test_data.py
       - run: python tools/check_privacy_coverage.py
+      - run: python tools/check_failure_rule_versions.py
+      - name: Check failure rule-version append-only history
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          git fetch --no-tags origin "${GITHUB_BASE_REF}" --depth=1
+          python tools/check_failure_rule_versions.py --base-ref "origin/${GITHUB_BASE_REF}"
       - name: Check anonymized log-shape fixture
         run: |
           python tools/privacy_scan.py testdata/sessions/golden/log_shape_fixture
@@ -167,6 +174,14 @@ jobs:
         run: python tools/test_build_log_shape_fixture.py
       - name: Privacy field-kind coverage negative control
         run: python tools/test_check_privacy_coverage.py
+      - name: Failure rule-version negative controls
+        run: python tools/test_failure_rule_versions.py
+      - name: Failure-log writer contract
+        run: python tools/test_push_failure_record.py
+      - name: Failure-log commit audit negative controls
+        run: python tools/test_audit_failure_log_commits.py
+      - name: README notice negative controls
+        run: python tools/test_replace_failure_log_notice.py
       - name: Failure signature extractor legacy mutation must fail
         run: python tools/test_preserve_failure_record.py --legacy-negative-control
 

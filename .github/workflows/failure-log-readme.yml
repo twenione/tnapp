@@ -1,0 +1,30 @@
+name: failure-log-readme
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: failure-log-readme
+  cancel-in-progress: false
+
+jobs:
+  replace:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Replace private failure-log README notice
+        env:
+          FAILURE_LOG_TOKEN: ${{ secrets.FAILURE_LOG_TOKEN }}
+          GITHUB_ACTIONS: 'true'
+          GITHUB_WORKFLOW: failure-log-readme
+        run: python tools/replace_failure_log_notice.py --repository twenione/tnapp-failure-log --apply

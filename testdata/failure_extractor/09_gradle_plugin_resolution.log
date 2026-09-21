@@ -1,0 +1,17 @@
+2026-09-15T23:04:51.5738271Z ##[group]Run gradle/actions/setup-gradle@v4
+2026-09-15T23:04:51.5738650Z with:
+2026-09-15T23:04:51.5739853Z   dependency-graph-report-dir: dependency-graph-reports
+2026-09-15T23:04:51.5740386Z   dependency-graph-continue-on-failure: true
+2026-09-15T23:04:51.5740774Z   build-scan-publish: false
+2026-09-15T23:04:51.5745195Z   github-[REDACTED]
+2026-09-15T23:04:51.5745518Z env:
+2026-09-15T23:04:51.5746000Z ##[endgroup]
+2026-09-15T23:05:49.3954936Z Build file '/home/runner/work/tnapp/tnapp/core-guide/build.gradle.kts' line: 1
+2026-09-15T23:05:49.3955793Z 
+2026-09-15T23:05:49.3956150Z * What went wrong:
+2026-09-15T23:05:49.3957442Z Error resolving plugin [id: 'org.jetbrains.kotlin.jvm', version: '2.2.20']
+2026-09-15T23:05:49.3959138Z > The request for this plugin could not be satisfied because the plugin is already on the classpath with an unknown version, so compatibility cannot be checked.
+2026-09-15T23:05:49.3960430Z 
+2026-09-15T23:05:49.3960770Z * Try:
+2026-09-15T23:05:49.3962916Z > Run with --stacktrace option to get the stack trace.
+2026-09-15T23:05:49.4000000Z ##[error]Process completed with exit code 1.

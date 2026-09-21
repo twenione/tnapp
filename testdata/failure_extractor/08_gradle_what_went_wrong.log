@@ -1,0 +1,18 @@
+2026-09-14T00:07:42.0010895Z ##[group]Run gradle/actions/setup-gradle@v4
+2026-09-14T00:07:42.0011213Z with:
+2026-09-14T00:07:42.0011445Z   gradle-version: 8.14
+2026-09-14T00:07:42.0015297Z   dependency-graph-continue-on-failure: true
+2026-09-14T00:07:42.0020371Z env:
+2026-09-14T00:07:42.0021812Z ##[endgroup]
+2026-09-14T00:08:16.2314384Z Build file '/home/runner/work/tnapp/tnapp/core-guide/build.gradle.kts' line: 1
+2026-09-14T00:08:16.2318453Z 
+2026-09-14T00:08:16.2318877Z * What went wrong:
+2026-09-14T00:08:16.2319704Z Plugin [id: 'org.jetbrains.kotlin.test'] was not found in any of the following sources:
+2026-09-14T00:08:16.2320546Z 
+2026-09-14T00:08:16.2334777Z - Gradle Core Plugins (plugin is not in 'org.gradle' namespace)
+2026-09-14T00:08:16.2363668Z - Included Builds (No included builds contain this plugin)
+2026-09-14T00:08:16.2393631Z - Plugin Repositories (plugin dependency must include a version number for this source)
+2026-09-14T00:08:16.2403061Z 
+2026-09-14T00:08:16.2423201Z * Try:
+2026-09-14T00:08:16.2453214Z > Run with --stacktrace option to get the stack trace.
+2026-09-14T00:08:16.2500000Z ##[error]Process completed with exit code 1.
