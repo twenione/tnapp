@@ -84,8 +84,8 @@ VARIANTS = {
         "evaluateDynamicGuidance(initializedState, next.copy(offRoute = false), directedMatch, frame, config, suppressAnnouncements = false).state /* D-033 off-route event gate removed */",
     ),
     "event-reverse-gate": (
-        "config.milestoneEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen",
-        "config.milestoneEnabled && config.periodicEnabled && onRoute && eventIntervalOpen /* D-033 reverse event gate removed */",
+        "config.slopeEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedSlopeIndices",
+        "config.slopeEnabled && config.periodicEnabled && onRoute && eventIntervalOpen && index !in previous.consumedSlopeIndices /* D-033 reverse event gate removed */",
     ),
     "event-min-interval": (
         "config.milestoneEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && freshCrossed.isNotEmpty()",
