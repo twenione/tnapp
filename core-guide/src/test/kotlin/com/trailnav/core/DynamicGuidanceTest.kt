@@ -22,7 +22,7 @@ class DynamicGuidanceTest {
 
     @Test
     fun remainingThresholds() {
-        val config = GuideConfig(periodicEnabled = true, remainingAnnounceMeters = listOf(3200.0, 2800.0, 2400.0), eventMinIntervalSeconds = 0.0)
+        val config = GuideConfig(periodicEnabled = true, remainingAnnounceMeters = listOf(3000.0, 2800.0, 2400.0), eventMinIntervalSeconds = 0.0)
         var state = GuideState.initial(route)
         state = guide(state, SensorFrame(0L, 10.008, 20.0, 5f, 1f, null), config).nextState
         val result = guide(state, SensorFrame(1_000L, 10.0095, 20.0, 5f, 1f, null), config)
