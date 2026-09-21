@@ -53,10 +53,12 @@ class RouteStatusRibbonConsistencyTest {
             assertEquals(row.status.onRoute, !row.ribbon.offRoute, row.name)
             assertEquals(row.status.direction, row.ribbon.direction, row.name)
             assertEquals(row.status.remainingMeters, row.ribbon.remainingDistanceMeters, 0.001, row.name)
-            assertEquals(row.status.nextTurn != null, row.ribbon.nextTurn != null, row.name)
-            if (row.status.nextTurn != null && row.ribbon.nextTurn != null) {
-                assertEquals(row.status.nextTurn.distanceMeters, row.ribbon.nextTurn.distanceMeters, 0.001, row.name)
-                assertEquals(row.status.nextTurn.side.name, row.ribbon.nextTurn.side.name, row.name)
+            val expectedTurn = row.status.nextTurn
+            val actualTurn = row.ribbon.nextTurn
+            assertEquals(expectedTurn != null, actualTurn != null, row.name)
+            if (expectedTurn != null && actualTurn != null) {
+                assertEquals(expectedTurn.distanceMeters, actualTurn.distanceMeters, 0.001, row.name)
+                assertEquals(expectedTurn.side.name, actualTurn.side.name, row.name)
             }
         }
     }
