@@ -9,7 +9,7 @@ class OnDemandTriggerTest {
     fun walkingLikeSamplesDoNotTriggerAndTwoHitsDo() {
         val detector = ShakeDetector(OnDemandConfig())
         assertFalse(detector.onSample(0L, 0.8))
-        assertFalse(detector.onSample(300L, 2.4))
+        assertFalse(detector.onSample(300L, 2.6))
         assertTrue(detector.onSample(500L, 2.5))
     }
 
