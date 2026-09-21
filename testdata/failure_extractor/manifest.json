@@ -1,0 +1,9 @@
+{
+  "01_kotlin_compile": "2026-09-15T23:10:35.2578697Z e: file:///home/runner/work/tnapp/tnapp/app/src/main/kotlin/com/trailnav/app/TrailForegroundService.kt:71:60 Unresolved reference 'BuildConfig'.",
+  "02_test_failure": "2026-09-18T14:51:32.7891042Z RouteRibbonTest > snapshotCarriesDistanceDirectionOffRouteAccuracyAndRemainingDistance FAILED",
+  "03_explicit_failure": "2026-09-20T21:34:53.5025675Z FAIL: D-033 negative control",
+  "04_actions_error": "2026-09-19T05:16:59.2697403Z ##[error]Error: read ECONNRESET",
+  "05_gradle_failure": "2026-09-15T23:10:35.2592373Z > Task :app:compileDebugKotlin FAILED",
+  "06_process_exit": "2026-09-20T21:34:53.5107141Z ##[error]Process completed with exit code 1.",
+  "07_multiple_priorities": "2026-09-18T14:51:32.7891042Z RouteRibbonTest > snapshotCarriesDistanceDirectionOffRouteAccuracyAndRemainingDistance FAILED"
+}
