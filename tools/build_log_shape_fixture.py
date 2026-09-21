@@ -13,10 +13,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -24,6 +24,7 @@ from anonymize_fixture import anonymize
 
 
 PAIR_COUNT = 601
+REMOVED_SYS_KINDS = {"voice.recovered", "voice.on-route"}
 
 
 def _load_events(path: Path) -> list[dict]:
@@ -32,11 +33,17 @@ def _load_events(path: Path) -> list[dict]:
 
 def _reverse_gpx(source: Path, target: Path) -> None:
     root = ET.fromstring(source.read_text(encoding="utf-8"))
-    points = [
+    trk_points = [
         (float(node.attrib["lat"]), float(node.attrib["lon"]))
         for node in root.iter()
-        if node.tag.rsplit("}", 1)[-1] in {"trkpt", "rtept", "wpt"}
+        if node.tag.rsplit("}", 1)[-1] == "trkpt"
     ]
+    rte_points = [
+        (float(node.attrib["lat"]), float(node.attrib["lon"]))
+        for node in root.iter()
+        if node.tag.rsplit("}", 1)[-1] == "rtept"
+    ]
+    points = trk_points or rte_points
     if len(points) < 2:
         raise ValueError("source route must contain at least two points")
     body = [
@@ -60,13 +67,15 @@ def _cut_source(source: Path, target: Path) -> None:
         event for event in events
         if event.get("stream") == "envelope" and float(event["t"]) <= final_t
     ]
-    selected_sys = [
+    source_sys = [
         event for event in events
         if event.get("stream") == "sys" and float(event["t"]) <= final_t
     ]
-    if len(selected_envelope) != 1202 or len(selected_sys) != 17:
+    selected_sys = [event for event in source_sys if event.get("kind") not in REMOVED_SYS_KINDS]
+    removed = Counter(event.get("kind", "unknown") for event in source_sys if event.get("kind") in REMOVED_SYS_KINDS)
+    if len(selected_envelope) != 1202 or len(selected_sys) != 16:
         raise ValueError(
-            f"unexpected cut shape: envelopes={len(selected_envelope)} sys={len(selected_sys)}"
+            f"unexpected cut shape: envelopes={len(selected_envelope)} sys={len(selected_sys)} removed={dict(removed)}"
         )
     selected_seqs = {
         int(event["seq"])
@@ -92,6 +101,7 @@ def _cut_source(source: Path, target: Path) -> None:
     )
     manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
     manifest["fixture_purpose"] = "log-shape-regression"
+    manifest["removed_events"] = {f"sys.{kind}": count for kind, count in sorted(removed.items())}
     (target / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )

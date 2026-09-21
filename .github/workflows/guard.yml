@@ -53,6 +53,7 @@ jobs:
           python-version: '3.12'
       - run: python tools/validate_session.py testdata/sessions/golden testdata/sessions/synth
       - run: python tools/check_synthetic_test_data.py
+      - run: python tools/check_privacy_coverage.py
       - name: Check anonymized log-shape fixture
         run: |
           python tools/privacy_scan.py testdata/sessions/golden/log_shape_fixture
@@ -160,6 +161,12 @@ jobs:
         run: python tools/test_preserve_failure_record.py
       - name: Synthetic test-data rule negative controls
         run: python tools/test_check_synthetic_test_data.py
+      - name: Fixture shape negative controls
+        run: python tools/test_fixture_shape_check.py
+      - name: GPX point-selection contract
+        run: python tools/test_build_log_shape_fixture.py
+      - name: Privacy field-kind coverage negative control
+        run: python tools/test_check_privacy_coverage.py
       - name: Failure signature extractor legacy mutation must fail
         run: python tools/test_preserve_failure_record.py --legacy-negative-control
 
