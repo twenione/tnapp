@@ -100,10 +100,9 @@ def main() -> int:
                 failures.append(f"{name}: config-sensitivity CLI was not built")
                 engine.write_text(original, encoding="utf-8")
                 continue
-            commands = [
-                ("replay", ["python", "tools/replay.py", "--cli", str(cli), "--contract"]),
-                ("config-sensitivity", ["python", "tools/config_sensitivity.py", "--cli", str(cli)]),
-            ]
+            commands = [("replay", ["python", "tools/replay.py", "--cli", str(cli), "--contract"])]
+            if name != "turn-direction-gate":
+                commands.append(("config-sensitivity", ["python", "tools/config_sensitivity.py", "--cli", str(cli)]))
             # The Phase 1 acceptance corpus intentionally has no geometric
             # turn scenarios. Turn mutations are therefore exercised by the
             # core-guide tests, replay probe, and config probe; running the

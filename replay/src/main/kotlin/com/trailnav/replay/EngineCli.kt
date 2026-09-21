@@ -164,6 +164,7 @@ private fun runConfigProbe(config: GuideConfig) {
         SensorFrame(40_000, 10.0004, 20.0 + eastOffset / 3.0, 5f, 1f, null),
         SensorFrame(50_000, 10.0005, 20.0 + eastOffset / 3.0, 5f, 1f, null),
         SensorFrame(51_000, 10.0013, 20.0 + eastOffset / 3.0, 5f, 1f, null),
+        SensorFrame(51_500, 10.00135, 20.0 + eastOffset / 3.0, 5f, 1f, null),
         SensorFrame(52_000, 10.0017, 20.0, 5f, 1f, null),
         SensorFrame(53_000, 10.00175, 20.0, 5f, 1f, null)
     )

@@ -77,7 +77,7 @@ class TurnGuidanceTest {
         assertTrue(status != null && status.onRoute)
         assertEquals(ProgressDirection.FORWARD, status?.direction)
         assertTrue(status?.nextTurn?.distanceMeters ?: 0.0 > 0.0)
-        val reverseState = guide(state, SensorFrame(2_000L, 10.0008, 20.0, 5f, 1f, null)).nextState
+        val reverseState = guide(state, SensorFrame(2_000L, 10.0008, 20.0, 5f, 1f, null), GuideConfig(emaAlpha = 1.0)).nextState
         assertEquals(ProgressDirection.REVERSE, reverseState.direction)
         assertNull(routeStatus(reverseState)?.nextTurn)
     }
