@@ -84,7 +84,7 @@ internal object SessionExportCatalog {
 
     /** Parse the compact event form used by the logger, including exponent notation. */
     internal fun eventTimeLine(line: String, kind: String): Double? =
-        if (line.contains("\"kind\":\"$kind\"")) {
+        if (line.contains("\"kind\":\"$kind\"") || line.contains("\"kind\": \"$kind\"")) {
             eventTimePattern.find(line)?.groupValues?.get(1)?.toDoubleOrNull()
         } else null
 
