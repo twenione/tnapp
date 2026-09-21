@@ -739,6 +739,13 @@ internal fun Guidance?.toSpeech(): String? = when (this) {
     is Guidance.OffRoute -> "경로를 벗어났습니다. ${"%.0f".format(distance)}미터"
     is Guidance.Status -> if (isReverseStatus()) null else message
     Guidance.Arrived -> "목적지에 도착했습니다"
+    is Guidance.Milestone -> "${"%.0f".format(distanceMeters)}미터 지점입니다"
+    is Guidance.Elapsed -> "출발 ${hours}시간 경과"
+    is Guidance.Remaining -> "종착지까지 ${"%.0f".format(thresholdMeters)}미터"
+    is Guidance.Slope -> if (kind == com.trailnav.core.SlopeKind.ASCENT) "잠시 후 오르막입니다" else "잠시 후 내리막입니다"
+    is Guidance.Elevation -> "현재 고도 약 ${"%.0f".format(elevationMeters)}미터"
+    is Guidance.Waypoint -> "잠시 후 ${name}입니다"
+    is Guidance.Sunset -> if (afterSunset) "일몰 시각이 지났습니다" else "일몰까지 ${minutesRemaining ?: 0}분입니다"
     is Guidance.TurnAhead, is Guidance.TurnNow, null -> null
 }
 

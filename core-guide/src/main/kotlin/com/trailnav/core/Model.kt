@@ -27,6 +27,13 @@ sealed class Guidance {
     data class OffRoute(val distance: Double, val direction: String) : Guidance()
     data class TurnAhead(val distance: Double, val side: Side) : Guidance()
     data class TurnNow(val side: Side) : Guidance()
+    data class Milestone(val distanceMeters: Double) : Guidance()
+    data class Elapsed(val hours: Int) : Guidance()
+    data class Remaining(val thresholdMeters: Double) : Guidance()
+    data class Slope(val kind: SlopeKind, val deltaMeters: Double) : Guidance()
+    data class Elevation(val elevationMeters: Double) : Guidance()
+    data class Waypoint(val index: Int, val name: String, val distanceMeters: Double) : Guidance()
+    data class Sunset(val minutesRemaining: Int?, val afterSunset: Boolean = false) : Guidance()
     data class Status(
         val message: String,
         val distance: Double? = null,
@@ -69,6 +76,23 @@ data class GuideConfig(
     val turnAheadDistanceMeters: Double = 60.0,
     val turnNowDistanceMeters: Double = 15.0,
     val turnOnRouteMaxOffsetMeters: Double = 15.0,
+    val eventMinIntervalSeconds: Double = 60.0,
+    val milestoneIntervalMeters: Double = 1000.0,
+    val remainingAnnounceMeters: List<Double> = listOf(2000.0, 1000.0, 500.0),
+    val elapsedAnnounceIntervalSeconds: Double = 3600.0,
+    val slopeAnnounceLeadMeters: Double = 100.0,
+    val elevationRoundMeters: Double = 10.0,
+    val waypointAnnounceLeadMeters: Double = 200.0,
+    val sunsetAnnounceMinutes: List<Int> = listOf(60, 30),
+    /** Existing app scheduler defaults to quiet mode; event types can be enabled explicitly. */
+    val periodicEnabled: Boolean = false,
+    val milestoneEnabled: Boolean = true,
+    val elapsedEnabled: Boolean = true,
+    val remainingEnabled: Boolean = true,
+    val slopeEnabled: Boolean = true,
+    val elevationEnabled: Boolean = true,
+    val waypointEnabled: Boolean = true,
+    val sunsetEnabled: Boolean = true,
     /** Maximum route look-ahead used while extracting deterministic E4 slope segments. */
     val slopeLookaheadMeters: Double = 200.0,
     /** Minimum smoothed elevation delta for an E4 segment. */
@@ -102,6 +126,14 @@ data class GuideConfig(
         require(turnNowDistanceMeters > 0.0)
         require(turnNowDistanceMeters < turnAheadDistanceMeters)
         require(turnOnRouteMaxOffsetMeters > 0.0)
+        require(eventMinIntervalSeconds >= 0.0)
+        require(milestoneIntervalMeters > 0.0)
+        require(remainingAnnounceMeters.all { it > 0.0 })
+        require(elapsedAnnounceIntervalSeconds > 0.0)
+        require(slopeAnnounceLeadMeters >= 0.0)
+        require(elevationRoundMeters > 0.0)
+        require(waypointAnnounceLeadMeters >= 0.0)
+        require(sunsetAnnounceMinutes.all { it > 0 })
         require(slopeLookaheadMeters > 0.0)
         require(slopeMinDeltaMeters > 0.0)
         require(slopeHysteresisMeters >= 0.0)
@@ -144,6 +176,22 @@ data class GuideConfig(
             "waypointNearRouteMeters" to "covered by ElevationRouteTest.waypointNearRouteFilter",
             "waypointNameMaxLength" to "covered by ElevationRouteTest.waypointNameIsSanitized",
             "elevationSpikeThresholdMeters" to "covered by ElevationRouteTest.spikeIsUnstable",
+            "eventMinIntervalSeconds" to "covered by DynamicGuidanceTest.minimumEventInterval",
+            "milestoneIntervalMeters" to "covered by DynamicGuidanceTest.milestoneThreshold",
+            "remainingAnnounceMeters" to "covered by DynamicGuidanceTest.remainingThresholds",
+            "elapsedAnnounceIntervalSeconds" to "covered by DynamicGuidanceTest.elapsedThreshold",
+            "slopeAnnounceLeadMeters" to "covered by DynamicGuidanceTest.slopeWindow",
+            "elevationRoundMeters" to "covered by DynamicGuidanceTest.elevationSlot",
+            "waypointAnnounceLeadMeters" to "covered by DynamicGuidanceTest.waypointWindow",
+            "sunsetAnnounceMinutes" to "covered by DynamicGuidanceTest.sunsetThresholds",
+            "periodicEnabled" to "covered by DynamicGuidanceTest.periodicGate",
+            "milestoneEnabled" to "covered by DynamicGuidanceTest.eventToggle",
+            "elapsedEnabled" to "covered by DynamicGuidanceTest.eventToggle",
+            "remainingEnabled" to "covered by DynamicGuidanceTest.eventToggle",
+            "slopeEnabled" to "covered by DynamicGuidanceTest.eventToggle",
+            "elevationEnabled" to "covered by DynamicGuidanceTest.eventToggle",
+            "waypointEnabled" to "covered by DynamicGuidanceTest.eventToggle",
+            "sunsetEnabled" to "covered by DynamicGuidanceTest.eventToggle",
             "spatialGridSizeMeters" to "route index implementation parameter",
             "taggingOffRouteDistanceMeters" to "Phase 0 tagging parameter; not consumed by guide",
             "taggingOffRouteDwellSeconds" to "Phase 0 tagging parameter; not consumed by guide",
@@ -182,7 +230,16 @@ data class GuideState(
     val reverseSince: Long? = null,
     val arrived: Boolean = false,
     val completedTurnAheadIndices: Set<Int> = emptySet(),
-    val completedTurnNowIndices: Set<Int> = emptySet()
+    val completedTurnNowIndices: Set<Int> = emptySet(),
+    val consumedMilestoneIndices: Set<Int> = emptySet(),
+    val consumedRemainingThresholds: Set<Double> = emptySet(),
+    val consumedElapsedIndices: Set<Int> = emptySet(),
+    val consumedSlopeIndices: Set<Int> = emptySet(),
+    val consumedWaypointIndices: Set<Int> = emptySet(),
+    val consumedSunsetThresholds: Set<Int> = emptySet(),
+    val pendingSunsetThresholds: Set<Int> = emptySet(),
+    val lastPeriodicEventAt: Long? = null,
+    val lastElevationAnnouncementMeters: Double? = null,
 ) {
     companion object {
         fun initial(route: RouteModel): GuideState = GuideState(route)

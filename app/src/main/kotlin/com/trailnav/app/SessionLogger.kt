@@ -160,6 +160,13 @@ class JsonlSessionLogger(
             is com.trailnav.core.Guidance.OffRoute -> "OFF_ROUTE"
             is com.trailnav.core.Guidance.TurnAhead -> "TURN_AHEAD"
             is com.trailnav.core.Guidance.TurnNow -> "TURN_NOW"
+            is com.trailnav.core.Guidance.Milestone -> "MILESTONE"
+            is com.trailnav.core.Guidance.Elapsed -> "ELAPSED"
+            is com.trailnav.core.Guidance.Remaining -> "REMAINING"
+            is com.trailnav.core.Guidance.Slope -> "SLOPE"
+            is com.trailnav.core.Guidance.Elevation -> "ELEVATION"
+            is com.trailnav.core.Guidance.Waypoint -> "WAYPOINT"
+            is com.trailnav.core.Guidance.Sunset -> "SUNSET"
             is com.trailnav.core.Guidance.Status -> "STATUS"
             com.trailnav.core.Guidance.Arrived -> "ARRIVED"
         }

@@ -128,6 +128,13 @@ private fun decision(guidance: Guidance?): String = when (guidance) {
     is Guidance.OffRoute -> "OFF_ROUTE"
     is Guidance.TurnAhead -> "TURN_AHEAD"
     is Guidance.TurnNow -> "TURN_NOW"
+    is Guidance.Milestone -> "MILESTONE"
+    is Guidance.Elapsed -> "ELAPSED"
+    is Guidance.Remaining -> "REMAINING"
+    is Guidance.Slope -> "SLOPE"
+    is Guidance.Elevation -> "ELEVATION"
+    is Guidance.Waypoint -> "WAYPOINT"
+    is Guidance.Sunset -> "SUNSET"
     is Guidance.Status -> "STATUS"
     Guidance.Arrived -> "ARRIVED"
 }
@@ -135,6 +142,9 @@ private fun decision(guidance: Guidance?): String = when (guidance) {
 private fun com.trailnav.core.GuideResult.guidanceDistance(): Double? = when (val item = guidance) {
     is Guidance.OffRoute -> item.distance
     is Guidance.Status -> item.distance
+    is Guidance.Milestone -> item.distanceMeters
+    is Guidance.Remaining -> item.thresholdMeters
+    is Guidance.Waypoint -> item.distanceMeters
     else -> null
 }
 
