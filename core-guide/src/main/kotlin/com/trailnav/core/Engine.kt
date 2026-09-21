@@ -240,7 +240,7 @@ private data class DynamicCandidate(
 )
 
 /** Single arbitration table for simultaneous periodic events (R14). */
-private object EventPriority {
+internal object EventPriority {
     const val SUNSET = 600
     const val REMAINING = 500
     const val SLOPE = 400
@@ -277,8 +277,9 @@ private fun evaluateDynamicGuidance(
     if (milestoneCount > 0) {
         val crossed = (oldMilestoneCount + 1..milestoneCount).toList()
         next = next.copy(consumedMilestoneIndices = next.consumedMilestoneIndices + crossed)
-        if (config.milestoneEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && crossed.isNotEmpty()) {
-            val index = crossed.maxOrNull()!!
+        val freshCrossed = crossed.filterNot { it in previous.consumedMilestoneIndices }
+        if (config.milestoneEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && freshCrossed.isNotEmpty()) {
+            val index = freshCrossed.maxOrNull()!!
             candidates += DynamicCandidate(
                 EventPriority.MILESTONE, "event.milestone", Guidance.Milestone(index * config.milestoneIntervalMeters),
                 reason("event.milestone", "E1", mapOf("index" to index.toString(), "thresholdMeters" to (index * config.milestoneIntervalMeters).toString()))
