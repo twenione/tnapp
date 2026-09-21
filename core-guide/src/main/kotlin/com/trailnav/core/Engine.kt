@@ -20,6 +20,64 @@ object Engine {
 fun guide(state: GuideState, frame: SensorFrame, config: GuideConfig = GuideConfig()): GuideResult =
     Engine.guide(state, frame, config)
 
+/** The pure content decision made when the app opens a periodic voice slot. */
+data class SlotContentResult(
+    val content: Guidance,
+    val nextState: GuideState,
+    val reason: Reason,
+)
+
+private const val DEFAULT_SLOT_MESSAGE = "정상적으로 경로를 따라가고 있습니다."
+
+/**
+ * Select one slot message without mutating the input state.  E5 is the only
+ * slot-specific event: it uses the same smoothed route profile as E4 and
+ * records its last rounded value in the returned state to avoid repetition.
+ */
+fun slotContent(state: GuideState, config: GuideConfig = GuideConfig()): SlotContentResult {
+    val fallback = Guidance.Status(DEFAULT_SLOT_MESSAGE)
+    val fallbackReason = Reason("slot.default", details = mapOf("event" to "slot"))
+    if (!config.periodicEnabled || !config.elevationEnabled || state.offRoute) {
+        return SlotContentResult(fallback, state, fallbackReason)
+    }
+    val match = state.lastMatch
+        ?: return SlotContentResult(fallback, state, fallbackReason)
+    val route = state.route
+    if (!route.elevationUse.used || route.smoothedElevationMeters.isEmpty()) {
+        return SlotContentResult(fallback, state, fallbackReason)
+    }
+    val rawElevation = interpolateElevation(route, match.projectedMeters)
+        ?: return SlotContentResult(fallback, state, fallbackReason)
+    val unit = config.elevationRoundMeters
+    val rounded = floor(rawElevation / unit + 0.5) * unit
+    if (state.lastElevationAnnouncementMeters?.let { it == rounded } == true) {
+        return SlotContentResult(fallback, state, fallbackReason.copy(details = mapOf("event" to "slot", "reason" to "elevation-repeat")))
+    }
+    val next = state.copy(lastElevationAnnouncementMeters = rounded)
+    return SlotContentResult(
+        content = Guidance.Elevation(rounded),
+        nextState = next,
+        reason = Reason(
+            "slot.elevation",
+            details = mapOf("event" to "E5", "elevationMeters" to rounded.toString()),
+        ),
+    )
+}
+
+private fun interpolateElevation(route: RouteModel, projectedMeters: Double): Double? {
+    val profile = route.smoothedElevationMeters
+    val cumulative = route.cumulativeMeters
+    if (profile.isEmpty() || profile.size != cumulative.size) return null
+    if (profile.size == 1) return profile.first()
+    val distance = projectedMeters.coerceIn(0.0, cumulative.last())
+    val index = cumulative.binarySearch(distance).let { found ->
+        if (found >= 0) found.coerceAtMost(profile.lastIndex - 1) else (-found - 2).coerceIn(0, profile.lastIndex - 1)
+    }
+    val span = cumulative[index + 1] - cumulative[index]
+    val fraction = if (span <= 0.0) 0.0 else (distance - cumulative[index]) / span
+    return profile[index] + (profile[index + 1] - profile[index]) * fraction
+}
+
 private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfig): GuideResult {
     val initializedState = if (state.sessionStartTimestamp == null) {
         state.copy(sessionStartTimestamp = frame.timestamp)
@@ -90,6 +148,9 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
 
     next = updateOffRouteState(next, directedMatch, frame.timestamp, config)
     if (next.offRoute) {
+        // Advance and consume ordinary event thresholds while off-route, but
+        // keep E7 pending for a later safety announcement.
+        next = evaluateDynamicGuidance(initializedState, next, directedMatch, frame, config, suppressAnnouncements = true).state
         val shouldAnnounce = next.lastAnnouncementAt == null ||
             elapsedSeconds(frame.timestamp, next.lastAnnouncementAt) >= config.reannounceIntervalSeconds ||
             (next.lastAnnouncementDistance != null && directedMatch.distanceMeters > next.lastAnnouncementDistance * 2.0)
@@ -127,6 +188,7 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
     val reverseWarning = reverseSince != null &&
         elapsedSeconds(frame.timestamp, reverseSince) >= config.reverseWarningDwellSeconds
     if (reverseWarning) {
+        next = evaluateDynamicGuidance(initializedState, next, directedMatch, frame, config, suppressAnnouncements = true).state
         val sunset = evaluateSunsetStandalone(next, frame, config, higherPriority = true)
         return GuideResult(
             Guidance.Status("역방향 진행 중", directedMatch.distanceMeters, direction.name.lowercase()),
@@ -141,6 +203,7 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
     val turnEvaluation = evaluateTurnGuidance(next, directedMatch, direction, config)
     next = turnEvaluation.state
     turnEvaluation.guidance?.let { guidance ->
+        next = evaluateDynamicGuidance(initializedState, next, directedMatch, frame, config, suppressAnnouncements = true).state
         val sunset = evaluateSunsetStandalone(next, frame, config, higherPriority = true)
         return GuideResult(guidance, sunset.state, turnEvaluation.reason)
     }
@@ -176,6 +239,16 @@ private data class DynamicCandidate(
     val sunsetThresholds: Set<Int> = emptySet(),
 )
 
+/** Single arbitration table for simultaneous periodic events (R14). */
+internal object EventPriority {
+    const val SUNSET = 600
+    const val REMAINING = 500
+    const val SLOPE = 400
+    const val WAYPOINT = 300
+    const val MILESTONE = 200
+    const val ELAPSED = 100
+}
+
 /** Evaluate frame-derived Phase 3 events after arrival/off-route/turn gates. */
 private fun evaluateDynamicGuidance(
     previous: GuideState,
@@ -183,6 +256,7 @@ private fun evaluateDynamicGuidance(
     match: MatchResult,
     frame: SensorFrame,
     config: GuideConfig,
+    suppressAnnouncements: Boolean = false,
 ): DynamicEvaluation {
     var next = state
     val oldProgress = previous.lastMatch?.projectedMeters
@@ -203,10 +277,11 @@ private fun evaluateDynamicGuidance(
     if (milestoneCount > 0) {
         val crossed = (oldMilestoneCount + 1..milestoneCount).toList()
         next = next.copy(consumedMilestoneIndices = next.consumedMilestoneIndices + crossed)
-        if (config.milestoneEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && crossed.isNotEmpty()) {
-            val index = crossed.maxOrNull()!!
+        val freshCrossed = crossed.filterNot { it in previous.consumedMilestoneIndices }
+        if (config.milestoneEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && freshCrossed.isNotEmpty()) {
+            val index = freshCrossed.maxOrNull()!!
             candidates += DynamicCandidate(
-                60, "event.milestone", Guidance.Milestone(index * config.milestoneIntervalMeters),
+                EventPriority.MILESTONE, "event.milestone", Guidance.Milestone(index * config.milestoneIntervalMeters),
                 reason("event.milestone", "E1", mapOf("index" to index.toString(), "thresholdMeters" to (index * config.milestoneIntervalMeters).toString()))
             )
         }
@@ -220,10 +295,10 @@ private fun evaluateDynamicGuidance(
         val oldCount = previous.lastTimestamp?.let { floor(elapsedSeconds(it, start) / config.elapsedAnnounceIntervalSeconds).toInt() } ?: count
         val crossed = (oldCount + 1..count).toList()
         next = next.copy(consumedElapsedIndices = next.consumedElapsedIndices + crossed)
-        if (config.elapsedEnabled && config.periodicEnabled && eventIntervalOpen && crossed.isNotEmpty()) {
+        if (config.elapsedEnabled && config.periodicEnabled && onRoute && eventIntervalOpen && crossed.isNotEmpty()) {
             val index = crossed.maxOrNull()!!
             candidates += DynamicCandidate(
-                50, "event.elapsed", Guidance.Elapsed(index),
+                EventPriority.ELAPSED, "event.elapsed", Guidance.Elapsed(index),
                 reason("event.elapsed", "E2", mapOf("hours" to index.toString()))
             )
         }
@@ -236,7 +311,7 @@ private fun evaluateDynamicGuidance(
     if (config.remainingEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && crossedRemaining.isNotEmpty()) {
         val threshold = crossedRemaining.minOrNull()!!
         candidates += DynamicCandidate(
-            70, "event.remaining", Guidance.Remaining(threshold),
+            EventPriority.REMAINING, "event.remaining", Guidance.Remaining(threshold),
             reason("event.remaining", "E3", mapOf("thresholdMeters" to threshold.toString(), "remainingMeters" to remaining.toString()))
         )
     }
@@ -249,7 +324,7 @@ private fun evaluateDynamicGuidance(
             next = next.copy(consumedSlopeIndices = next.consumedSlopeIndices + index)
             if (config.slopeEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedSlopeIndices) {
                 candidates += DynamicCandidate(
-                    80, "event.slope", Guidance.Slope(segment.kind, segment.deltaMeters),
+                    EventPriority.SLOPE, "event.slope", Guidance.Slope(segment.kind, segment.deltaMeters),
                     reason("event.slope", "E4", mapOf("segmentIndex" to index.toString(), "startS" to segment.startS.toString(), "deltaMeters" to segment.deltaMeters.toString()))
                 )
             }
@@ -264,7 +339,7 @@ private fun evaluateDynamicGuidance(
             next = next.copy(consumedWaypointIndices = next.consumedWaypointIndices + index)
             if (config.waypointEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedWaypointIndices) {
                 candidates += DynamicCandidate(
-                    65, "event.waypoint", Guidance.Waypoint(index, waypoint.name, distance),
+                    EventPriority.WAYPOINT, "event.waypoint", Guidance.Waypoint(index, waypoint.name, distance),
                     reason("event.waypoint", "E6", mapOf("waypointIndex" to index.toString(), "name" to waypoint.name, "distanceMeters" to distance.toString()))
                 )
             }
@@ -279,6 +354,9 @@ private fun evaluateDynamicGuidance(
     val selected = candidates.maxByOrNull { it.priority }
     if (selected == null) {
         return DynamicEvaluation(next, null, reason("event.none", "none"))
+    }
+    if (suppressAnnouncements) {
+        return DynamicEvaluation(next, null, selected.reason)
     }
     // A higher-priority candidate delays E7; all other candidates are consumed.
     val pending = next.pendingSunsetThresholds - selected.sunsetThresholds
@@ -381,7 +459,7 @@ private fun evaluateSunset(
     )
     val guidance = Guidance.Sunset(if (afterSunset) null else max(0, minutes.toInt()), afterSunset)
     val candidate = DynamicCandidate(
-        priority = 100,
+        priority = EventPriority.SUNSET,
         kind = "event.sunset",
         guidance = guidance,
         reason = Reason(
