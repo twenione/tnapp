@@ -151,7 +151,7 @@ class DynamicGuidanceTest {
             "</trkseg></trk></gpx>"
         val routeWithElevation = RouteModel.fromGpx(xml)
         val config = GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0)
-        val frame = SensorFrame(0L, 10.0001, 20.0, 5f, 1f, null)
+        val frame = SensorFrame(0L, 10.0005, 20.0, 5f, 1f, null)
         val state = guide(GuideState.initial(routeWithElevation), frame, config).nextState
         val first = slotContent(state, config)
         check(first.content is Guidance.Elevation)
