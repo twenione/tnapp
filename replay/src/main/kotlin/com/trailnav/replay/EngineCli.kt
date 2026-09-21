@@ -7,6 +7,7 @@ import com.trailnav.core.Guidance
 import com.trailnav.core.RouteModel
 import com.trailnav.core.SensorFrame
 import com.trailnav.core.guide
+import com.trailnav.core.routeStatus
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.math.cos
@@ -62,7 +63,21 @@ fun main(args: Array<String>) {
             if (trigger != null) {
                 val triggerSourceSeq = numberField(line, "src_seq")?.toLong()
                     ?: error("trigger guide event is missing src_seq at seq=$seq")
-                println("{\"kind\":\"trigger\",\"seq\":$seq,\"trigger\":\"${escape(trigger)}\",\"src_seq\":$triggerSourceSeq}")
+                val status = routeStatus(state, config)
+                val statusDetails = status?.let {
+                    linkedMapOf(
+                        "on_route" to it.onRoute.toString(),
+                        "off_route_distance_m" to (it.offRouteDistanceMeters?.toString() ?: ""),
+                        "direction" to it.direction.name,
+                        "remaining_m" to it.remainingMeters.toString(),
+                        "arrived" to it.arrived.toString(),
+                        "next_turn_index" to (it.nextTurn?.index?.toString() ?: ""),
+                        "next_turn_side" to (it.nextTurn?.side?.name ?: ""),
+                        "next_turn_distance_m" to (it.nextTurn?.distanceMeters?.toString() ?: ""),
+                    )
+                } ?: emptyMap()
+                val statusReason = if (status == null) "no-match" else "route-status"
+                println("{\"kind\":\"trigger\",\"seq\":$seq,\"trigger\":\"${escape(trigger)}\",\"src_seq\":$triggerSourceSeq,\"status_reason\":\"$statusReason\",\"status_details\":${mapJson(statusDetails)}}")
                 return@forEach
             }
             val recorded = stringField(line, "decision") ?: ""
