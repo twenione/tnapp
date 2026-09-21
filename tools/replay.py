@@ -88,6 +88,23 @@ def route_elevation_use(route_path: Path) -> dict[str, object]:
     return {"used": reason == "ok", "reason": reason}
 
 
+def details_match(recorded: object, actual: object) -> bool:
+    """Compare recorded reason details, allowing serialization-level float noise."""
+    if not isinstance(recorded, dict) or not isinstance(actual, dict):
+        return recorded == actual
+    for key, value in recorded.items():
+        if key not in actual:
+            return False
+        left, right = str(value), str(actual[key])
+        try:
+            if abs(float(left) - float(right)) > 1e-6:
+                return False
+        except ValueError:
+            if left != right:
+                return False
+    return True
+
+
 def contract_probe(cli: Path) -> int:
     """Check D-033 dwell and caller-config contracts through the real CLI."""
     dwell = invoke_probe(cli, ["offRouteEnterDwellSeconds=20"])
@@ -151,8 +168,8 @@ def replay(root: Path, cli: Path, strict: bool, overrides: list[str] | None = No
         actual_rule = item.get("reason_rule", "")
         recorded_details = recorded_event.get("reason", {}).get("details", {}) if isinstance(recorded_event.get("reason"), dict) else {}
         actual_details = item.get("reason_details", {})
-        details_match = all(actual_details.get(str(key)) == str(value) for key, value in recorded_details.items())
-        status = "MATCH" if recorded == actual and recorded_rule == actual_rule and details_match else "MISMATCH"
+        detail_ok = details_match(recorded_details, actual_details)
+        status = "MATCH" if recorded == actual and recorded_rule == actual_rule and detail_ok else "MISMATCH"
         print(
             f"guide seq={item.get('seq')} {status} actual={json.dumps(actual, sort_keys=True)} "
             f"recorded={json.dumps(recorded, sort_keys=True)} reason_rule={actual_rule} recorded_rule={recorded_rule} "
