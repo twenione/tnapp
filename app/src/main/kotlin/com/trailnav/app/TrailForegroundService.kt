@@ -8,6 +8,14 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.media.AudioManager
+import android.media.MediaSession
+import android.media.ToneGenerator
+import android.view.KeyEvent
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
@@ -45,6 +53,13 @@ class TrailForegroundService : Service() {
     private val pauseAvailability = GuidancePauseAvailability()
     private var endReason = "service-destroy"
     private var activeSessionId: String? = null
+    private var onDemandConfig = OnDemandConfig()
+    private var onDemandRouter = OnDemandRequestRouter(onDemandConfig)
+    private var shakeDetector = ShakeDetector(onDemandConfig)
+    private var mediaSession: MediaSession? = null
+    private var sensorManager: SensorManager? = null
+    private var shakeListener: SensorEventListener? = null
+    private var acknowledgementTone: ToneGenerator? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val noLocationWarning = Runnable {
@@ -86,6 +101,10 @@ class TrailForegroundService : Service() {
                     updateOnRouteVoiceConfiguration(voice.enabled, voice.intervalSeconds)
                 }
                 publishServiceState()
+                return START_STICKY
+            }
+            ACTION_ON_DEMAND_STATUS -> {
+                if (sessionStarted) handleOnDemand(OnDemandSource.fromWire(intent.getStringExtra(EXTRA_ACTION_SOURCE)))
                 return START_STICKY
             }
             ACTION_PAUSE_GUIDANCE, ACTION_NOTIFICATION_PAUSE -> {
@@ -173,6 +192,9 @@ class TrailForegroundService : Service() {
         activeSessionId = sessionId
         gpsSignalMonitor = GpsSignalMonitor().also { it.start() }
         onRouteVoiceScheduler = OnRouteVoiceScheduler(onRouteVoiceEnabled, onRouteVoiceIntervalSeconds)
+        onDemandConfig = NavigationPreferences.onDemand(this)
+        onDemandRouter = OnDemandRequestRouter(onDemandConfig)
+        shakeDetector = ShakeDetector(onDemandConfig)
         sessionStarted = true
         NavigationPreferences.setState(this, NavigationPreferences.STATE_RUNNING, activeSessionId)
         startForegroundCompat()
@@ -190,6 +212,19 @@ class TrailForegroundService : Service() {
                 "interval_seconds" to (if (onRouteVoiceIntervalSeconds > 0L) onRouteVoiceIntervalSeconds else 0L).toString(),
             ),
         )
+        logger?.appendSystem(
+            "ondemand.config",
+            mapOf(
+                "media_button_enabled" to onDemandConfig.mediaButtonEnabled.toString(),
+                "shake_enabled" to onDemandConfig.shakeEnabled.toString(),
+                "notification_enabled" to onDemandConfig.notificationEnabled.toString(),
+                "debounce_ms" to onDemandConfig.debounceMillis.toString(),
+                "shake_threshold" to onDemandConfig.shakeThresholdMetersPerSecondSquared.toString(),
+                "shake_hits" to onDemandConfig.shakeHitsRequired.toString(),
+                "shake_window_ms" to onDemandConfig.shakeWindowMillis.toString(),
+            ),
+        )
+        installOnDemandTriggers()
         source = FusedLocationSource(this).also { locationSource ->
             locationSource.start(
                 onLocation = ::onLocation,
@@ -356,6 +391,7 @@ class TrailForegroundService : Service() {
         gpsSignalMonitor = null
         onRouteVoiceScheduler?.reset()
         onRouteVoiceScheduler = null
+        uninstallOnDemandTriggers()
         logger?.close()
         logger = null
         currentRoute = null
@@ -490,7 +526,68 @@ class TrailForegroundService : Service() {
         } else if (showPauseAction) {
             builder.addAction(notificationAction(ACTION_NOTIFICATION_PAUSE, 1004, "안내 일시중지"))
         }
+        if (sessionStarted && onDemandConfig.notificationEnabled) {
+            builder.addAction(notificationAction(ACTION_ON_DEMAND_STATUS, 1005, "상태 확인"))
+        }
         return builder.build()
+    }
+
+    private fun installOnDemandTriggers() {
+        if (onDemandConfig.mediaButtonEnabled) {
+            mediaSession = MediaSession(this, "TrailNav").apply {
+                setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS)
+                setCallback(object : MediaSession.Callback() {
+                    override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
+                        val event = mediaButtonIntent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                        if (event?.action == KeyEvent.ACTION_DOWN && event.keyCode in setOf(KeyEvent.KEYCODE_HEADSETHOOK, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)) {
+                            handleOnDemand(OnDemandSource.MEDIA_BUTTON)
+                            return true
+                        }
+                        return false
+                    }
+                })
+                isActive = true
+            }
+        }
+        if (onDemandConfig.shakeEnabled) {
+            val manager = getSystemService(SENSOR_SERVICE) as SensorManager
+            val sensor = manager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+            if (sensor != null) {
+                val listener = object : SensorEventListener {
+                    override fun onSensorChanged(event: SensorEvent) {
+                        val magnitude = kotlin.math.sqrt(event.values.sumOf { it.toDouble() * it.toDouble() })
+                        if (shakeDetector.onSample(SystemClock.elapsedRealtime(), kotlin.math.abs(magnitude - SensorManager.GRAVITY_EARTH))) {
+                            handleOnDemand(OnDemandSource.SHAKE)
+                        }
+                    }
+
+                    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+                }
+                shakeListener = listener
+                sensorManager = manager
+                manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+            }
+        }
+    }
+
+    private fun uninstallOnDemandTriggers() {
+        mediaSession?.run { isActive = false; release() }
+        mediaSession = null
+        val manager = sensorManager
+        val listener = shakeListener
+        if (manager != null && listener != null) manager.unregisterListener(listener)
+        sensorManager = null
+        shakeListener = null
+        acknowledgementTone?.release()
+        acknowledgementTone = null
+    }
+
+    private fun handleOnDemand(source: OnDemandSource) {
+        if (onDemandRouter.accept(source, SystemClock.elapsedRealtime()) == null) return
+        logger?.appendSystem("ondemand.request", mapOf("source" to source.wireName, "paused" to paused.toString()))
+        if (acknowledgementTone == null) acknowledgementTone = ToneGenerator(AudioManager.STREAM_MUSIC, 60)
+        acknowledgementTone?.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
+        // P3-4 connects this hook to routeStatus() and appends the on-demand guide event.
     }
 
     private fun notificationAction(action: String, requestCode: Int, label: String): NotificationCompat.Action {
@@ -553,6 +650,7 @@ class TrailForegroundService : Service() {
         const val ACTION_ROUTE_RIBBON_UPDATE = "com.trailnav.app.ROUTE_RIBBON_UPDATE"
         const val ACTION_SERVICE_STATE_UPDATE = "com.trailnav.app.SERVICE_STATE_UPDATE"
         const val ACTION_UPDATE_ON_ROUTE_VOICE = "com.trailnav.app.UPDATE_ON_ROUTE_VOICE"
+        const val ACTION_ON_DEMAND_STATUS = "com.trailnav.app.ON_DEMAND_STATUS"
         const val ACTION_QUERY_SERVICE_STATE = "com.trailnav.app.QUERY_SERVICE_STATE"
         const val ACTION_PAUSE_GUIDANCE = "com.trailnav.app.PAUSE_GUIDANCE"
         const val ACTION_RESUME_GUIDANCE = "com.trailnav.app.RESUME_GUIDANCE"

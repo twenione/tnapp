@@ -40,6 +40,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var mapButton: Button
     private lateinit var navigationState: TextView
     private lateinit var onRouteVoiceLabel: TextView
+    private lateinit var onDemandLabel: TextView
     private var selectedRoute: Uri? = null
     private var selectedRouteSummary: String? = null
     private var selectedSavedRoute: SavedRoute? = null
@@ -228,6 +229,27 @@ class MainActivity : AppCompatActivity() {
         val onRouteVoicePresets = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
+        onDemandLabel = TextView(this).apply { textSize = 16f }
+        val onDemandControls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf(
+            "media_button" to "이어폰 버튼",
+            "shake" to "흔들기",
+            "notification" to "알림 상태 확인",
+        ).forEach { (source, label) ->
+            onDemandControls.addView(Button(this).apply {
+                text = label
+                setOnClickListener {
+                    val current = NavigationPreferences.onDemand(this@MainActivity)
+                    val updated = when (source) {
+                        "media_button" -> current.copy(mediaButtonEnabled = !current.mediaButtonEnabled)
+                        "shake" -> current.copy(shakeEnabled = !current.shakeEnabled)
+                        else -> current.copy(notificationEnabled = !current.notificationEnabled)
+                    }
+                    NavigationPreferences.saveOnDemand(this@MainActivity, updated)
+                    renderOnDemandLabel()
+                }
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
         listOf(
             0L to "끄기",
             60L to "1분",
@@ -258,6 +280,8 @@ class MainActivity : AppCompatActivity() {
         root.addView(mapButton)
         root.addView(onRouteVoiceLabel)
         root.addView(onRouteVoicePresets)
+        root.addView(onDemandLabel)
+        root.addView(onDemandControls)
         navigationState = TextView(this).apply {
             text = "안내 대기 중"
             textSize = 20f
@@ -284,7 +308,13 @@ class MainActivity : AppCompatActivity() {
         restoreUiState(savedInstanceState)
         restoreRouteCatalog()
         renderVoiceLabel()
+        renderOnDemandLabel()
         applyServiceState(NavigationPreferences.state(this))
+    }
+
+    private fun renderOnDemandLabel() {
+        val config = NavigationPreferences.onDemand(this)
+        onDemandLabel.text = "상태 확인: 이어폰 ${if (config.mediaButtonEnabled) "켜짐" else "꺼짐"} · 흔들기 ${if (config.shakeEnabled) "켜짐" else "꺼짐"} · 알림 ${if (config.notificationEnabled) "켜짐" else "꺼짐"}"
     }
 
     private fun updateGpsIndicator(accuracyMeters: Double) {
