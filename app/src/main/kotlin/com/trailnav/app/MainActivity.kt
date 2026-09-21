@@ -46,6 +46,7 @@ class MainActivity : AppCompatActivity() {
     private var selectedSavedRoute: SavedRoute? = null
     private var onRouteVoiceEnabled = false
     private var onRouteVoiceIntervalSeconds = 0L
+    private var onRouteVoiceMode = NavigationPreferences.PeriodicVoiceMode.OFF
 
     private val ribbonReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: android.content.Context, intent: Intent) {
@@ -241,6 +242,9 @@ class MainActivity : AppCompatActivity() {
         val onRouteVoicePresets = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
+        val onRouteVoiceModeControls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
         onDemandLabel = TextView(this).apply { textSize = 16f }
         val onDemandControls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         listOf(
@@ -272,14 +276,37 @@ class MainActivity : AppCompatActivity() {
                 text = label
                 setOnClickListener {
                     onRouteVoiceIntervalSeconds = intervalSeconds
-                    onRouteVoiceEnabled = intervalSeconds > 0L
-                    NavigationPreferences.saveVoice(this@MainActivity, onRouteVoiceEnabled, intervalSeconds)
+                    if (intervalSeconds == 0L) {
+                        onRouteVoiceMode = NavigationPreferences.PeriodicVoiceMode.OFF
+                    } else if (onRouteVoiceMode == NavigationPreferences.PeriodicVoiceMode.OFF) {
+                        onRouteVoiceMode = NavigationPreferences.PeriodicVoiceMode.PROMPT
+                    }
+                    onRouteVoiceEnabled = intervalSeconds > 0L && onRouteVoiceMode != NavigationPreferences.PeriodicVoiceMode.OFF
+                    NavigationPreferences.saveVoice(this@MainActivity, onRouteVoiceEnabled, intervalSeconds, onRouteVoiceMode)
                     renderVoiceLabel()
                     if (NavigationPreferences.state(this@MainActivity) != NavigationPreferences.STATE_IDLE) {
                         sendServiceAction(
                             TrailForegroundService.ACTION_UPDATE_ON_ROUTE_VOICE,
                             "ui",
                         )
+                    }
+                }
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        listOf(
+            NavigationPreferences.PeriodicVoiceMode.OFF to "주기 끄기",
+            NavigationPreferences.PeriodicVoiceMode.PROMPT to "기본 문구",
+            NavigationPreferences.PeriodicVoiceMode.TONE to "신호음",
+        ).forEach { (mode, label) ->
+            onRouteVoiceModeControls.addView(Button(this).apply {
+                text = label
+                setOnClickListener {
+                    onRouteVoiceMode = mode
+                    onRouteVoiceEnabled = mode != NavigationPreferences.PeriodicVoiceMode.OFF && onRouteVoiceIntervalSeconds > 0L
+                    NavigationPreferences.saveVoice(this@MainActivity, onRouteVoiceEnabled, onRouteVoiceIntervalSeconds, mode)
+                    renderVoiceLabel()
+                    if (NavigationPreferences.state(this@MainActivity) != NavigationPreferences.STATE_IDLE) {
+                        sendServiceAction(TrailForegroundService.ACTION_UPDATE_ON_ROUTE_VOICE, "ui")
                     }
                 }
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -292,6 +319,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(mapButton)
         root.addView(onRouteVoiceLabel)
         root.addView(onRouteVoicePresets)
+        root.addView(onRouteVoiceModeControls)
         root.addView(onDemandLabel)
         root.addView(onDemandControls)
         navigationState = TextView(this).apply {
@@ -376,6 +404,7 @@ class MainActivity : AppCompatActivity() {
         outState.putString(KEY_STATUS, status.text.toString())
         outState.putBoolean(KEY_ON_ROUTE_VOICE_ENABLED, onRouteVoiceEnabled)
         outState.putLong(KEY_ON_ROUTE_VOICE_INTERVAL_SECONDS, onRouteVoiceIntervalSeconds)
+        outState.putString(KEY_ON_ROUTE_VOICE_MODE, onRouteVoiceMode.name)
         super.onSaveInstanceState(outState)
     }
 
@@ -385,11 +414,15 @@ class MainActivity : AppCompatActivity() {
             selectedRouteSummary = savedInstanceState.getString(KEY_SELECTED_ROUTE_SUMMARY)
             onRouteVoiceEnabled = savedInstanceState.getBoolean(KEY_ON_ROUTE_VOICE_ENABLED, false)
             onRouteVoiceIntervalSeconds = savedInstanceState.getLong(KEY_ON_ROUTE_VOICE_INTERVAL_SECONDS, 0L)
+            onRouteVoiceMode = NavigationPreferences.PeriodicVoiceMode.fromWire(
+                savedInstanceState.getString(KEY_ON_ROUTE_VOICE_MODE),
+            )
             savedInstanceState.getString(KEY_STATUS)?.let { status.text = it }
         }
         val storedVoice = NavigationPreferences.voice(this)
         onRouteVoiceEnabled = storedVoice.enabled
         onRouteVoiceIntervalSeconds = storedVoice.intervalSeconds
+        onRouteVoiceMode = storedVoice.mode
     }
 
     private fun restoreRouteCatalog() {
@@ -497,13 +530,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderVoiceLabel() {
-        val label = when (onRouteVoiceIntervalSeconds) {
+        val intervalLabel = when (onRouteVoiceIntervalSeconds) {
             60L -> "1분"
             180L -> "3분"
             300L -> "5분"
             else -> "끄기"
         }
-        onRouteVoiceLabel.text = "경로 위 주기 음성: $label"
+        val modeLabel = when (onRouteVoiceMode) {
+            NavigationPreferences.PeriodicVoiceMode.OFF -> "끄기"
+            NavigationPreferences.PeriodicVoiceMode.PROMPT -> "기본 문구"
+            NavigationPreferences.PeriodicVoiceMode.TONE -> "신호음"
+        }
+        onRouteVoiceLabel.text = "경로 위 주기 음성: $intervalLabel · $modeLabel"
     }
 
     private fun applyServiceState(state: String) {
@@ -532,6 +570,7 @@ class MainActivity : AppCompatActivity() {
         val storedVoice = NavigationPreferences.voice(this)
         onRouteVoiceEnabled = storedVoice.enabled
         onRouteVoiceIntervalSeconds = storedVoice.intervalSeconds
+        onRouteVoiceMode = storedVoice.mode
         renderVoiceLabel()
     }
 
@@ -580,6 +619,7 @@ class MainActivity : AppCompatActivity() {
             route.toString(),
         ).putExtra(TrailForegroundService.EXTRA_ON_ROUTE_VOICE_ENABLED, voice.enabled)
             .putExtra(TrailForegroundService.EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS, voice.intervalSeconds)
+            .putExtra(TrailForegroundService.EXTRA_ON_ROUTE_VOICE_MODE, voice.mode.name)
         ContextCompat.startForegroundService(this, intent)
         status.text = "안내 서비스를 시작했습니다"
     }
@@ -590,6 +630,7 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_STATUS = "status"
         private const val KEY_ON_ROUTE_VOICE_ENABLED = "on_route_voice_enabled"
         private const val KEY_ON_ROUTE_VOICE_INTERVAL_SECONDS = "on_route_voice_interval_seconds"
+        private const val KEY_ON_ROUTE_VOICE_MODE = "on_route_voice_mode"
         // Drive and local document providers frequently expose GPX as
         // application/octet-stream or omit a MIME type. The content is still
         // validated as GPX after selection, so the picker can safely be broad.

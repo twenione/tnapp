@@ -12,6 +12,17 @@ import kotlin.test.assertTrue
 
 class VoiceAndGpsTest {
     @Test
+    fun periodicVoiceModeUsesOffPromptAndToneWireValues() {
+        assertEquals(NavigationPreferences.PeriodicVoiceMode.OFF,
+            NavigationPreferences.PeriodicVoiceMode.fromWire("OFF"))
+        assertEquals(NavigationPreferences.PeriodicVoiceMode.PROMPT,
+            NavigationPreferences.PeriodicVoiceMode.fromWire("PROMPT"))
+        assertEquals(NavigationPreferences.PeriodicVoiceMode.TONE,
+            NavigationPreferences.PeriodicVoiceMode.fromWire("TONE"))
+        assertEquals(NavigationPreferences.PeriodicVoiceMode.PROMPT,
+            NavigationPreferences.PeriodicVoiceMode.fromWire("unknown"))
+    }
+    @Test
     fun pauseAvailabilityPromptsOnceAtFiveMinutesAndResetsAfterRecovery() {
         val tracker = GuidancePauseAvailability()
         assertFalse(tracker.onFrame(offRoute = true, nowMillis = 0L))
