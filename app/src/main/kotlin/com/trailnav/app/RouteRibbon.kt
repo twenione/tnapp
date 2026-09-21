@@ -4,6 +4,7 @@ import com.trailnav.core.GuideConfig
 import com.trailnav.core.GuideResult
 import com.trailnav.core.ProgressDirection
 import com.trailnav.core.RouteModel
+import com.trailnav.core.Side
 import kotlin.math.hypot
 
 /**
@@ -20,6 +21,7 @@ data class RouteRibbonState(
     val exitBandMeters: Double,
     val accuracyRadiusMeters: Double,
     val remainingDistanceMeters: Double,
+    val nextTurn: RibbonNextTurn? = null,
 ) {
     val side: RibbonSide
         get() = when {
@@ -28,6 +30,10 @@ data class RouteRibbonState(
             else -> RibbonSide.CENTER
         }
 }
+
+data class RibbonNextTurn(val distanceMeters: Double, val side: RibbonTurnSide)
+
+enum class RibbonTurnSide { LEFT, RIGHT }
 
 enum class RibbonSide { LEFT, RIGHT, CENTER }
 
@@ -42,6 +48,12 @@ object RouteRibbonCalculator {
         val match = result.nextState.lastMatch ?: return null
         val signed = signedOffsetMeters(location, route, match.segmentIndex, match.projectedPoint)
         val travelRelativeSigned = if (match.direction == ProgressDirection.REVERSE) -signed else signed
+        val nextTurn = com.trailnav.core.routeStatus(result.nextState, config)?.nextTurn?.let { turn ->
+            RibbonNextTurn(
+                distanceMeters = turn.distanceMeters,
+                side = if (turn.side == Side.LEFT) RibbonTurnSide.LEFT else RibbonTurnSide.RIGHT,
+            )
+        }
         return RouteRibbonState(
             perpendicularDistanceMeters = match.distanceMeters,
             signedOffsetMeters = travelRelativeSigned,
@@ -51,6 +63,7 @@ object RouteRibbonCalculator {
             exitBandMeters = config.offRouteExitDistMeters,
             accuracyRadiusMeters = location.accuracyMeters.toDouble().coerceAtLeast(0.0),
             remainingDistanceMeters = (route.totalLengthMeters - match.projectedMeters).coerceAtLeast(0.0),
+            nextTurn = nextTurn,
         )
     }
 

@@ -146,6 +146,21 @@ class RouteOrientationTest {
     }
 
     @Test
+    fun reversePreservesElevationSamplesAndWaypointNames() {
+        val source = """
+            <gpx version="1.1"><wpt lat="10.0000" lon="20.0005"><name>쉼터 &amp; 전망대</name></wpt>
+              <trk><trkseg>
+                <trkpt lat="10.000000" lon="20.000000"><ele>101.5</ele></trkpt>
+                <trkpt lat="10.000000" lon="20.001000"><ele>108.0</ele></trkpt>
+              </trkseg></trk></gpx>
+        """.trimIndent()
+        val reversed = RouteModel.fromGpx(RouteOrientation.reverseGpx(source))
+        assertEquals(20.001, reversed.sourcePoints.first().lon, 0.000001)
+        assertEquals(listOf(108.0, 101.5), reversed.elevationMeters)
+        assertEquals(listOf("쉼터 & 전망대"), reversed.waypoints.map { it.name })
+    }
+
+    @Test
     fun preparationStageLabelsAreShortAndExplicit() {
         assertEquals("안내를 준비중", RoutePreparationStage.PREPARING.label)
         assertEquals("시작점 잡힘", RoutePreparationStage.START_FOUND.label)
