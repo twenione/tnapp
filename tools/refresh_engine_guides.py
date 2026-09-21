@@ -9,28 +9,36 @@ from pathlib import Path
 from replay import invoke, resolve_cli
 
 
-def refresh_session(session: Path, cli: Path) -> int:
-    trace = {int(item["seq"]): item for item in invoke(cli, session) if item.get("kind") == "guide"}
-    lines = []
+def rewrite_events(raw_lines: list[str], trace: dict[int, dict]) -> tuple[list[str], int]:
+    """Rewrite frame guide decisions while preserving every other event field."""
+    lines: list[str] = []
     changed = 0
-    for raw in (session / "events.ndjson").read_text(encoding="utf-8").splitlines():
+    for raw in raw_lines:
         if not raw.strip():
             continue
         event = json.loads(raw)
         if event.get("stream") == "guide":
+            if event.get("trigger") is not None:
+                lines.append(json.dumps(event, sort_keys=True))
+                continue
             item = trace.get(int(event.get("seq", -1)))
             if item is None:
-                raise ValueError(f"{session}: no engine result for guide seq {event.get('seq')}")
+                raise ValueError(f"no engine result for guide seq {event.get('seq')}")
             event["decision"] = item["decision"]
+            old_reason = event.get("reason") if isinstance(event.get("reason"), dict) else {}
             event["reason"] = {
+                **old_reason,
                 "rule": item.get("reason_rule", ""),
-                "thresholds": {},
-                "alternatives_considered": [],
+                "details": item.get("reason_details", old_reason.get("details", {})),
             }
-            event["engine"] = "core-guide"
-            event.setdefault("inputs", {})["frame_count"] = item.get("loc_index")
             changed += 1
         lines.append(json.dumps(event, sort_keys=True))
+    return lines, changed
+
+
+def refresh_session(session: Path, cli: Path) -> int:
+    trace = {int(item["seq"]): item for item in invoke(cli, session) if item.get("kind") == "guide"}
+    lines, changed = rewrite_events((session / "events.ndjson").read_text(encoding="utf-8").splitlines(), trace)
     (session / "events.ndjson").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return changed
 
