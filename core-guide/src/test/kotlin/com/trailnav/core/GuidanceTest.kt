@@ -120,6 +120,8 @@ class GuidanceTest {
         check(first.guidance is Guidance.OffRoute)
         val second = guide(first.nextState, SensorFrame(999L, 10.0005, 20.0 + east30Meters, 5f, 1f, null), config)
         check(second.guidance == null) { "999 ms must not satisfy a 60 second reannounce interval" }
+        val afterDwell = guide(second.nextState, SensorFrame(60_000L, 10.0005, 20.0 + east30Meters, 5f, 1f, null), config)
+        check(afterDwell.guidance is Guidance.OffRoute) { "a full 60 second interval must permit re-announcement" }
     }
 
     @Test
@@ -132,6 +134,10 @@ class GuidanceTest {
         check(first.nextState.offRoute)
         val recovery = guide(first.nextState, SensorFrame(999L, 10.0005, 20.0, 5f, 1f, null), config)
         check(recovery.nextState.offRoute) { "999 ms must not satisfy a 10 second recovery dwell" }
+        val stillRecovering = guide(recovery.nextState, SensorFrame(1_998L, 10.0005, 20.0, 5f, 1f, null), config)
+        check(stillRecovering.nextState.offRoute) { "a second 999 ms frame must still be below the 10 second dwell" }
+        val recovered = guide(stillRecovering.nextState, SensorFrame(11_000L, 10.0005, 20.0, 5f, 1f, null), config)
+        check(!recovered.nextState.offRoute) { "a full recovery dwell must clear off-route" }
     }
 
     @Test
@@ -142,6 +148,10 @@ class GuidanceTest {
         val second = guide(first.nextState, SensorFrame(997L, 10.0010, 20.0, 5f, 1f, null), config)
         val third = guide(second.nextState, SensorFrame(1_994L, 10.0005, 20.0, 5f, 1f, null), config)
         check(third.guidance !is Guidance.Status) { "997 ms must not satisfy a 60 second reverse warning dwell" }
+        val afterDwell = guide(third.nextState, SensorFrame(61_000L, 10.0005, 20.0, 5f, 1f, null), config)
+        check(afterDwell.guidance is Guidance.Status && (afterDwell.guidance as Guidance.Status).message == "역방향 진행 중") {
+            "a full reverse dwell must emit the reverse warning"
+        }
     }
 
     @Test
@@ -153,6 +163,8 @@ class GuidanceTest {
         val first = guide(GuideState.initial(route), SensorFrame(0L, 10.0005, 20.0 + east30Meters, 5f, 1f, null), config)
         val second = guide(first.nextState, SensorFrame(944L, 10.0005, 20.0 + east30Meters, 5f, 1f, null), config)
         check(!second.nextState.offRoute) { "944 ms must not satisfy a 20 second enter dwell" }
+        val afterDwell = guide(second.nextState, SensorFrame(20_000L, 10.0005, 20.0 + east30Meters, 5f, 1f, null), config)
+        check(afterDwell.nextState.offRoute) { "a full enter dwell must mark the frame off-route" }
     }
 
     @Test
@@ -162,5 +174,7 @@ class GuidanceTest {
         val first = guide(GuideState.initial(route), nearEnd, GuideConfig())
         val second = guide(first.nextState, nearEnd.copy(timestamp = 944L), GuideConfig())
         check(second.guidance != Guidance.Arrived) { "944 ms must not satisfy a 10 second startup guard" }
+        val afterGuard = guide(second.nextState, nearEnd.copy(timestamp = 10_000L), GuideConfig())
+        check(afterGuard.guidance == Guidance.Arrived) { "a full startup guard must permit arrival" }
     }
 }
