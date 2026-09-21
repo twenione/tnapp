@@ -132,7 +132,7 @@ class DynamicGuidanceTest {
                 "<trkpt lat=\"${10.0 + index * 0.00045}\" lon=\"20.0\"><ele>$elevation</ele></trkpt>"
             }.joinToString("") + "</trkseg></trk></gpx>"
         val routeWithSlope = RouteModel.fromGpx(xml)
-        val config = GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0)
+        val config = GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0, slopeAnnounceLeadMeters = 0.0)
         val primed = guide(
             GuideState.initial(routeWithSlope),
             SensorFrame(0L, 10.0, 20.0, 5f, 1f, null),
@@ -169,7 +169,7 @@ class DynamicGuidanceTest {
         val xml = "<gpx><wpt lat=\"10.001\" lon=\"20.0\"><name>View</name></wpt>" +
             "<trk><trkseg>${pointXml(0)}${pointXml(1)}${pointXml(2)}</trkseg></trk></gpx>"
         val routeWithWaypoint = RouteModel.fromGpx(xml)
-        val config = GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0, waypointAnnounceLeadMeters = 50.0)
+        val config = GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0, waypointAnnounceLeadMeters = 75.0)
         val primed = guide(
             GuideState.initial(routeWithWaypoint),
             SensorFrame(0L, 10.0, 20.0, 5f, 1f, null),

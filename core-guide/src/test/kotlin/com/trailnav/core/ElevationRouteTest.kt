@@ -116,9 +116,9 @@ class ElevationRouteTest {
     @Test
     fun slopeProfileUsesHysteresis() {
         val xml = "<gpx><trk><trkseg>" +
-            listOf(0, 5, 5, 5, 25, 25).mapIndexed { index, elevation -> pointXml(index, elevation.toString()) }.joinToString("") +
+            listOf(0, 5, 5, 5, 24, 24).mapIndexed { index, elevation -> pointXml(index, elevation.toString()) }.joinToString("") +
             "</trkseg></trk></gpx>"
-        val hysteresis = RouteModel.fromGpx(xml, GuideConfig(slopeHysteresisMeters = 30.0))
+        val hysteresis = RouteModel.fromGpx(xml)
         val noHysteresis = RouteModel.fromGpx(xml, GuideConfig(slopeHysteresisMeters = 0.0))
         check(hysteresis.slopeSegments.isEmpty())
         check(noHysteresis.slopeSegments.isNotEmpty())
