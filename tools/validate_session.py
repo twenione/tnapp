@@ -102,7 +102,7 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
     previous_seq = -1
     previous_t_by_key: dict[tuple[str, str | None], float] = {}
     loc_sequences: list[int] = []
-    guide_events: list[tuple[int, int | None]] = []
+    guide_events: list[tuple[int, int | None, bool]] = []
     count = 0
     guide_count = 0
     for line_number, raw in enumerate(lines, 1):
@@ -150,9 +150,15 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
             if stream == "guide":
                 guide_count += 1
                 src_seq = event.get("src_seq")
+                trigger = event.get("trigger")
+                is_trigger = trigger is not None
+                if is_trigger and trigger not in {"on-demand", "slot"}:
+                    errors.append(f"events.ndjson:{line_number}: [guide] unsupported trigger: {trigger!r}")
                 if src_seq is not None and (not isinstance(src_seq, int) or isinstance(src_seq, bool)):
                     errors.append(f"events.ndjson:{line_number}: [guide] src_seq must be integer when present")
-                guide_events.append((line_number, src_seq if isinstance(src_seq, int) and not isinstance(src_seq, bool) else None))
+                guide_events.append((line_number, src_seq if isinstance(src_seq, int) and not isinstance(src_seq, bool) else None, is_trigger))
+                if is_trigger and not isinstance(src_seq, int):
+                    errors.append(f"events.ndjson:{line_number}: trigger guide must include integer src_seq")
                 reason = event.get("reason")
                 if not isinstance(reason, dict) or not reason.get("rule"):
                     errors.append(f"events.ndjson:{line_number}: guide.reason.rule is required")
@@ -164,9 +170,14 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
         warnings.append("events.ndjson: no events")
     if guide_count == 0:
         warnings.append("events.ndjson: guide stream is empty")
-    src_values = [value for _, value in guide_events if value is not None]
+    frame_guides = [item for item in guide_events if not item[2]]
+    trigger_guides = [item for item in guide_events if item[2]]
+    src_values = [value for _, value, _ in frame_guides if value is not None]
+    for line_number, src_seq, _ in trigger_guides:
+        if src_seq is not None and src_seq not in loc_sequences:
+            errors.append(f"events.ndjson:{line_number}: trigger guide src_seq {src_seq} does not reference a loc event")
     if src_values:
-        if len(src_values) != len(guide_events):
+        if len(src_values) != len(frame_guides):
             errors.append("events.ndjson: guide src_seq must be present on every guide event when used")
         for index, src_seq in enumerate(src_values):
             if src_seq not in loc_sequences:

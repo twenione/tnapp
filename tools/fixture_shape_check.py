@@ -68,7 +68,7 @@ def _coordinates_valid(events: list[dict], route: Path | None) -> bool:
 
 def check_shape(events: list[dict], route: Path | None = None) -> tuple[dict[str, bool], tuple[int, int, int, int, int, int]]:
     loc = [event for event in events if event.get("stream") == "loc"]
-    guide = [event for event in events if event.get("stream") == "guide"]
+    guide = [event for event in events if event.get("stream") == "guide" and "trigger" not in event]
     envelopes = [event for event in events if event.get("stream") == "envelope"]
     subsecond = sum(1 for previous, current in zip(loc, loc[1:]) if float(current["t"]) - float(previous["t"]) < 1.0)
     global_regressions = sum(1 for previous, current in zip(envelopes, envelopes[1:]) if float(current["t"]) < float(previous["t"]))

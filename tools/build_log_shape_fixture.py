@@ -101,6 +101,8 @@ def _cut_source(source: Path, target: Path) -> None:
     )
     manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
     manifest["fixture_purpose"] = "log-shape-regression"
+    manifest.setdefault("route", {})["elevation_use"] = {"used": False, "reason": "absent"}
+    manifest["route"]["waypoint_count"] = 0
     manifest["removed_events"] = {f"sys.{kind}": count for kind, count in sorted(removed.items())}
     (target / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

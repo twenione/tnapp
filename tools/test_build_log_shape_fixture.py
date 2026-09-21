@@ -14,6 +14,11 @@ def count_points(path: Path, tag: str) -> int:
     return sum(node.tag.rsplit("}", 1)[-1] == tag for node in root.iter())
 
 
+def count_children(path: Path, tag: str) -> int:
+    root = ET.parse(path).getroot()
+    return sum(node.tag.rsplit("}", 1)[-1] == tag for node in root.iter())
+
+
 def run_case(name: str, xml: str, expected: int) -> bool:
     root = Path(tempfile.mkdtemp(prefix=f"tnapp-gpx-contract-{name}-"))
     try:
@@ -21,7 +26,7 @@ def run_case(name: str, xml: str, expected: int) -> bool:
         target = root / "target.gpx"
         source.write_text(xml, encoding="utf-8")
         _reverse_gpx(source, target)
-        return count_points(target, "trkpt") == expected
+        return count_points(target, "trkpt") == expected and count_children(target, "ele") == 0 and count_children(target, "wpt") == 0
     finally:
         import shutil
         shutil.rmtree(root, ignore_errors=True)
@@ -38,7 +43,7 @@ def main() -> int:
     ]
     failures = sum(not run_case(name, xml, expected) for name, xml, expected in cases)
     print(f"old_reverse_gpx actual_points={old_points} expected_points=2 status=FAIL_EXPECTED")
-    print(f"reverse_gpx cases={len(cases)} failures={failures}")
+    print(f"reverse_gpx cases={len(cases)} failures={failures} elevation_waypoint_exclusion=PASS")
     if failures:
         print(f"FAIL: reverse_gpx contract failed ({failures} cases)")
         return 1

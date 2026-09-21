@@ -27,12 +27,17 @@ def long_route_points(count: int = 260, spacing_m: float = 2.0) -> list[tuple[fl
     return [(origin_lat + (index * spacing_m) / radius * 180.0 / math.pi, origin_lon) for index in range(count)]
 
 
-def write_gpx(path: Path, points: list[tuple[float, float]]) -> None:
+def write_gpx(path: Path, points: list[tuple[float, float]], *, elevation: list[float] | None = None, waypoint_name: str | None = None) -> None:
     root = ET.Element("gpx", {"version": "1.1", "creator": "tnApp-synth"})
     trk = ET.SubElement(root, "trk")
     seg = ET.SubElement(trk, "trkseg")
-    for lat, lon in points:
-        ET.SubElement(seg, "trkpt", {"lat": f"{lat:.8f}", "lon": f"{lon:.8f}"})
+    for index, (lat, lon) in enumerate(points):
+        point = ET.SubElement(seg, "trkpt", {"lat": f"{lat:.8f}", "lon": f"{lon:.8f}"})
+        if elevation is not None:
+            ET.SubElement(point, "ele").text = f"{elevation[index]:.1f}"
+    if waypoint_name:
+        waypoint = ET.SubElement(root, "wpt", {"lat": f"{points[len(points)//2][0]:.8f}", "lon": f"{points[len(points)//2][1]:.8f}"})
+        ET.SubElement(waypoint, "name").text = waypoint_name
     path.write_text(ET.tostring(root, encoding="unicode") + "\n", encoding="utf-8")
 
 
@@ -56,11 +61,11 @@ def event(seq: int, t: float, stream: str, **values):
     return payload
 
 
-def make_session(root: Path, name: str, points: list[tuple[float, float]], variant: str, seed: int) -> None:
+def make_session(root: Path, name: str, points: list[tuple[float, float]], variant: str, seed: int, *, elevation: list[float] | None = None, waypoint_name: str | None = None) -> None:
     session_id = str(uuid.uuid5(SYNTH_NAMESPACE, name))
     session = root / name
     session.mkdir(parents=True, exist_ok=True)
-    write_gpx(session / "route.gpx", points)
+    write_gpx(session / "route.gpx", points, elevation=elevation, waypoint_name=waypoint_name)
     route_bytes = "\n".join(f"{lat:.8f},{lon:.8f}" for lat, lon in points).encode()
     route_hash = "sha256:" + hashlib.sha256(route_bytes).hexdigest()
     manifest = {
@@ -69,7 +74,7 @@ def make_session(root: Path, name: str, points: list[tuple[float, float]], varia
         "started_at_wall": "2026-01-01T00:00:00Z",
         "app": {"version": "0.1.0", "build": 0, "code_hash": "sha256:synthetic"},
         "engine": {"config": {"stub": False, "variant": variant, "implementation": "core-guide"}, "rng_seed": seed},
-        "route": {"gpx_id": "synthetic-base", "gpx_hash": route_hash, "point_count": len(points)},
+        "route": {"gpx_id": "synthetic-base", "gpx_hash": route_hash, "point_count": len(points), "elevation_use": {"used": elevation is not None, "reason": "ok" if elevation is not None else "absent"}, "waypoint_count": 1 if waypoint_name else 0},
         "clock": {
             "monotonic_source": "synthetic-sequence",
             "timestamp_unit": "seconds",
@@ -104,6 +109,10 @@ def make_session(root: Path, name: str, points: list[tuple[float, float]], varia
     if variant == "golden":
         manifest["golden_status"] = "verified-engine-output"
         manifest["golden_verification"] = "phase1-accuracy"
+    if elevation is not None:
+        manifest["route"]["elevation_source"] = "synthetic"
+    if waypoint_name is not None:
+        manifest["route"]["waypoint_names"] = "synthetic"
     (session / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     rng = random.Random(seed)
     events = []
@@ -179,6 +188,11 @@ def main() -> int:
     combo_points = long_route_points()
     for index, variant in enumerate(("combo_a", "combo_b", "combo_c", "combo_d", "combo_e"), len(variants) + 1):
         make_session(synth, f"{index:02d}_{variant}", combo_points, variant, 2000 + index)
+    # Dedicated synthetic-only Phase 3 preprocessing fixtures.  They carry no
+    # measured data and are excluded from the fixed Phase 1 accuracy table.
+    elevation_profile = [120.0 + (index * 1.5 if index < len(points) // 2 else (len(points) - index) * 1.5) for index in range(len(points))]
+    make_session(synth, "15_elevation_profile", points, "elevation_profile", 3015, elevation=elevation_profile)
+    make_session(synth, "16_waypoint_profile", points, "waypoint_profile", 3016, waypoint_name="Synthetic Summit")
     print(f"base={args.base}")
     print("generated_golden=1")
     print(f"generated_synth={len(variants) + 5}")
