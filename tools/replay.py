@@ -97,7 +97,10 @@ def details_match(recorded: object, actual: object) -> bool:
             return False
         left, right = str(value), str(actual[key])
         try:
-            if abs(float(left) - float(right)) > 1e-6:
+            # GPX projection and JVM/Python JSON serialization can differ by
+            # a few millimetres; retain semantic detail comparison while
+            # ignoring that representation noise.
+            if abs(float(left) - float(right)) > 1e-2:
                 return False
         except ValueError:
             if left != right:
