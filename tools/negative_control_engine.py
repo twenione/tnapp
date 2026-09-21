@@ -79,6 +79,34 @@ VARIANTS = {
         "val sunset = evaluateSunsetStandalone(initializedState, frame, config, higherPriority = false)",
         'val sunset = StandaloneSunsetEvaluation(initializedState, null, Reason("event.none")) /* D-033 skip E7 on accuracy frames */',
     ),
+    "event-offroute-gate": (
+        "evaluateDynamicGuidance(initializedState, next, directedMatch, frame, config, suppressAnnouncements = true).state",
+        "evaluateDynamicGuidance(initializedState, next, directedMatch, frame, config, suppressAnnouncements = false).state /* D-033 off-route event gate removed */",
+    ),
+    "event-reverse-gate": (
+        "config.milestoneEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen",
+        "config.milestoneEnabled && config.periodicEnabled && onRoute && eventIntervalOpen /* D-033 reverse event gate removed */",
+    ),
+    "event-min-interval": (
+        "config.milestoneEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && crossed.isNotEmpty()",
+        "config.milestoneEnabled && config.periodicEnabled && onRoute && forward && crossed.isNotEmpty() /* D-033 event interval removed */",
+    ),
+    "event-consumption-queue": (
+        "next = next.copy(consumedMilestoneIndices = next.consumedMilestoneIndices + crossed)",
+        "next = next.copy(consumedMilestoneIndices = next.consumedMilestoneIndices) /* D-033 E1 consumption removed */",
+    ),
+    "event-threshold-refire": (
+        "index !in previous.consumedSlopeIndices",
+        "true /* D-033 consumed E4 threshold refires */",
+    ),
+    "elevation-fallback": (
+        "if (!route.elevationUse.used || route.smoothedElevationMeters.isEmpty())",
+        "if (route.smoothedElevationMeters.isEmpty()) /* D-033 E5 fallback ignored */",
+    ),
+    "priority-old-order": (
+        "const val REMAINING = 500",
+        "const val REMAINING = 300 /* D-033 old priority order */",
+    ),
 }
 
 

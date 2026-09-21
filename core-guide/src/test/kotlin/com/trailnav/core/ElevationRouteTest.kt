@@ -91,4 +91,65 @@ class ElevationRouteTest {
         check(route.points.size == 2)
         check(route.elevationMeters == listOf(100.0, 110.0))
     }
+
+    @Test
+    fun slopeProfileUsesLookahead() {
+        val xml = "<gpx><trk><trkseg>" +
+            listOf(0, 7, 15, 23, 30, 38, 46).mapIndexed { index, elevation -> pointXml(index, elevation.toString()) }.joinToString("") +
+            "</trkseg></trk></gpx>"
+        val short = RouteModel.fromGpx(xml, GuideConfig(slopeLookaheadMeters = 120.0))
+        val long = RouteModel.fromGpx(xml, GuideConfig(slopeLookaheadMeters = 400.0))
+        check(long.slopeSegments.firstOrNull()?.endS ?: 0.0 > (short.slopeSegments.firstOrNull()?.endS ?: 0.0))
+    }
+
+    @Test
+    fun slopeProfileUsesThreshold() {
+        val xml = "<gpx><trk><trkseg>" +
+            listOf(0, 7, 15, 23, 30).mapIndexed { index, elevation -> pointXml(index, elevation.toString()) }.joinToString("") +
+            "</trkseg></trk></gpx>"
+        val defaultRoute = RouteModel.fromGpx(xml)
+        val highThreshold = RouteModel.fromGpx(xml, GuideConfig(slopeMinDeltaMeters = 100.0))
+        check(defaultRoute.slopeSegments.isNotEmpty())
+        check(highThreshold.slopeSegments.isEmpty())
+    }
+
+    @Test
+    fun slopeProfileUsesHysteresis() {
+        val xml = "<gpx><trk><trkseg>" +
+            listOf(0, 5, 5, 5, 25, 25).mapIndexed { index, elevation -> pointXml(index, elevation.toString()) }.joinToString("") +
+            "</trkseg></trk></gpx>"
+        val hysteresis = RouteModel.fromGpx(xml)
+        val noHysteresis = RouteModel.fromGpx(xml, GuideConfig(slopeHysteresisMeters = 0.0))
+        check(hysteresis.slopeSegments.isEmpty())
+        check(noHysteresis.slopeSegments.isNotEmpty())
+    }
+
+    @Test
+    fun waypointNearRouteFilter() {
+        val xml = "<gpx><wpt lat=\"10.002\" lon=\"20.001\"><name>far</name></wpt>" +
+            "<trk><trkseg>${pointXml(0)}${pointXml(1)}${pointXml(2)}</trkseg></trk></gpx>"
+        val excluded = RouteModel.fromGpx(xml)
+        val included = RouteModel.fromGpx(xml, GuideConfig(waypointNearRouteMeters = 200.0))
+        check(excluded.waypoints.isEmpty())
+        check(included.waypoints.size == 1)
+    }
+
+    @Test
+    fun waypointNameIsSanitized() {
+        val xml = "<gpx><wpt lat=\"10.00045\" lon=\"20.0\"><name>  Summit\t View  </name></wpt>" +
+            "<trk><trkseg>${pointXml(0)}${pointXml(1)}</trkseg></trk></gpx>"
+        val route = RouteModel.fromGpx(xml, GuideConfig(waypointNameMaxLength = 6))
+        check(route.waypoints.single().name == "Summit")
+    }
+
+    @Test
+    fun spikeIsUnstable() {
+        val xml = "<gpx><trk><trkseg>" +
+            listOf(0, 0, 15, 0, 0, 0).mapIndexed { index, elevation -> pointXml(index, elevation.toString()) }.joinToString("") +
+            "</trkseg></trk></gpx>"
+        val defaultRoute = RouteModel.fromGpx(xml)
+        val tolerant = RouteModel.fromGpx(xml, GuideConfig(elevationSpikeThresholdMeters = 20.0))
+        check(defaultRoute.elevationReason == "unstable")
+        check(tolerant.elevationReason == "ok")
+    }
 }
