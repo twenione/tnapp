@@ -23,12 +23,13 @@ def load_events() -> list[dict]:
 
 
 def run(events: list[dict], expected: int) -> bool:
-    temp = Path(tempfile.mkdtemp(prefix=".fixture-shape-negative-", dir=ROOT))
+    temp = Path(tempfile.mkdtemp(prefix="tnapp-fixture-shape-negative-"))
     try:
         (temp / "events.ndjson").write_text(
             "\n".join(json.dumps(event, ensure_ascii=False) for event in events) + "\n",
             encoding="utf-8",
         )
+        shutil.copy2(FIXTURE / "route.gpx", temp / "route.gpx")
         result = subprocess.run([sys.executable, str(CHECKER), str(temp)], capture_output=True, text=True, check=False)
         return result.returncode == expected
     finally:
@@ -80,6 +81,14 @@ def main() -> int:
             loc_index += 1
     variants.append(("subsecond_20pct", no_subsecond, 1))
 
+    invalid_longitude = copy.deepcopy(events)
+    next(event for event in invalid_longitude if event.get("stream") == "loc")["lon"] = 181.0
+    variants.append(("coordinates_valid_longitude", invalid_longitude, 1))
+
+    invalid_latitude = copy.deepcopy(events)
+    next(event for event in invalid_latitude if event.get("stream") == "loc")["lat"] = 91.0
+    variants.append(("coordinates_valid_latitude", invalid_latitude, 1))
+
     no_orientation = [event for event in copy.deepcopy(events) if not (event.get("stream") == "sys" and event.get("kind") == "route.orientation")]
     variants.append(("route_orientation", no_orientation, 1))
 
@@ -99,7 +108,10 @@ def main() -> int:
 
     failures = sum(not run(mutated, expected) for _, mutated, expected in variants)
     print(f"fixture_shape_check checks={len(SHAPE_CHECKS)} cases={len(variants)} failures={failures}")
-    return 1 if failures else 0
+    if failures:
+        print(f"FAIL: fixture shape negative controls failed ({failures} cases)")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

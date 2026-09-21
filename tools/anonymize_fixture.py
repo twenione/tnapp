@@ -33,6 +33,18 @@ REQUIRED_KINDS = {
 }
 
 
+def _normalize_longitude(value: float) -> float:
+    """Return a longitude in the GPX/API half-open range [-180, 180)."""
+    normalized = (value + 180.0) % 360.0 - 180.0
+    return 0.0 if normalized == 0.0 else normalized
+
+
+def _checked_latitude(value: float) -> float:
+    if not -90.0 <= value <= 90.0:
+        raise ValueError("anonymized latitude is outside [-90, 90]")
+    return value
+
+
 def _pick_offsets() -> tuple[float, float, float]:
     rng = secrets.SystemRandom()
     for _ in range(100):
@@ -59,9 +71,9 @@ def _transform_json(value: object, path: tuple[str, ...], lat_offset: float, lon
     stream = path[0] if path and path[0] in {"loc", "guide", "envelope", "sys"} else None
     for key, child in value.items():
         if key in {"lat", "latitude"} and isinstance(child, (int, float)) and not isinstance(child, bool):
-            result[key] = float(child) + lat_offset
+            result[key] = _checked_latitude(float(child) + lat_offset)
         elif key in {"lon", "longitude"} and isinstance(child, (int, float)) and not isinstance(child, bool):
-            result[key] = float(child) + lon_offset
+            result[key] = _normalize_longitude(float(child) + lon_offset)
         elif key == "t" and isinstance(child, (int, float)) and not isinstance(child, bool):
             result[key] = _shift_number(child, time_offset)
         elif key == "timestamp" and isinstance(child, (int, float)) and not isinstance(child, bool):
@@ -83,8 +95,10 @@ def _transform_route(source: Path, target: Path, lat_offset: float, lon_offset: 
     root = ET.fromstring(source.read_text(encoding="utf-8"))
     for point in root.iter():
         if point.tag.rsplit("}", 1)[-1] in {"trkpt", "rtept", "wpt"}:
-            point.set("lat", f"{float(point.attrib['lat']) + lat_offset:.8f}")
-            point.set("lon", f"{float(point.attrib['lon']) + lon_offset:.8f}")
+            lat = _checked_latitude(float(point.attrib["lat"]) + lat_offset)
+            lon = _normalize_longitude(float(point.attrib["lon"]) + lon_offset)
+            point.set("lat", f"{lat:.8f}")
+            point.set("lon", f"{lon:.8f}")
     data = ET.tostring(root, encoding="utf-8") + b"\n"
     target.write_bytes(data)
     return data

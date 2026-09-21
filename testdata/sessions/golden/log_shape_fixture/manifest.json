@@ -14,7 +14,7 @@
     "rng_seed": 0
   },
   "route": {
-    "gpx_hash": "sha256:0514dab891837a89f002d91728375a777edd9893ebdd31631c29659d163a11bd"
+    "gpx_hash": "sha256:31386b9997b988c7d638f6521faaa83a80570efafa22c78dde3a5cf04dad939e"
   },
   "clock": {
     "monotonic_source": "location-frame-timestamp"
