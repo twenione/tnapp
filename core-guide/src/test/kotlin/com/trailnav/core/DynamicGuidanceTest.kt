@@ -128,15 +128,17 @@ class DynamicGuidanceTest {
     @Test
     fun slopeWindow() {
         val xml = "<gpx><trk><trkseg>" +
-            listOf(0, 8, 16, 24, 32).mapIndexed { index, elevation ->
+            listOf(0, 0, 0, 0, 8, 16, 24, 32).mapIndexed { index, elevation ->
                 "<trkpt lat=\"${10.0 + index * 0.00045}\" lon=\"20.0\"><ele>$elevation</ele></trkpt>"
             }.joinToString("") + "</trkseg></trk></gpx>"
         val routeWithSlope = RouteModel.fromGpx(xml)
-        val result = guide(
+        val config = GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0)
+        val primed = guide(
             GuideState.initial(routeWithSlope),
             SensorFrame(0L, 10.0, 20.0, 5f, 1f, null),
-            GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0),
-        )
+            config,
+        ).nextState
+        val result = guide(primed, SensorFrame(1_000L, 10.00135, 20.0, 5f, 1f, null), config)
         check(result.guidance is Guidance.Slope)
         val repeat = guide(result.nextState, SensorFrame(1_000L, 10.0, 20.0, 5f, 1f, null),
             GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0))
@@ -147,6 +149,7 @@ class DynamicGuidanceTest {
     fun elevationSlot() {
         val xml = "<gpx><trk><trkseg>" +
             "<trkpt lat=\"10.0\" lon=\"20.0\"><ele>101</ele></trkpt>" +
+            "<trkpt lat=\"10.0005\" lon=\"20.0\"><ele>110</ele></trkpt>" +
             "<trkpt lat=\"10.001\" lon=\"20.0\"><ele>119</ele></trkpt>" +
             "</trkseg></trk></gpx>"
         val routeWithElevation = RouteModel.fromGpx(xml)
@@ -166,11 +169,13 @@ class DynamicGuidanceTest {
         val xml = "<gpx><wpt lat=\"10.001\" lon=\"20.0\"><name>View</name></wpt>" +
             "<trk><trkseg>${pointXml(0)}${pointXml(1)}${pointXml(2)}</trkseg></trk></gpx>"
         val routeWithWaypoint = RouteModel.fromGpx(xml)
-        val result = guide(
+        val config = GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0, waypointAnnounceLeadMeters = 50.0)
+        val primed = guide(
             GuideState.initial(routeWithWaypoint),
             SensorFrame(0L, 10.0, 20.0, 5f, 1f, null),
-            GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0),
-        )
+            config,
+        ).nextState
+        val result = guide(primed, SensorFrame(1_000L, 10.00045, 20.0, 5f, 1f, null), config)
         check(result.guidance is Guidance.Waypoint)
     }
 
