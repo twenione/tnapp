@@ -24,6 +24,14 @@ def _has_forbidden_control(value: str) -> bool:
     return any((ord(char) < 32 and char != "\n") or ord(char) == 127 or char == "\ufffd" for char in value)
 
 
+def filter_supported_records(values: list[object]) -> list[dict]:
+    """Keep the closed failrec-2.0.0 set for both offline and online reads."""
+    return [
+        value for value in values
+        if isinstance(value, dict) and value.get("schema_version") == "failrec-2.0.0"
+    ]
+
+
 def read_records(root: Path) -> list[dict]:
     values = []
     for path in sorted(root.glob("*.json")):
@@ -31,9 +39,8 @@ def read_records(root: Path) -> list[dict]:
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if isinstance(record, dict) and record.get("schema_version") == "failrec-2.0.0":
-            values.append(record)
-    return values
+        values.append(record)
+    return filter_supported_records(values)
 
 
 def aggregate(records: list[dict]) -> dict[str, object]:
@@ -100,12 +107,13 @@ def online(repository: str, token: str, *, apply: bool) -> int:
     readme_payload = _request(f"{base}/contents/README.md", token)
     readme = base64.b64decode(readme_payload["content"]).decode("utf-8")
     listing = _request(f"{base}/contents/records", token)
-    records = []
+    fetched_records = []
     for item in listing:
         if not str(item.get("name", "")).endswith(".json"):
             continue
         payload = _request(str(item["url"]), token)
-        records.append(json.loads(base64.b64decode(payload["content"]).decode("utf-8")))
+        fetched_records.append(json.loads(base64.b64decode(payload["content"]).decode("utf-8")))
+    records = filter_supported_records(fetched_records)
     generated = build_notice(readme, records)
     if generated == readme:
         print("NOOP: README notice already current")
