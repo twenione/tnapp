@@ -51,8 +51,9 @@ class TurnGuidanceTest {
     @Test
     fun reverseStationaryAndOffRouteFramesDoNotAnnounceTurns() {
         val route = route()
-        var state = guide(GuideState.initial(route), SensorFrame(0L, 10.0015, 20.0, 5f, 1f, null)).nextState
-        val reverse = guide(state, SensorFrame(1_000L, 10.0014, 20.0, 5f, 1f, null), GuideConfig(emaAlpha = 1.0))
+        val reverseRoute = route.copy(turns = listOf(TurnPoint(150.0, Side.RIGHT, 90.0)))
+        var state = guide(GuideState.initial(reverseRoute), SensorFrame(0L, 10.0012, 20.0, 5f, 1f, null)).nextState
+        val reverse = guide(state, SensorFrame(1_000L, 10.0011, 20.0, 5f, 1f, null), GuideConfig(emaAlpha = 1.0))
         assertTrue(reverse.guidance !is Guidance.TurnAhead && reverse.guidance !is Guidance.TurnNow)
 
         val metersPerDegreeLon = 6_371_008.8 * cos(Math.toRadians(10.0)) * Math.PI / 180.0
