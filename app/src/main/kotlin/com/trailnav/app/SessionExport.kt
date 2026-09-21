@@ -23,11 +23,13 @@ internal data class ExportableSession(
     val normalTermination: Boolean,
 ) {
     val folderName: String get() = directory.name
+    /** Folder names are the durable session key; event timestamps are display data. */
+    val selectionId: Long get() = directory.name.toLong()
 }
 
 internal object SessionExportCatalog {
     private val sessionIdPattern = Regex("\"session_id\"\\s*:\\s*\"([^\"]+)\"")
-    private val eventTimePattern = Regex("\"t\"\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)")
+    private val eventTimePattern = Regex("\"t\"\\s*:\\s*([0-9]+(?:\\.[0-9]+)?(?:[Ee][+-]?[0-9]+)?)")
 
     fun scan(context: Context): List<ExportableSession> {
         val activeSessionId = NavigationPreferences.activeSessionId(context)
@@ -43,16 +45,17 @@ internal object SessionExportCatalog {
                 val sessionId = sessionIdPattern.find(manifestText)?.groupValues?.get(1)
                     ?: return@mapNotNull null
                 if (sessionId == activeSessionId) return@mapNotNull null
-                val eventLines = runCatching { events.readLines(StandardCharsets.UTF_8) }.getOrNull()
+                val eventTimes = runCatching { eventTimes(events) }.getOrNull()
                     ?: return@mapNotNull null
-                val startedAt = eventTime(eventLines, "service.started")
+                val startedAt = eventTimes.first
                     ?: directory.name.toLongOrNull()?.div(1_000.0)
                     ?: return@mapNotNull null
-                val stoppedAt = eventTime(eventLines, "service.stopped")
+                val stoppedAt = eventTimes.second
+                val folderStartMillis = directory.name.toLongOrNull()
                 ExportableSession(
                     directory = directory,
                     sessionId = sessionId,
-                    startedAtMillis = (startedAt * 1_000.0).toLong(),
+                    startedAtMillis = folderStartMillis ?: (startedAt * 1_000.0).toLong(),
                     durationSeconds = stoppedAt?.let { ((it - startedAt).coerceAtLeast(0.0)).toLong() },
                     sizeBytes = manifest.length() + events.length(),
                     normalTermination = stoppedAt != null,
@@ -79,9 +82,24 @@ internal object SessionExportCatalog {
         File(context.cacheDir, "exports").listFiles().orEmpty().forEach { it.delete() }
     }
 
-    private fun eventTime(lines: List<String>, kind: String): Double? = lines.firstOrNull {
-        it.contains("\"kind\":\"$kind\"")
-    }?.let { line -> eventTimePattern.find(line)?.groupValues?.get(1)?.toDoubleOrNull() }
+    /** Parse the compact event form used by the logger, including exponent notation. */
+    internal fun eventTimeLine(line: String, kind: String): Double? =
+        if (line.contains("\"kind\":\"$kind\"")) {
+            eventTimePattern.find(line)?.groupValues?.get(1)?.toDoubleOrNull()
+        } else null
+
+    /** Read only the first start event and the last stop event; never materialize the stream. */
+    private fun eventTimes(events: File): Pair<Double?, Double?> {
+        var started: Double? = null
+        var stopped: Double? = null
+        events.bufferedReader(StandardCharsets.UTF_8).useLines { lines ->
+            lines.forEach { line ->
+                if (started == null) started = eventTimeLine(line, "service.started")
+                eventTimeLine(line, "service.stopped")?.let { stopped = it }
+            }
+        }
+        return started to stopped
+    }
 }
 
 internal object SessionArchiveBuilder {

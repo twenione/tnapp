@@ -55,10 +55,18 @@ class SessionExportActivity : AppCompatActivity() {
     }
 
     private fun loadSessions() {
-        sessions.clear()
-        sessions.addAll(SessionExportCatalog.scan(this))
-        adapter.notifyDataSetChanged()
-        status.text = if (sessions.isEmpty()) "내보낼 종료 기록이 없습니다" else "종료된 기록을 선택하세요"
+        status.text = "기록을 불러오는 중…"
+        shareButton.isEnabled = false
+        selectedIds.clear()
+        Thread {
+            val loaded = SessionExportCatalog.scan(this)
+            runOnUiThread {
+                sessions.clear()
+                sessions.addAll(loaded)
+                adapter.notifyDataSetChanged()
+                status.text = if (sessions.isEmpty()) "내보낼 종료 기록이 없습니다" else "종료된 기록을 선택하세요"
+            }
+        }.start()
     }
 
     private fun updateShareButton() {
@@ -67,7 +75,7 @@ class SessionExportActivity : AppCompatActivity() {
     }
 
     private fun confirmAndShare() {
-        val chosen = sessions.filter { it.startedAtMillis in selectedIds }
+        val chosen = sessions.filter { it.selectionId in selectedIds }
         if (chosen.isEmpty()) return
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("기록 공유")

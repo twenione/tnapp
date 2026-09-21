@@ -15,7 +15,7 @@ internal class SessionListAdapter(
 ) : BaseAdapter() {
     override fun getCount(): Int = items.size
     override fun getItem(position: Int): ExportableSession = items[position]
-    override fun getItemId(position: Int): Long = items[position].startedAtMillis
+    override fun getItemId(position: Int): Long = items[position].selectionId
 
     override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
         val row = (convertView as? LinearLayout) ?: LinearLayout(context).apply {
