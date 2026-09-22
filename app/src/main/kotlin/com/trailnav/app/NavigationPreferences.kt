@@ -14,9 +14,6 @@ internal object NavigationPreferences {
     private const val KEY_VOICE_MODE = "voice_on_route_mode"
     private const val KEY_SERVICE_STATE = "service_state"
     private const val KEY_ACTIVE_SESSION_ID = "active_session_id"
-    private const val KEY_MEDIA_BUTTON_ENABLED = "ondemand_media_button_enabled"
-    private const val KEY_SHAKE_ENABLED = "ondemand_shake_enabled"
-    private const val KEY_NOTIFICATION_ENABLED = "ondemand_notification_enabled"
 
     enum class PeriodicVoiceMode {
         OFF,
@@ -54,23 +51,6 @@ internal object NavigationPreferences {
             .putBoolean(KEY_VOICE_ENABLED, active)
             .putLong(KEY_VOICE_INTERVAL_SECONDS, if (intervalSeconds > 0L) intervalSeconds else 0L)
             .putString(KEY_VOICE_MODE, if (active) mode.name else PeriodicVoiceMode.OFF.name)
-            .apply()
-    }
-
-    fun onDemand(context: Context): OnDemandConfig {
-        val values = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        return OnDemandConfig(
-            mediaButtonEnabled = values.getBoolean(KEY_MEDIA_BUTTON_ENABLED, true),
-            shakeEnabled = values.getBoolean(KEY_SHAKE_ENABLED, true),
-            notificationEnabled = values.getBoolean(KEY_NOTIFICATION_ENABLED, true),
-        )
-    }
-
-    fun saveOnDemand(context: Context, config: OnDemandConfig) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_MEDIA_BUTTON_ENABLED, config.mediaButtonEnabled)
-            .putBoolean(KEY_SHAKE_ENABLED, config.shakeEnabled)
-            .putBoolean(KEY_NOTIFICATION_ENABLED, config.notificationEnabled)
             .apply()
     }
 

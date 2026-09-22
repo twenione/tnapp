@@ -3,23 +3,17 @@ package com.trailnav.app
 /** Sources that can request an on-demand navigation status. */
 enum class OnDemandSource(val wireName: String) {
     MEDIA_BUTTON("media_button"),
-    SHAKE("shake"),
-    NOTIFICATION("notification");
-
-    companion object {
-        fun fromWire(value: String?): OnDemandSource = entries.firstOrNull { it.wireName == value } ?: NOTIFICATION
-    }
+    SHAKE("shake");
 }
 
 /** Pure trigger settings kept at the app boundary; these are not engine parameters. */
 data class OnDemandConfig(
     val mediaButtonEnabled: Boolean = true,
     val shakeEnabled: Boolean = true,
-    val notificationEnabled: Boolean = true,
     val debounceMillis: Long = 1_500L,
-    // Conservative starting point: walking-like 3-6 m/s² samples do not trigger;
-    // a deliberate shake must exceed 10 m/s² three times in the window.
-    val shakeThresholdMetersPerSecondSquared: Double = 10.0,
+    // Field-test baseline: walking-like 0.9-3.3 m/s² samples do not trigger;
+    // a deliberate shake must reach 6.0 m/s² three times in the window.
+    val shakeThresholdMetersPerSecondSquared: Double = 6.0,
     val shakeHitsRequired: Int = 3,
     val shakeWindowMillis: Long = 700L,
 )
@@ -36,7 +30,7 @@ class OnDemandDebouncer(private val debounceMillis: Long) {
     }
 }
 
-/** Pure source gate used by media, shake, and notification entry points. */
+/** Pure source gate used by the media-button and shake entry points. */
 class OnDemandRequestRouter(private val config: OnDemandConfig) {
     private val debouncer = OnDemandDebouncer(config.debounceMillis)
 
@@ -44,7 +38,6 @@ class OnDemandRequestRouter(private val config: OnDemandConfig) {
         val enabled = when (source) {
             OnDemandSource.MEDIA_BUTTON -> config.mediaButtonEnabled
             OnDemandSource.SHAKE -> config.shakeEnabled
-            OnDemandSource.NOTIFICATION -> config.notificationEnabled
         }
         return if (enabled && debouncer.accept(timestampMillis)) source else null
     }

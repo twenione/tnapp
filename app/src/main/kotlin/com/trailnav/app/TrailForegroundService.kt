@@ -16,6 +16,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.view.KeyEvent
 import android.net.Uri
 import android.os.BatteryManager
@@ -111,10 +112,6 @@ class TrailForegroundService : Service() {
                     updateOnRouteVoiceConfiguration(voice.enabled, voice.intervalSeconds, voice.mode)
                 }
                 publishServiceState()
-                return START_STICKY
-            }
-            ACTION_ON_DEMAND_STATUS -> {
-                if (sessionStarted) handleOnDemand(OnDemandSource.fromWire(intent.getStringExtra(EXTRA_ACTION_SOURCE)))
                 return START_STICKY
             }
             ACTION_PAUSE_GUIDANCE, ACTION_NOTIFICATION_PAUSE -> {
@@ -216,7 +213,7 @@ class TrailForegroundService : Service() {
             onRouteVoiceEnabled && onRouteVoiceMode != NavigationPreferences.PeriodicVoiceMode.OFF,
             onRouteVoiceIntervalSeconds,
         )
-        onDemandConfig = NavigationPreferences.onDemand(this)
+        onDemandConfig = OnDemandConfig()
         onDemandRouter = OnDemandRequestRouter(onDemandConfig)
         shakeDetector = ShakeDetector(onDemandConfig)
         shakeStats = ShakeStats(onDemandConfig.shakeThresholdMetersPerSecondSquared)
@@ -243,7 +240,6 @@ class TrailForegroundService : Service() {
             mapOf(
                 "media_button_enabled" to onDemandConfig.mediaButtonEnabled.toString(),
                 "shake_enabled" to onDemandConfig.shakeEnabled.toString(),
-                "notification_enabled" to onDemandConfig.notificationEnabled.toString(),
                 "debounce_ms" to onDemandConfig.debounceMillis.toString(),
                 "shake_threshold" to onDemandConfig.shakeThresholdMetersPerSecondSquared.toString(),
                 "shake_hits" to onDemandConfig.shakeHitsRequired.toString(),
@@ -587,50 +583,53 @@ class TrailForegroundService : Service() {
         } else if (showPauseAction) {
             builder.addAction(notificationAction(ACTION_NOTIFICATION_PAUSE, 1004, "안내 일시중지"))
         }
-        if (sessionStarted && onDemandConfig.notificationEnabled) {
-            builder.addAction(notificationAction(ACTION_ON_DEMAND_STATUS, 1005, "상태 확인"))
-        }
         return builder.build()
     }
 
     private fun installOnDemandTriggers() {
-        if (onDemandConfig.mediaButtonEnabled) {
-            mediaSession = MediaSession(this, "TrailNav").apply {
-                setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS)
-                setCallback(object : MediaSession.Callback() {
-                    override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
-                        val event = mediaButtonIntent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
-                        if (event?.action == KeyEvent.ACTION_DOWN && event.keyCode in setOf(KeyEvent.KEYCODE_HEADSETHOOK, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)) {
-                            handleOnDemand(OnDemandSource.MEDIA_BUTTON)
-                            return true
-                        }
-                        return false
+        mediaSession = MediaSession(this, "TrailNav").apply {
+            setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS)
+            setPlaybackState(
+                PlaybackState.Builder()
+                    .setActions(
+                        PlaybackState.ACTION_PLAY_PAUSE or
+                            PlaybackState.ACTION_PLAY or
+                            PlaybackState.ACTION_PAUSE,
+                    )
+                    .setState(PlaybackState.STATE_PLAYING, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 0f)
+                    .build(),
+            )
+            setCallback(object : MediaSession.Callback() {
+                override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
+                    val event = mediaButtonIntent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                    if (event?.action == KeyEvent.ACTION_DOWN && event.keyCode in setOf(KeyEvent.KEYCODE_HEADSETHOOK, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)) {
+                        handleOnDemand(OnDemandSource.MEDIA_BUTTON)
+                        return true
                     }
-                })
-                isActive = true
-            }
-        }
-        if (onDemandConfig.shakeEnabled) {
-            val manager = getSystemService(SENSOR_SERVICE) as SensorManager
-            val sensor = manager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-            if (sensor != null) {
-                val listener = object : SensorEventListener {
-                    override fun onSensorChanged(event: SensorEvent) {
-                        val magnitude = kotlin.math.sqrt(event.values.sumOf { it.toDouble() * it.toDouble() })
-                        val timestamp = SystemClock.elapsedRealtime()
-                        val deviation = kotlin.math.abs(magnitude - SensorManager.GRAVITY_EARTH)
-                        shakeStats.record(timestamp, deviation)?.let(::appendShakeStats)
-                        if (shakeDetector.onSample(timestamp, deviation)) {
-                            handleOnDemand(OnDemandSource.SHAKE)
-                        }
-                    }
-
-                    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+                    return false
                 }
-                shakeListener = listener
-                sensorManager = manager
-                manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
+            })
+            isActive = true
+        }
+        val manager = getSystemService(SENSOR_SERVICE) as SensorManager
+        val sensor = manager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        if (sensor != null) {
+            val listener = object : SensorEventListener {
+                override fun onSensorChanged(event: SensorEvent) {
+                    val magnitude = kotlin.math.sqrt(event.values.sumOf { it.toDouble() * it.toDouble() })
+                    val timestamp = SystemClock.elapsedRealtime()
+                    val deviation = kotlin.math.abs(magnitude - SensorManager.GRAVITY_EARTH)
+                    shakeStats.record(timestamp, deviation)?.let(::appendShakeStats)
+                    if (shakeDetector.onSample(timestamp, deviation)) {
+                        handleOnDemand(OnDemandSource.SHAKE)
+                    }
+                }
+
+                override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
             }
+            shakeListener = listener
+            sensorManager = manager
+            manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
         }
     }
 
@@ -805,7 +804,6 @@ class TrailForegroundService : Service() {
         const val ACTION_ROUTE_RIBBON_UPDATE = "com.trailnav.app.ROUTE_RIBBON_UPDATE"
         const val ACTION_SERVICE_STATE_UPDATE = "com.trailnav.app.SERVICE_STATE_UPDATE"
         const val ACTION_UPDATE_ON_ROUTE_VOICE = "com.trailnav.app.UPDATE_ON_ROUTE_VOICE"
-        const val ACTION_ON_DEMAND_STATUS = "com.trailnav.app.ON_DEMAND_STATUS"
         const val ACTION_QUERY_SERVICE_STATE = "com.trailnav.app.QUERY_SERVICE_STATE"
         const val ACTION_PAUSE_GUIDANCE = "com.trailnav.app.PAUSE_GUIDANCE"
         const val ACTION_RESUME_GUIDANCE = "com.trailnav.app.RESUME_GUIDANCE"

@@ -6,6 +6,8 @@ import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.Typeface
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
@@ -39,8 +41,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var endButton: Button
     private lateinit var mapButton: Button
     private lateinit var navigationState: TextView
-    private lateinit var onRouteVoiceLabel: TextView
-    private lateinit var onDemandLabel: TextView
+    private var intervalButtons: List<Pair<Button, Long>> = emptyList()
+    private var modeButtons: List<Pair<Button, NavigationPreferences.PeriodicVoiceMode>> = emptyList()
     private var selectedRoute: Uri? = null
     private var selectedRouteSummary: String? = null
     private var selectedSavedRoute: SavedRoute? = null
@@ -215,19 +217,14 @@ class MainActivity : AppCompatActivity() {
                     .show()
             }
         }
-        routeListAdapter = RouteListAdapter(this, savedRoutes)
+        routeListAdapter = RouteListAdapter(this, savedRoutes, ::confirmRemoveSavedRoute)
         val list = ListView(this).apply {
             adapter = routeListAdapter
             choiceMode = ListView.CHOICE_MODE_SINGLE
             setOnItemClickListener { _, _, position, _ -> selectSavedRoute(routeListAdapter.getItem(position)) }
             setOnItemLongClickListener { _, _, position, _ ->
                 val route = routeListAdapter.getItem(position)
-                androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
-                    .setTitle("목록에서 제거")
-                    .setMessage("${route.displayName}을(를) 목록에서 제거하시겠습니까?")
-                    .setNegativeButton("취소", null)
-                    .setPositiveButton("제거") { _, _ -> removeSavedRoute(route) }
-                    .show()
+                confirmRemoveSavedRoute(route)
                 true
             }
         }
@@ -236,43 +233,20 @@ class MainActivity : AppCompatActivity() {
             isEnabled = false
             setOnClickListener { openSelectedRouteInMap() }
         }
-        onRouteVoiceLabel = TextView(this).apply {
-            text = "경로 위 주기 음성: 끄기"
-        }
         val onRouteVoicePresets = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
         val onRouteVoiceModeControls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        onDemandLabel = TextView(this).apply { textSize = 16f }
-        val onDemandControls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf(
-            "media_button" to "이어폰 버튼",
-            "shake" to "흔들기",
-            "notification" to "알림 상태 확인",
-        ).forEach { (source, label) ->
-            onDemandControls.addView(Button(this).apply {
-                text = label
-                setOnClickListener {
-                    val current = NavigationPreferences.onDemand(this@MainActivity)
-                    val updated = when (source) {
-                        "media_button" -> current.copy(mediaButtonEnabled = !current.mediaButtonEnabled)
-                        "shake" -> current.copy(shakeEnabled = !current.shakeEnabled)
-                        else -> current.copy(notificationEnabled = !current.notificationEnabled)
-                    }
-                    NavigationPreferences.saveOnDemand(this@MainActivity, updated)
-                    renderOnDemandLabel()
-                }
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        }
-        listOf(
+        val intervalChoices = listOf(
             0L to "끄기",
             60L to "1분",
             180L to "3분",
             300L to "5분",
-        ).forEach { (intervalSeconds, label) ->
-            onRouteVoicePresets.addView(Button(this).apply {
+        )
+        intervalButtons = intervalChoices.map { (intervalSeconds, label) ->
+            Button(this).apply {
                 text = label
                 setOnClickListener {
                     onRouteVoiceIntervalSeconds = intervalSeconds
@@ -283,7 +257,7 @@ class MainActivity : AppCompatActivity() {
                     }
                     onRouteVoiceEnabled = intervalSeconds > 0L && onRouteVoiceMode != NavigationPreferences.PeriodicVoiceMode.OFF
                     NavigationPreferences.saveVoice(this@MainActivity, onRouteVoiceEnabled, intervalSeconds, onRouteVoiceMode)
-                    renderVoiceLabel()
+                    renderVoiceSelections()
                     if (NavigationPreferences.state(this@MainActivity) != NavigationPreferences.STATE_IDLE) {
                         sendServiceAction(
                             TrailForegroundService.ACTION_UPDATE_ON_ROUTE_VOICE,
@@ -291,25 +265,31 @@ class MainActivity : AppCompatActivity() {
                         )
                     }
                 }
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            }.also { button ->
+                onRouteVoicePresets.addView(button, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            } to intervalSeconds
         }
-        listOf(
-            NavigationPreferences.PeriodicVoiceMode.OFF to "주기 끄기",
-            NavigationPreferences.PeriodicVoiceMode.PROMPT to "기본 문구",
-            NavigationPreferences.PeriodicVoiceMode.TONE to "신호음",
-        ).forEach { (mode, label) ->
-            onRouteVoiceModeControls.addView(Button(this).apply {
-                text = label
+        val modeChoices = listOf(
+            NavigationPreferences.PeriodicVoiceMode.PROMPT,
+            NavigationPreferences.PeriodicVoiceMode.TONE,
+        )
+        modeButtons = modeChoices.map { mode ->
+            Button(this).apply {
+                text = VoiceSelectionUi.modeLabel(mode)
                 setOnClickListener {
-                    onRouteVoiceMode = mode
-                    onRouteVoiceEnabled = mode != NavigationPreferences.PeriodicVoiceMode.OFF && onRouteVoiceIntervalSeconds > 0L
-                    NavigationPreferences.saveVoice(this@MainActivity, onRouteVoiceEnabled, onRouteVoiceIntervalSeconds, mode)
-                    renderVoiceLabel()
+                    if (onRouteVoiceIntervalSeconds > 0L) {
+                        onRouteVoiceMode = mode
+                        onRouteVoiceEnabled = true
+                        NavigationPreferences.saveVoice(this@MainActivity, onRouteVoiceEnabled, onRouteVoiceIntervalSeconds, mode)
+                    }
+                    renderVoiceSelections()
                     if (NavigationPreferences.state(this@MainActivity) != NavigationPreferences.STATE_IDLE) {
                         sendServiceAction(TrailForegroundService.ACTION_UPDATE_ON_ROUTE_VOICE, "ui")
                     }
                 }
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            }.also { button ->
+                onRouteVoiceModeControls.addView(button, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            } to mode
         }
         root.addView(header)
         root.addView(routeRibbon, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (250 * resources.displayMetrics.density).toInt()))
@@ -317,11 +297,8 @@ class MainActivity : AppCompatActivity() {
         root.addView(export)
         root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(mapButton)
-        root.addView(onRouteVoiceLabel)
         root.addView(onRouteVoicePresets)
         root.addView(onRouteVoiceModeControls)
-        root.addView(onDemandLabel)
-        root.addView(onDemandControls)
         navigationState = TextView(this).apply {
             text = "안내 대기 중"
             textSize = 20f
@@ -347,14 +324,8 @@ class MainActivity : AppCompatActivity() {
         ViewCompat.requestApplyInsets(root)
         restoreUiState(savedInstanceState)
         restoreRouteCatalog()
-        renderVoiceLabel()
-        renderOnDemandLabel()
+        renderVoiceSelections()
         applyServiceState(NavigationPreferences.state(this))
-    }
-
-    private fun renderOnDemandLabel() {
-        val config = NavigationPreferences.onDemand(this)
-        onDemandLabel.text = "상태 확인: 이어폰 ${if (config.mediaButtonEnabled) "켜짐" else "꺼짐"} · 흔들기 ${if (config.shakeEnabled) "켜짐" else "꺼짐"} · 알림 ${if (config.notificationEnabled) "켜짐" else "꺼짐"}"
     }
 
     private fun updateGpsIndicator(accuracyMeters: Double) {
@@ -428,6 +399,8 @@ class MainActivity : AppCompatActivity() {
     private fun restoreRouteCatalog() {
         savedRoutes.clear()
         savedRoutes.addAll(RouteCatalog.load(this))
+        selectedSavedRoute = null
+        routeListAdapter.selectedUri = null
         routeListAdapter.notifyDataSetChanged()
         val lastUri = RouteCatalog.lastSelectedUri(this)
         val restored = savedRoutes.firstOrNull { it.uri == lastUri }
@@ -439,14 +412,25 @@ class MainActivity : AppCompatActivity() {
         selectedSavedRoute = route
         selectedRoute = Uri.parse(route.uri)
         selectedRouteSummary = RouteCatalog.details(route)
+        routeListAdapter.selectedUri = route.uri
+        routeListAdapter.notifyDataSetChanged()
         RouteCatalog.save(this, savedRoutes, route.uri)
         val readable = RouteCatalog.isReadable(this, route)
         mapButton.isEnabled = readable
         if (readable) {
-            status.text = "경로를 선택했습니다"
+            status.text = "${route.displayName} 선택됨"
         } else {
             status.text = "이 경로의 파일 권한이 없습니다. 다시 가져오기 필요"
         }
+    }
+
+    private fun confirmRemoveSavedRoute(route: SavedRoute) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("목록에서 제거")
+            .setMessage("${route.displayName}을(를) 목록에서 제거하시겠습니까?")
+            .setNegativeButton("취소", null)
+            .setPositiveButton("제거") { _, _ -> removeSavedRoute(route) }
+            .show()
     }
 
     private fun removeSavedRoute(route: SavedRoute) {
@@ -455,13 +439,16 @@ class MainActivity : AppCompatActivity() {
         savedRoutes.addAll(remaining)
         val replacement = remaining.maxByOrNull { it.addedAt }
         RouteCatalog.save(this, savedRoutes, replacement?.uri)
+        if (selectedSavedRoute?.uri == route.uri) {
+            routeListAdapter.selectedUri = replacement?.uri
+        }
         routeListAdapter.notifyDataSetChanged()
         if (selectedSavedRoute?.uri == route.uri) {
             selectedSavedRoute = replacement
             selectedRoute = replacement?.let { Uri.parse(it.uri) }
             selectedRouteSummary = replacement?.let(RouteCatalog::details)
             mapButton.isEnabled = replacement?.let { RouteCatalog.isReadable(this, it) } == true
-            status.text = if (replacement == null) "경로를 가져오세요" else "경로를 선택했습니다"
+            status.text = if (replacement == null) "경로를 가져오세요" else "${replacement.displayName} 선택됨"
         }
     }
 
@@ -473,26 +460,15 @@ class MainActivity : AppCompatActivity() {
             return
         }
         try {
-            val rawView = mapViewIntent(uri)
-            if (canResolve(rawView)) {
-                startActivity(Intent.createChooser(rawView, "지도 앱 선택"))
+            if (launchMapIntent(uri, isSend = false)) {
                 return
             }
             val cachedUri = copyRouteToMapCache(route, uri)
             if (cachedUri != null) {
-                val cachedView = mapViewIntent(cachedUri)
-                if (canResolve(cachedView)) {
-                    startActivity(Intent.createChooser(cachedView, "지도 앱 선택"))
+                if (launchMapIntent(cachedUri, isSend = false)) {
                     return
                 }
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "application/gpx+xml"
-                    putExtra(Intent.EXTRA_STREAM, cachedUri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    clipData = android.content.ClipData.newRawUri("", cachedUri)
-                }
-                if (canResolve(send)) {
-                    startActivity(Intent.createChooser(send, "지도 앱 선택"))
+                if (launchMapIntent(cachedUri, isSend = true)) {
                     return
                 }
             }
@@ -504,9 +480,44 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun mapViewIntent(uri: Uri): Intent = Intent(Intent.ACTION_VIEW).apply {
+    private fun launchMapIntent(uri: Uri, isSend: Boolean): Boolean {
+        val candidates = MAP_APP_PACKAGES.mapNotNull { packageName ->
+            val candidate = if (isSend) mapSendIntent(uri, packageName) else mapViewIntent(uri, packageName)
+            candidate.takeIf(::canResolve)
+        }
+        return when (val plan = chooseMapLaunchPlan(candidates.mapNotNull { it.getPackage() })) {
+            MapLaunchPlan.None -> false
+            is MapLaunchPlan.Direct -> {
+                startActivity(candidates.first { it.getPackage() == plan.packageName })
+                true
+            }
+            is MapLaunchPlan.Chooser -> {
+                val primary = candidates.first { it.getPackage() == plan.primaryPackage }
+                val alternatives = plan.alternativePackages.mapNotNull { packageName ->
+                    candidates.firstOrNull { it.getPackage() == packageName }
+                }
+                startActivity(
+                    Intent.createChooser(primary, "지도 앱 선택").apply {
+                        putExtra(Intent.EXTRA_INITIAL_INTENTS, alternatives.toTypedArray())
+                    },
+                )
+                true
+            }
+        }
+    }
+
+    private fun mapViewIntent(uri: Uri, packageName: String): Intent = Intent(Intent.ACTION_VIEW).apply {
         data = uri
         type = "application/gpx+xml"
+        setPackage(packageName)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        clipData = android.content.ClipData.newRawUri("", uri)
+    }
+
+    private fun mapSendIntent(uri: Uri, packageName: String): Intent = Intent(Intent.ACTION_SEND).apply {
+        type = "application/gpx+xml"
+        setPackage(packageName)
+        putExtra(Intent.EXTRA_STREAM, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         clipData = android.content.ClipData.newRawUri("", uri)
     }
@@ -529,19 +540,23 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun renderVoiceLabel() {
-        val intervalLabel = when (onRouteVoiceIntervalSeconds) {
-            60L -> "1분"
-            180L -> "3분"
-            300L -> "5분"
-            else -> "끄기"
+    private fun renderVoiceSelections() {
+        intervalButtons.forEach { (button, intervalSeconds) ->
+            val selected = VoiceSelectionUi.intervalSelected(onRouteVoiceIntervalSeconds, intervalSeconds)
+            applyButtonSelection(button, selected, button.text.toString().removePrefix("✓ "))
         }
-        val modeLabel = when (onRouteVoiceMode) {
-            NavigationPreferences.PeriodicVoiceMode.OFF -> "끄기"
-            NavigationPreferences.PeriodicVoiceMode.PROMPT -> "기본 문구"
-            NavigationPreferences.PeriodicVoiceMode.TONE -> "신호음"
+        modeButtons.forEach { (button, mode) ->
+            val selected = VoiceSelectionUi.modeSelected(onRouteVoiceEnabled, onRouteVoiceMode, mode)
+            applyButtonSelection(button, selected, VoiceSelectionUi.modeLabel(mode))
         }
-        onRouteVoiceLabel.text = "경로 위 주기 음성: $intervalLabel · $modeLabel"
+    }
+
+    private fun applyButtonSelection(button: Button, selected: Boolean, label: String) {
+        button.text = if (selected) "✓ $label" else label
+        button.setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
+        button.setBackgroundColor(if (selected) 0xff2962ff.toInt() else Color.TRANSPARENT)
+        button.setTextColor(if (selected) Color.WHITE else Color.DKGRAY)
+        button.contentDescription = if (selected) "$label 선택됨" else label
     }
 
     private fun applyServiceState(state: String) {
@@ -571,7 +586,7 @@ class MainActivity : AppCompatActivity() {
         onRouteVoiceEnabled = storedVoice.enabled
         onRouteVoiceIntervalSeconds = storedVoice.intervalSeconds
         onRouteVoiceMode = storedVoice.mode
-        renderVoiceLabel()
+        renderVoiceSelections()
     }
 
     private fun sendServiceAction(action: String, source: String) {
