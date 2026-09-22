@@ -1,19 +1,24 @@
 package com.trailnav.app
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class OnDemandTriggerTest {
     @Test
     fun walkingLikeSamplesDoNotTriggerAndThreeHitsDo() {
-        val detector = ShakeDetector(OnDemandConfig())
+        val config = OnDemandConfig()
+        assertEquals(true, config.mediaButtonEnabled)
+        assertEquals(true, config.shakeEnabled)
+        assertEquals(6.0, config.shakeThresholdMetersPerSecondSquared)
+        val detector = ShakeDetector(config)
         assertFalse(detector.onSample(0L, 3.0))
-        assertFalse(detector.onSample(250L, 6.0))
+        assertFalse(detector.onSample(250L, 5.9))
         assertFalse(detector.onSample(500L, 4.0))
-        assertFalse(detector.onSample(750L, 10.0))
-        assertFalse(detector.onSample(800L, 10.1))
-        assertTrue(detector.onSample(900L, 10.2))
+        assertFalse(detector.onSample(750L, 6.0))
+        assertFalse(detector.onSample(800L, 6.1))
+        assertTrue(detector.onSample(900L, 6.2))
     }
 
     @Test
