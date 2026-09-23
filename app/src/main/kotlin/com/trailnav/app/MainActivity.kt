@@ -501,7 +501,7 @@ class MainActivity : AppCompatActivity() {
             }
             is MapLaunchPlan.Chooser -> {
                 val primary = launchIntent(plan.primaryPackage)
-                val alternatives = plan.alternativePackages.map(::launchIntent)
+                val alternatives = plan.alternativePackages.map { packageName -> launchIntent(packageName) }
                 startActivity(
                     Intent.createChooser(primary, "지도 앱 선택").apply {
                         putExtra(Intent.EXTRA_INITIAL_INTENTS, alternatives.toTypedArray())
@@ -515,14 +515,14 @@ class MainActivity : AppCompatActivity() {
     private fun mapViewIntent(uri: Uri, type: String, packageName: String? = null): Intent = Intent(Intent.ACTION_VIEW).apply {
         data = uri
         this.type = type
-        packageName?.let(::setPackage)
+        if (packageName != null) setPackage(packageName)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         clipData = android.content.ClipData.newRawUri("", uri)
     }
 
     private fun mapSendIntent(uri: Uri, type: String, packageName: String? = null): Intent = Intent(Intent.ACTION_SEND).apply {
         this.type = type
-        packageName?.let(::setPackage)
+        if (packageName != null) setPackage(packageName)
         putExtra(Intent.EXTRA_STREAM, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         clipData = android.content.ClipData.newRawUri("", uri)
