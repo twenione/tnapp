@@ -19,6 +19,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -472,30 +473,35 @@ class MainActivity : AppCompatActivity() {
                     return
                 }
             }
-            status.text = "GPX를 열 수 있는 지도 앱이 없습니다"
+            showMapUnavailable()
         } catch (_: android.content.ActivityNotFoundException) {
-            status.text = "GPX를 열 수 있는 지도 앱이 없습니다"
+            showMapUnavailable()
         } catch (_: SecurityException) {
-            status.text = "GPX를 열 수 있는 지도 앱이 없습니다"
+            showMapUnavailable()
         }
     }
 
     private fun launchMapIntent(uri: Uri, isSend: Boolean): Boolean {
-        val candidates = MAP_APP_PACKAGES.mapNotNull { packageName ->
-            val candidate = if (isSend) mapSendIntent(uri, packageName) else mapViewIntent(uri, packageName)
-            candidate.takeIf(::canResolve)
+        val exactType = "application/gpx+xml"
+        val exactIntent = if (isSend) mapSendIntent(uri, exactType) else mapViewIntent(uri, exactType)
+        val exactMatches = queryResolvedApps(exactIntent)
+        val actualType = contentResolver.getType(uri)?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+        val genericIntent = if (isSend) mapSendIntent(uri, actualType) else mapViewIntent(uri, actualType)
+        val genericMatches = queryResolvedApps(genericIntent).filter(::looksLikeMapApp)
+        val plan = chooseMapLaunchPlan(exactMatches, genericMatches)
+        val launchType = if (exactMatches.isNotEmpty()) exactType else actualType
+        val launchIntent = { packageName: String ->
+            if (isSend) mapSendIntent(uri, launchType, packageName) else mapViewIntent(uri, launchType, packageName)
         }
-        return when (val plan = chooseMapLaunchPlan(candidates.mapNotNull { it.getPackage() })) {
+        return when (plan) {
             MapLaunchPlan.None -> false
             is MapLaunchPlan.Direct -> {
-                startActivity(candidates.first { it.getPackage() == plan.packageName })
+                startActivity(launchIntent(plan.packageName))
                 true
             }
             is MapLaunchPlan.Chooser -> {
-                val primary = candidates.first { it.getPackage() == plan.primaryPackage }
-                val alternatives = plan.alternativePackages.mapNotNull { packageName ->
-                    candidates.firstOrNull { it.getPackage() == packageName }
-                }
+                val primary = launchIntent(plan.primaryPackage)
+                val alternatives = plan.alternativePackages.map(::launchIntent)
                 startActivity(
                     Intent.createChooser(primary, "지도 앱 선택").apply {
                         putExtra(Intent.EXTRA_INITIAL_INTENTS, alternatives.toTypedArray())
@@ -506,23 +512,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun mapViewIntent(uri: Uri, packageName: String): Intent = Intent(Intent.ACTION_VIEW).apply {
+    private fun mapViewIntent(uri: Uri, type: String, packageName: String? = null): Intent = Intent(Intent.ACTION_VIEW).apply {
         data = uri
-        type = "application/gpx+xml"
-        setPackage(packageName)
+        this.type = type
+        packageName?.let(::setPackage)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         clipData = android.content.ClipData.newRawUri("", uri)
     }
 
-    private fun mapSendIntent(uri: Uri, packageName: String): Intent = Intent(Intent.ACTION_SEND).apply {
-        type = "application/gpx+xml"
-        setPackage(packageName)
+    private fun mapSendIntent(uri: Uri, type: String, packageName: String? = null): Intent = Intent(Intent.ACTION_SEND).apply {
+        this.type = type
+        packageName?.let(::setPackage)
         putExtra(Intent.EXTRA_STREAM, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         clipData = android.content.ClipData.newRawUri("", uri)
     }
 
-    private fun canResolve(intent: Intent): Boolean = packageManager.resolveActivity(intent, 0) != null
+    private fun queryResolvedApps(intent: Intent): List<ResolvedApp> = packageManager
+        .queryIntentActivities(intent, 0)
+        .mapNotNull { info ->
+            val packageName = info.activityInfo?.packageName ?: return@mapNotNull null
+            ResolvedApp(packageName, info.loadLabel(packageManager)?.toString().orEmpty())
+        }
+
+    private fun showMapUnavailable() {
+        val message = "GPX를 열 수 있는 지도 앱이 없습니다"
+        status.text = message
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
 
     private fun copyRouteToMapCache(route: SavedRoute, uri: Uri): Uri? {
         return try {

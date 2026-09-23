@@ -37,6 +37,11 @@ internal class RouteListAdapter(
             addView(textColumn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(Button(context).apply {
                 text = "삭제"
+                // A focusable child can prevent ListView from delivering the
+                // row click. Keep the button touchable while leaving routing
+                // of the rest of the row to ListView.
+                isFocusable = false
+                isFocusableInTouchMode = false
                 setAllCaps(false)
                 textSize = 16f
                 minimumWidth = dp(72)
