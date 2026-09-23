@@ -153,7 +153,10 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         next = evaluateDynamicGuidance(initializedState, next, directedMatch, frame, config, suppressAnnouncements = true).state
         val shouldAnnounce = next.lastAnnouncementAt == null ||
             elapsedSeconds(frame.timestamp, next.lastAnnouncementAt) >= config.reannounceIntervalSeconds ||
-            (next.lastAnnouncementDistance != null && directedMatch.distanceMeters > next.lastAnnouncementDistance * 2.0)
+            (next.lastAnnouncementDistance != null && (
+                directedMatch.distanceMeters > next.lastAnnouncementDistance * 2.0 ||
+                    directedMatch.distanceMeters < next.lastAnnouncementDistance * 0.5
+                ))
         if (shouldAnnounce) {
             val sunset = evaluateSunsetStandalone(next, frame, config, higherPriority = true)
             next = sunset.state.copy(

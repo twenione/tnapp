@@ -1,5 +1,6 @@
 package com.trailnav.app
 
+import com.trailnav.core.Guidance
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -7,18 +8,39 @@ import kotlin.test.assertTrue
 
 class OnDemandTriggerTest {
     @Test
-    fun walkingLikeSamplesDoNotTriggerAndThreeHitsDo() {
+    fun walkingLikeSamplesDoNotTriggerAndFourHitsDo() {
         val config = OnDemandConfig()
         assertEquals(true, config.mediaButtonEnabled)
         assertEquals(true, config.shakeEnabled)
-        assertEquals(6.0, config.shakeThresholdMetersPerSecondSquared)
+        assertEquals(8.0, config.shakeThresholdMetersPerSecondSquared)
+        assertEquals(4, config.shakeHitsRequired)
         val detector = ShakeDetector(config)
         assertFalse(detector.onSample(0L, 3.0))
-        assertFalse(detector.onSample(250L, 5.9))
-        assertFalse(detector.onSample(500L, 4.0))
-        assertFalse(detector.onSample(750L, 6.0))
-        assertFalse(detector.onSample(800L, 6.1))
-        assertTrue(detector.onSample(900L, 6.2))
+        assertFalse(detector.onSample(250L, 6.5))
+        assertFalse(detector.onSample(500L, 7.9))
+        assertFalse(detector.onSample(750L, 8.0))
+        assertFalse(detector.onSample(800L, 8.1))
+        assertFalse(detector.onSample(850L, 8.2))
+        assertTrue(detector.onSample(900L, 8.3))
+    }
+
+    @Test
+    fun nonContiguousWalkingLikeSamplesDoNotTrigger() {
+        val detector = ShakeDetector(OnDemandConfig())
+        assertFalse(detector.onSample(0L, 8.0))
+        assertFalse(detector.onSample(701L, 8.0))
+        assertFalse(detector.onSample(1_402L, 8.0))
+        assertFalse(detector.onSample(2_103L, 8.0))
+    }
+
+    @Test
+    fun onlyTurnNowFlushesVoiceQueue() {
+        assertTrue(shouldFlushVoiceQueue(Guidance.TurnNow(com.trailnav.core.Side.RIGHT)))
+        assertFalse(shouldFlushVoiceQueue(Guidance.OffRoute(30.0, "forward")))
+        assertFalse(shouldFlushVoiceQueue(Guidance.Status("상태")))
+        assertFalse(shouldFlushVoiceQueue(Guidance.TurnAhead(20.0, com.trailnav.core.Side.LEFT)))
+        assertFalse(shouldFlushVoiceQueue(Guidance.Sunset(30)))
+        assertFalse(shouldFlushVoiceQueue(null))
     }
 
     @Test

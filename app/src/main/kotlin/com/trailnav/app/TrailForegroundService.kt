@@ -397,8 +397,12 @@ class TrailForegroundService : Service() {
                     ),
                 )
             }
-            if (guidanceVoiceAllowed && !spoken.isNullOrBlank()) tts?.speak(spoken)
-        } else if (!spoken.isNullOrBlank()) tts?.speak(spoken)
+            if (guidanceVoiceAllowed && !spoken.isNullOrBlank()) {
+                tts?.speak(spoken, flush = shouldFlushVoiceQueue(guidance))
+            }
+        } else if (!spoken.isNullOrBlank()) {
+            tts?.speak(spoken, flush = shouldFlushVoiceQueue(guidance))
+        }
         if (!paused && recoveryPrompt != null) {
             logger?.appendSystem(
                 "voice.recovered",
@@ -658,14 +662,14 @@ class TrailForegroundService : Service() {
         val sourceSeq = lastLocationSeq
         if (session == null || location == null || sourceSeq == null) {
             val text = GuidancePhrases.noLocationStatus()
-            tts?.speak(text)
+            tts?.speak(text, flush = true)
             logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-location", "paused" to paused.toString()))
             return
         }
         val status = session.routeStatus()
         if (status == null) {
             val text = GuidancePhrases.noLocationStatus()
-            tts?.speak(text)
+            tts?.speak(text, flush = true)
             logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-match", "paused" to paused.toString()))
             return
         }
@@ -689,7 +693,7 @@ class TrailForegroundService : Service() {
             ),
         )
         logger?.appendGuide(location, result, text, sourceSeq, trigger = "on-demand")
-        tts?.speak(text)
+        tts?.speak(text, flush = true)
         logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "route-status", "paused" to paused.toString()))
     }
 
@@ -829,6 +833,9 @@ class TrailForegroundService : Service() {
 }
 
 internal fun Guidance?.isReverseStatus(): Boolean = this is Guidance.Status && message == "역방향 진행 중"
+
+/** Only an immediate turn instruction interrupts already queued navigation speech. */
+internal fun shouldFlushVoiceQueue(guidance: Guidance?): Boolean = guidance is Guidance.TurnNow
 
 internal fun Guidance?.toSpeech(): String? = when (this) {
     is Guidance.OffRoute -> GuidancePhrases.offRoute(distance)
