@@ -134,7 +134,15 @@ class MainActivity : AppCompatActivity() {
                 }?.takeIf { it.isNotBlank() }
                     ?: uri.lastPathSegment?.takeIf { it.isNotBlank() }
                     ?: "GPX 경로"
-                SavedRoute(uri.toString(), displayName, hash, route.totalLengthMeters, System.currentTimeMillis())
+                SavedRoute(
+                    uri = uri.toString(),
+                    displayName = displayName,
+                    sha256 = hash,
+                    lengthMeters = route.totalLengthMeters,
+                    addedAt = System.currentTimeMillis(),
+                    elevationReason = route.elevationReason,
+                    waypointCount = route.waypoints.size,
+                )
             } ?: throw IllegalStateException("GPX를 읽을 수 없습니다")
             try {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -218,7 +226,7 @@ class MainActivity : AppCompatActivity() {
                     .show()
             }
         }
-        routeListAdapter = RouteListAdapter(this, savedRoutes, ::confirmRemoveSavedRoute)
+        routeListAdapter = RouteListAdapter(this, savedRoutes)
         val list = ListView(this).apply {
             adapter = routeListAdapter
             choiceMode = ListView.CHOICE_MODE_SINGLE

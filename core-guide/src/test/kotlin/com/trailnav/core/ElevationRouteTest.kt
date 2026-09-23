@@ -67,6 +67,40 @@ class ElevationRouteTest {
     }
 
     @Test
+    fun naverExtensionWaypointsAreProjectedAndFarPointsAreExcluded() {
+        val xml = """
+            <gpx xmlns:nmap="https://map.naver.com/gpx/1">
+              <extensions><nmap:walkCourse><nmap:waypoints>
+                <nmap:waypoint lat="10.00045" lon="20.0"><nmap:name>  출발지   </nmap:name></nmap:waypoint>
+                <nmap:waypoint lat="10.003" lon="20.0"><nmap:name>먼 지점</nmap:name></nmap:waypoint>
+              </nmap:waypoints></nmap:walkCourse></extensions>
+              <trk><trkseg>${pointXml(0)}${pointXml(1)}${pointXml(2)}</trkseg></trk>
+            </gpx>
+        """.trimIndent()
+        val route = RouteModel.fromGpx(xml)
+
+        check(route.waypoints.size == 1)
+        check(route.waypoints.single().name == "출발지")
+        check(route.waypoints.single().s > 0.0)
+    }
+
+    @Test
+    fun standardAndNaverWaypointsAreBothAccepted() {
+        val xml = """
+            <gpx xmlns:nmap="https://map.naver.com/gpx/1">
+              <wpt lat="10.00045" lon="20.0"><name>표준 지점</name></wpt>
+              <extensions><nmap:walkCourse><nmap:waypoints>
+                <nmap:waypoint lat="10.0009" lon="20.0"><nmap:name>네이버 지점</nmap:name></nmap:waypoint>
+              </nmap:waypoints></nmap:walkCourse></extensions>
+              <trk><trkseg>${pointXml(0)}${pointXml(1)}${pointXml(2)}</trkseg></trk>
+            </gpx>
+        """.trimIndent()
+        val route = RouteModel.fromGpx(xml)
+
+        check(route.waypoints.map { it.name } == listOf("표준 지점", "네이버 지점"))
+    }
+
+    @Test
     fun waypointAtRouteEndAndDuplicateNamesRemainStable() {
         val xml = """
             <gpx><trk><trkseg>${pointXml(0)}${pointXml(1)}</trkseg></trk>

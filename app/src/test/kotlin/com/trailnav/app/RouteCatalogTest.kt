@@ -11,13 +11,15 @@ class RouteCatalogTest {
         )
         val selected = RouteCatalog.upsert(
             routes,
-            SavedRoute("content://new", "new.gpx", "abc123", 1_100.0, 20L),
+            SavedRoute("content://new", "new.gpx", "abc123", 1_100.0, 20L, "ok", 4),
         )
 
         assertEquals(1, routes.size)
         assertEquals("content://new", selected.uri)
         assertEquals("new.gpx", routes.single().displayName)
         assertEquals(10L, routes.single().addedAt)
+        assertEquals("ok", routes.single().elevationReason)
+        assertEquals(4, routes.single().waypointCount)
     }
 
     @Test
@@ -34,5 +36,22 @@ class RouteCatalogTest {
             "8.99 km · sha256:def456 · 다시 가져오기 필요",
             RouteCatalog.detailLine(selected, readable = false),
         )
+    }
+
+    @Test
+    fun infoLevelLabelCoversElevationStatesAndWaypointSuffix() {
+        assertEquals("정보 확인 필요(다시 가져오기)", RouteCatalog.infoLevelLabel(null, null))
+        assertEquals("위치정보만", RouteCatalog.infoLevelLabel("absent", 0))
+        assertEquals("고도 일부 누락 · 지점 3개", RouteCatalog.infoLevelLabel("partial", 3))
+        assertEquals("고도 불안정(미사용)", RouteCatalog.infoLevelLabel("unstable", null))
+        assertEquals("위치+고도", RouteCatalog.infoLevelLabel("ok", 0))
+    }
+
+    @Test
+    fun infoLevelLabelAddsWaypointCountOnlyWhenKnownAndPositive() {
+        assertEquals("위치+고도 · 지점 2개", RouteCatalog.infoLevelLabel("ok", 2))
+        assertEquals("위치+고도", RouteCatalog.infoLevelLabel("ok", 0))
+        assertEquals("위치+고도", RouteCatalog.infoLevelLabel("ok", null))
+        assertEquals("정보 확인 필요(다시 가져오기)", RouteCatalog.infoLevelLabel(null, 4))
     }
 }
