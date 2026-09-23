@@ -5,7 +5,6 @@ import android.graphics.Color
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
 import android.widget.BaseAdapter
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -14,7 +13,6 @@ import android.widget.TextView
 internal class RouteListAdapter(
     private val context: Context,
     val items: MutableList<SavedRoute>,
-    private val onDeleteClicked: (SavedRoute) -> Unit,
 ) : BaseAdapter() {
     var selectedUri: String? = null
 
@@ -35,24 +33,18 @@ internal class RouteListAdapter(
                 addView(TextView(context).apply { textSize = 14f })
             }
             addView(textColumn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(Button(context).apply {
-                text = "삭제"
-                // A focusable child can prevent ListView from delivering the
-                // row click. Keep the button touchable while leaving routing
-                // of the rest of the row to ListView.
-                isFocusable = false
-                isFocusableInTouchMode = false
-                setAllCaps(false)
-                textSize = 16f
-                minimumWidth = dp(72)
-                minimumHeight = dp(48)
+            addView(TextView(context).apply {
+                textSize = 12f
+                gravity = Gravity.END
+                maxLines = 2
+                setTextColor(Color.DKGRAY)
             })
         }
         val route = getItem(position)
         val textColumn = row.getChildAt(0) as LinearLayout
         val title = textColumn.getChildAt(0) as TextView
         val details = textColumn.getChildAt(1) as TextView
-        val delete = row.getChildAt(1) as Button
+        val infoLevel = row.getChildAt(1) as TextView
         val readable = RouteCatalog.isReadable(context, route)
         val selected = isSelectedRoute(route, selectedUri)
         title.text = if (selected) "✓ ${route.displayName}" else route.displayName
@@ -60,9 +52,8 @@ internal class RouteListAdapter(
         row.setBackgroundColor(if (selected) 0xffe3f2fd.toInt() else Color.TRANSPARENT)
         details.text = RouteCatalog.detailLine(route, readable)
         details.setTextColor(if (readable) Color.DKGRAY else 0xffb71c1c.toInt())
-        delete.contentDescription = "${route.displayName} 삭제"
-        delete.setOnClickListener { onDeleteClicked(route) }
-        row.contentDescription = "${route.displayName}, ${details.text}"
+        infoLevel.text = RouteCatalog.infoLevelLabel(route.elevationReason, route.waypointCount)
+        row.contentDescription = "${route.displayName}, ${details.text}, ${infoLevel.text}"
         return row
     }
 

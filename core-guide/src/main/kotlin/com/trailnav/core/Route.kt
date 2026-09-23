@@ -254,6 +254,8 @@ internal data class SegmentProjection(
 )
 
 internal object GpxRouteParser {
+    private const val NAVER_MAP_EXTENSION_NAMESPACE = "https://map.naver.com/gpx/1"
+
     fun parse(xml: String, config: GuideConfig): RouteModel {
         val factory = DocumentBuilderFactory.newInstance()
         factory.isNamespaceAware = true
@@ -271,16 +273,19 @@ internal object GpxRouteParser {
         }
         require(parsedPoints.isNotEmpty()) { "GPX contains no valid trkpt or rtept" }
         val waypoints = mutableListOf<ParsedWaypoint>()
-        val waypointElements = document.getElementsByTagName("wpt")
-        for (index in 0 until waypointElements.length) {
-            val node = waypointElements.item(index)
-            val lat = node.attributes?.getNamedItem("lat")?.nodeValue?.toDoubleOrNull()
-            val lon = node.attributes?.getNamedItem("lon")?.nodeValue?.toDoubleOrNull()
-            val name = sanitizeName(childText(node, "name"), config.waypointNameMaxLength)
-            if (lat != null && lon != null && lat.isFinite() && lon.isFinite() && name != null) {
-                waypoints.add(ParsedWaypoint(GeoPoint(lat, lon), name))
+        fun appendWaypoints(nodes: org.w3c.dom.NodeList) {
+            for (index in 0 until nodes.length) {
+                val node = nodes.item(index)
+                val lat = node.attributes?.getNamedItem("lat")?.nodeValue?.toDoubleOrNull()
+                val lon = node.attributes?.getNamedItem("lon")?.nodeValue?.toDoubleOrNull()
+                val name = sanitizeName(childText(node, "name"), config.waypointNameMaxLength)
+                if (lat != null && lon != null && lat.isFinite() && lon.isFinite() && name != null) {
+                    waypoints.add(ParsedWaypoint(GeoPoint(lat, lon), name))
+                }
             }
         }
+        appendWaypoints(document.getElementsByTagName("wpt"))
+        appendWaypoints(document.getElementsByTagNameNS(NAVER_MAP_EXTENSION_NAMESPACE, "waypoint"))
         return preprocess(parsedPoints, waypoints, config)
     }
 
