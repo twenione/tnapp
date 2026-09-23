@@ -125,6 +125,30 @@ class GuidanceTest {
     }
 
     @Test
+    fun offRouteReannouncesWhenApproachingByHalfDistanceBeforeInterval() {
+        val route = RouteModel.fromGpx("""<gpx><trk><trkseg><trkpt lat="10.0" lon="20.0"/><trkpt lat="10.002" lon="20.0"/></trkseg></trk></gpx>""")
+        val config = GuideConfig(offRouteEnterDwellSeconds = 0.0, offRouteExitDwellSeconds = 10.0, reannounceIntervalSeconds = 60.0)
+        val metersPerDegreeLon = 6371008.8 * cos(Math.toRadians(10.0)) * Math.PI / 180.0
+        val east30Meters = 30.0 / metersPerDegreeLon
+        val east14Meters = 14.0 / metersPerDegreeLon
+        val first = guide(
+            GuideState.initial(route),
+            SensorFrame(0L, 10.0005, 20.0 + east30Meters, 5f, 1f, null),
+            config,
+        )
+        check(first.guidance is Guidance.OffRoute)
+        val approaching = guide(
+            first.nextState,
+            SensorFrame(1_000L, 10.0005, 20.0 + east14Meters, 5f, 1f, null),
+            config,
+        )
+        check(approaching.nextState.offRoute) { "exit dwell must still hold off-route state" }
+        check(approaching.guidance is Guidance.OffRoute) {
+            "approaching to below half the last distance must re-announce before the interval"
+        }
+    }
+
+    @Test
     fun recoveryDwellDoesNotExitAfterSubsecondGap() {
         val route = RouteModel.fromGpx("""<gpx><trk><trkseg><trkpt lat="10.0" lon="20.0"/><trkpt lat="10.002" lon="20.0"/></trkseg></trk></gpx>""")
         val config = GuideConfig(offRouteEnterDwellSeconds = 0.0, offRouteExitDwellSeconds = 10.0)

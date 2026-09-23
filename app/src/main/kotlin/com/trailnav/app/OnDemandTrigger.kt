@@ -11,10 +11,11 @@ data class OnDemandConfig(
     val mediaButtonEnabled: Boolean = true,
     val shakeEnabled: Boolean = true,
     val debounceMillis: Long = 1_500L,
-    // Field-test baseline: walking-like 0.9-3.3 m/s² samples do not trigger;
-    // a deliberate shake must reach 6.0 m/s² three times in the window.
-    val shakeThresholdMetersPerSecondSquared: Double = 6.0,
-    val shakeHitsRequired: Int = 3,
+    // Provisional field-test baseline: walking-like 3.0-6.5 m/s² samples do
+    // not trigger; a deliberate shake must reach 8.0 m/s² four times in the
+    // window. Revisit after separate normal-walk and deliberate-shake runs.
+    val shakeThresholdMetersPerSecondSquared: Double = 8.0,
+    val shakeHitsRequired: Int = 4,
     val shakeWindowMillis: Long = 700L,
 )
 
