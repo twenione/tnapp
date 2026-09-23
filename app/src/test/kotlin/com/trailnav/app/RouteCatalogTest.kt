@@ -42,7 +42,7 @@ class RouteCatalogTest {
     fun infoLevelLabelCoversElevationStatesAndWaypointSuffix() {
         assertEquals("정보 확인 필요(다시 가져오기)", RouteCatalog.infoLevelLabel(null, null))
         assertEquals("위치정보만", RouteCatalog.infoLevelLabel("absent", 0))
-        assertEquals("고도 일부 누락", RouteCatalog.infoLevelLabel("partial", 3))
+        assertEquals("고도 일부 누락 · 지점 3개", RouteCatalog.infoLevelLabel("partial", 3))
         assertEquals("고도 불안정(미사용)", RouteCatalog.infoLevelLabel("unstable", null))
         assertEquals("위치+고도", RouteCatalog.infoLevelLabel("ok", 0))
     }
