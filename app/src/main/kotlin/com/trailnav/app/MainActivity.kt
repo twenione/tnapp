@@ -484,7 +484,7 @@ class MainActivity : AppCompatActivity() {
     private fun launchMapIntent(uri: Uri, isSend: Boolean): Boolean {
         val exactType = "application/gpx+xml"
         val exactIntent = if (isSend) mapSendIntent(uri, exactType) else mapViewIntent(uri, exactType)
-        val exactMatches = queryResolvedApps(exactIntent)
+        val exactMatches = queryResolvedApps(exactIntent).filter(::looksLikeMapApp)
         val actualType = contentResolver.getType(uri)?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
         val genericIntent = if (isSend) mapSendIntent(uri, actualType) else mapViewIntent(uri, actualType)
         val genericMatches = queryResolvedApps(genericIntent).filter(::looksLikeMapApp)
