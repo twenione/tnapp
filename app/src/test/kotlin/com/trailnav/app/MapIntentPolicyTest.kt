@@ -10,6 +10,7 @@ class MapIntentPolicyTest {
         assertEquals(true, looksLikeMapApp(ResolvedApp("com.nhn.android.nmap", "네이버지도")))
         assertEquals(true, looksLikeMapApp(ResolvedApp("com.example.navigation", "Google Maps")))
         assertEquals(true, looksLikeMapApp(ResolvedApp("com.example.trail", "Trail helper")))
+        assertEquals(true, looksLikeMapApp(ResolvedApp("com.example.sangilsam", "산길샘")))
         assertEquals(false, looksLikeMapApp(ResolvedApp("com.google.android.gm", "Gmail")))
         assertEquals(false, looksLikeMapApp(ResolvedApp("com.kakao.talk", "카카오톡")))
         assertEquals(false, looksLikeMapApp(ResolvedApp("com.example.files", "파일 관리자")))
@@ -17,7 +18,7 @@ class MapIntentPolicyTest {
 
     @Test
     fun noResolvedMapAppsProducesNone() {
-        assertIs<MapLaunchPlan.None>(chooseMapLaunchPlan(emptyList(), emptyList()))
+        assertIs<MapLaunchPlan.None>(chooseMapLaunchPlan(emptyList(), emptyList(), emptyList()))
     }
 
     @Test
@@ -25,6 +26,7 @@ class MapIntentPolicyTest {
         assertEquals(
             MapLaunchPlan.Direct("com.example.exact"),
             chooseMapLaunchPlan(
+                untypedMatches = emptyList(),
                 exactTypeMatches = listOf(ResolvedApp("com.example.exact", "GPX Viewer")),
                 genericTypeMapLikeMatches = listOf(ResolvedApp("com.example.map", "지도 앱")),
             ),
@@ -36,6 +38,7 @@ class MapIntentPolicyTest {
         assertEquals(
             MapLaunchPlan.Direct("com.example.map"),
             chooseMapLaunchPlan(
+                untypedMatches = emptyList(),
                 exactTypeMatches = emptyList(),
                 genericTypeMapLikeMatches = listOf(ResolvedApp("com.example.map", "지도 앱")),
             ),
@@ -50,12 +53,25 @@ class MapIntentPolicyTest {
                 listOf("com.example.navi"),
             ),
             chooseMapLaunchPlan(
+                untypedMatches = emptyList(),
                 exactTypeMatches = emptyList(),
                 genericTypeMapLikeMatches = listOf(
                     ResolvedApp("com.example.map", "지도"),
                     ResolvedApp("com.example.navi", "Navi"),
                     ResolvedApp("com.example.map", "지도"),
                 ),
+            ),
+        )
+    }
+
+    @Test
+    fun untypedViewCandidatesTakePrecedenceOverTypedCandidates() {
+        assertEquals(
+            MapLaunchPlan.Direct("com.example.untyped"),
+            chooseMapLaunchPlan(
+                untypedMatches = listOf(ResolvedApp("com.example.untyped", "네이버지도")),
+                exactTypeMatches = listOf(ResolvedApp("com.example.exact", "GPX Viewer")),
+                genericTypeMapLikeMatches = listOf(ResolvedApp("com.example.generic", "지도 앱")),
             ),
         )
     }
