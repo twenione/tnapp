@@ -14,6 +14,7 @@ internal val MAP_APP_LABEL_KEYWORDS = listOf(
     "gps",
     "trail",
     "track",
+    "산길",
 )
 
 internal fun looksLikeMapApp(app: ResolvedApp): Boolean =
@@ -29,10 +30,11 @@ internal sealed class MapLaunchPlan {
 }
 
 internal fun chooseMapLaunchPlan(
+    untypedMatches: List<ResolvedApp>,
     exactTypeMatches: List<ResolvedApp>,
     genericTypeMapLikeMatches: List<ResolvedApp>,
 ): MapLaunchPlan {
-    val distinct = (exactTypeMatches.ifEmpty { genericTypeMapLikeMatches })
+    val distinct = (untypedMatches.ifEmpty { exactTypeMatches.ifEmpty { genericTypeMapLikeMatches } })
         .filter { it.packageName.isNotBlank() }
         .distinctBy { it.packageName }
     return when (distinct.size) {

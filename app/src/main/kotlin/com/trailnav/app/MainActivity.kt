@@ -496,10 +496,23 @@ class MainActivity : AppCompatActivity() {
         val actualType = contentResolver.getType(uri)?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
         val genericIntent = if (isSend) mapSendIntent(uri, actualType) else mapViewIntent(uri, actualType)
         val genericMatches = queryResolvedApps(genericIntent).filter(::looksLikeMapApp)
-        val plan = chooseMapLaunchPlan(exactMatches, genericMatches)
-        val launchType = if (exactMatches.isNotEmpty()) exactType else actualType
+        val untypedMatches = if (isSend) {
+            emptyList()
+        } else {
+            queryResolvedApps(mapViewIntent(uri, type = null)).filter(::looksLikeMapApp)
+        }
+        val plan = chooseMapLaunchPlan(untypedMatches, exactMatches, genericMatches)
+        val launchType = when {
+            untypedMatches.isNotEmpty() -> null
+            exactMatches.isNotEmpty() -> exactType
+            else -> actualType
+        }
         val launchIntent = { packageName: String ->
-            if (isSend) mapSendIntent(uri, launchType, packageName) else mapViewIntent(uri, launchType, packageName)
+            if (isSend) {
+                mapSendIntent(uri, launchType ?: actualType, packageName)
+            } else {
+                mapViewIntent(uri, launchType, packageName)
+            }
         }
         return when (plan) {
             MapLaunchPlan.None -> false
@@ -520,9 +533,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun mapViewIntent(uri: Uri, type: String, packageName: String? = null): Intent = Intent(Intent.ACTION_VIEW).apply {
+    private fun mapViewIntent(uri: Uri, type: String?, packageName: String? = null): Intent = Intent(Intent.ACTION_VIEW).apply {
         data = uri
-        this.type = type
+        if (type != null) this.type = type
         if (packageName != null) setPackage(packageName)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         clipData = android.content.ClipData.newRawUri("", uri)
