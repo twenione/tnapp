@@ -8,6 +8,7 @@ import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /** Pure Phase 1 guidance engine. It reads no clock, random source, or I/O. */
@@ -19,50 +20,6 @@ object Engine {
 /** Kotlin-friendly top-level entry point matching the roadmap interface. */
 fun guide(state: GuideState, frame: SensorFrame, config: GuideConfig = GuideConfig()): GuideResult =
     Engine.guide(state, frame, config)
-
-/** The pure content decision made when the app opens a periodic voice slot. */
-data class SlotContentResult(
-    val content: Guidance,
-    val nextState: GuideState,
-    val reason: Reason,
-)
-
-private const val DEFAULT_SLOT_MESSAGE = "정상적으로 경로를 따라가고 있습니다."
-
-/**
- * Select one slot message without mutating the input state.  E5 is the only
- * slot-specific event: it uses the same smoothed route profile as E4 and
- * records its last rounded value in the returned state to avoid repetition.
- */
-fun slotContent(state: GuideState, config: GuideConfig = GuideConfig()): SlotContentResult {
-    val fallback = Guidance.Status(DEFAULT_SLOT_MESSAGE)
-    val fallbackReason = Reason("slot.default", details = mapOf("event" to "slot"))
-    if (!config.periodicEnabled || !config.elevationEnabled || state.offRoute) {
-        return SlotContentResult(fallback, state, fallbackReason)
-    }
-    val match = state.lastMatch
-        ?: return SlotContentResult(fallback, state, fallbackReason)
-    val route = state.route
-    if (!route.elevationUse.used || route.smoothedElevationMeters.isEmpty()) {
-        return SlotContentResult(fallback, state, fallbackReason)
-    }
-    val rawElevation = interpolateElevation(route, match.projectedMeters)
-        ?: return SlotContentResult(fallback, state, fallbackReason)
-    val unit = config.elevationRoundMeters
-    val rounded = floor(rawElevation / unit + 0.5) * unit
-    if (state.lastElevationAnnouncementMeters?.let { it == rounded } == true) {
-        return SlotContentResult(fallback, state, fallbackReason.copy(details = mapOf("event" to "slot", "reason" to "elevation-repeat")))
-    }
-    val next = state.copy(lastElevationAnnouncementMeters = rounded)
-    return SlotContentResult(
-        content = Guidance.Elevation(rounded),
-        nextState = next,
-        reason = Reason(
-            "slot.elevation",
-            details = mapOf("event" to "E5", "elevationMeters" to rounded.toString()),
-        ),
-    )
-}
 
 private fun interpolateElevation(route: RouteModel, projectedMeters: Double): Double? {
     val profile = route.smoothedElevationMeters
@@ -89,10 +46,13 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
     }
     if (frame.accuracy.toDouble() > config.accuracyRejectMeters) {
         val sunset = evaluateSunsetStandalone(initializedState, frame, config, higherPriority = false)
-        if (sunset.guidance != null) return sunset.toResult("input.accuracy-filter")
+        val sunriseState = evaluateSunriseStandalone(sunset.state, frame, config)
+        if (sunset.guidance != null) {
+            return GuideResult(sunset.guidance, sunriseState, sunset.reason.copy(rule = "input.accuracy-filter"))
+        }
         return GuideResult(
             null,
-            sunset.state,
+            sunriseState,
             Reason(
                 rule = "input.accuracy-filter",
                 thresholds = mapOf("accuracyRejectMeters" to config.accuracyRejectMeters),
@@ -103,8 +63,11 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
     val match = RouteMatcher.nearest(initializedState.route, frame, initializedState.lastMatch?.projectedMeters, config)
     if (match == null) {
         val sunset = evaluateSunsetStandalone(initializedState, frame, config, higherPriority = false)
-        return if (sunset.guidance != null) sunset.toResult("matching.no-route-segment")
-        else GuideResult(null, sunset.state, Reason("matching.no-route-segment"))
+        val sunriseState = evaluateSunriseStandalone(sunset.state, frame, config)
+        if (sunset.guidance != null) {
+            return GuideResult(sunset.guidance, sunriseState, sunset.reason.copy(rule = "matching.no-route-segment"))
+        }
+        return GuideResult(null, sunriseState, Reason("matching.no-route-segment"))
     }
     val directedMatch = RouteMatcher.withDirection(initializedState, match, frame, config)
     val ema = RouteMatcher.updatedEma(initializedState, directedMatch, config)
@@ -262,8 +225,10 @@ private data class DynamicCandidate(
 /** Single arbitration table for simultaneous periodic events (R14). */
 internal object EventPriority {
     const val SUNSET = 600
+    const val SUNRISE = 450
     const val REMAINING = 500
     const val SLOPE = 400
+    const val ELEVATION = 250
     const val WAYPOINT = 300
     const val MILESTONE = 200
     const val ELAPSED = 100
@@ -298,7 +263,7 @@ private fun evaluateDynamicGuidance(
         val crossed = (oldMilestoneCount + 1..milestoneCount).toList()
         next = next.copy(consumedMilestoneIndices = next.consumedMilestoneIndices + crossed)
         val freshCrossed = crossed.filterNot { it in previous.consumedMilestoneIndices }
-        if (config.milestoneEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && freshCrossed.isNotEmpty()) {
+        if (config.milestoneEnabled && onRoute && forward && eventIntervalOpen && freshCrossed.isNotEmpty()) {
             val index = freshCrossed.maxOrNull()!!
             candidates += DynamicCandidate(
                 EventPriority.MILESTONE, "event.milestone", Guidance.Milestone(index * config.milestoneIntervalMeters),
@@ -315,7 +280,7 @@ private fun evaluateDynamicGuidance(
         val oldCount = previous.lastTimestamp?.let { floor(elapsedSeconds(it, start) / config.elapsedAnnounceIntervalSeconds).toInt() } ?: count
         val crossed = (oldCount + 1..count).toList()
         next = next.copy(consumedElapsedIndices = next.consumedElapsedIndices + crossed)
-        if (config.elapsedEnabled && config.periodicEnabled && onRoute && eventIntervalOpen && crossed.isNotEmpty()) {
+        if (config.elapsedEnabled && onRoute && eventIntervalOpen && crossed.isNotEmpty()) {
             val index = crossed.maxOrNull()!!
             candidates += DynamicCandidate(
                 EventPriority.ELAPSED, "event.elapsed", Guidance.Elapsed(index),
@@ -328,7 +293,7 @@ private fun evaluateDynamicGuidance(
     val oldRemainingValue = oldRemaining ?: remaining
     val crossedRemaining = config.remainingAnnounceMeters.filter { oldRemainingValue > it && remaining <= it }
     next = next.copy(consumedRemainingThresholds = next.consumedRemainingThresholds + crossedRemaining)
-    if (config.remainingEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && crossedRemaining.isNotEmpty()) {
+    if (config.remainingEnabled && onRoute && forward && eventIntervalOpen && crossedRemaining.isNotEmpty()) {
         val threshold = crossedRemaining.minOrNull()!!
         candidates += DynamicCandidate(
             EventPriority.REMAINING, "event.remaining", Guidance.Remaining(threshold),
@@ -342,7 +307,7 @@ private fun evaluateDynamicGuidance(
         if (distance < 0.0) next = next.copy(consumedSlopeIndices = next.consumedSlopeIndices + index)
         else if (distance <= config.slopeAnnounceLeadMeters) {
             next = next.copy(consumedSlopeIndices = next.consumedSlopeIndices + index)
-            if (config.slopeEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedSlopeIndices) {
+            if (config.slopeEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedSlopeIndices) {
                 candidates += DynamicCandidate(
                     EventPriority.SLOPE, "event.slope", Guidance.Slope(segment.kind, segment.deltaMeters),
                     reason("event.slope", "E4", mapOf("segmentIndex" to index.toString(), "startS" to segment.startS.toString(), "deltaMeters" to segment.deltaMeters.toString()))
@@ -357,7 +322,7 @@ private fun evaluateDynamicGuidance(
         if (distance < 0.0) next = next.copy(consumedWaypointIndices = next.consumedWaypointIndices + index)
         else if (distance <= config.waypointAnnounceLeadMeters) {
             next = next.copy(consumedWaypointIndices = next.consumedWaypointIndices + index)
-            if (config.waypointEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedWaypointIndices) {
+            if (config.waypointEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedWaypointIndices) {
                 candidates += DynamicCandidate(
                     EventPriority.WAYPOINT, "event.waypoint", Guidance.Waypoint(index, waypoint.name, distance),
                     reason("event.waypoint", "E6", mapOf("waypointIndex" to index.toString(), "name" to waypoint.name, "distanceMeters" to distance.toString()))
@@ -366,10 +331,36 @@ private fun evaluateDynamicGuidance(
         }
     }
 
-    // E7 is independent of periodicEnabled and is the sole deferred event.
+    // E7 is evaluated before the new E5/E8 candidates so it can retain its
+    // existing higher-priority/deferred semantics.
     val sunsetEvaluation = evaluateSunset(previous, next, frame, config, eventIntervalOpen, candidates.isNotEmpty())
     next = sunsetEvaluation.state
     sunsetEvaluation.candidate?.let { candidates += it }
+
+    // E5: announce a crossed elevation boundary.  The band state advances
+    // even when the event is disabled, off-route, or inside the min interval.
+    val elevationEvaluation = evaluateElevationBoundary(
+        next,
+        match,
+        config,
+        onRoute = onRoute,
+        eventIntervalOpen = eventIntervalOpen,
+    )
+    next = elevationEvaluation.state
+    elevationEvaluation.candidate?.let { candidates += it }
+
+    // E8: sunrise thresholds are consumed once per local day.  The event is
+    // direction-independent and never re-fires after a threshold is consumed.
+    val sunriseEvaluation = evaluateSunrise(
+        previous,
+        next,
+        frame,
+        config,
+        onRoute = onRoute,
+        eventIntervalOpen = eventIntervalOpen,
+    )
+    next = sunriseEvaluation.state
+    sunriseEvaluation.candidate?.let { candidates += it }
 
     val selected = candidates.maxByOrNull { it.priority }
     if (selected == null) {
@@ -387,6 +378,157 @@ private fun evaluateDynamicGuidance(
     )
     return DynamicEvaluation(next, selected.guidance, selected.reason)
 }
+
+private data class ElevationEvaluation(
+    val state: GuideState,
+    val candidate: DynamicCandidate?,
+)
+
+private fun evaluateElevationBoundary(
+    state: GuideState,
+    match: MatchResult,
+    config: GuideConfig,
+    onRoute: Boolean,
+    eventIntervalOpen: Boolean,
+): ElevationEvaluation {
+    val route = state.route
+    if (!route.elevationUse.used || route.smoothedElevationMeters.isEmpty()) {
+        return ElevationEvaluation(state, null)
+    }
+    val elevation = interpolateElevation(route, match.projectedMeters)
+        ?: return ElevationEvaluation(state, null)
+    val previousBand = state.elevationBand
+    if (previousBand == null) {
+        return ElevationEvaluation(
+            state.copy(elevationBand = floor(elevation / config.elevationBoundaryMeters).toInt()),
+            null,
+        )
+    }
+    var band = previousBand
+    while (elevation >= (band + 1) * config.elevationBoundaryMeters + config.elevationHysteresisMeters) {
+        band += 1
+    }
+    while (elevation < band * config.elevationBoundaryMeters - config.elevationHysteresisMeters) {
+        band -= 1
+    }
+    val next = state.copy(elevationBand = band)
+    if (band == previousBand || !config.elevationEnabled || !onRoute || !eventIntervalOpen) {
+        return ElevationEvaluation(next, null)
+    }
+    val ascending = band > previousBand
+    val boundary = if (ascending) band * config.elevationBoundaryMeters else (band + 1) * config.elevationBoundaryMeters
+    val reason = Reason(
+        rule = "event.elevation",
+        thresholds = mapOf(
+            "elevationBoundaryMeters" to config.elevationBoundaryMeters,
+            "elevationHysteresisMeters" to config.elevationHysteresisMeters,
+            "eventMinIntervalSeconds" to config.eventMinIntervalSeconds,
+        ),
+        details = mapOf(
+            "event" to "E5",
+            "boundaryMeters" to boundary.toString(),
+            "direction" to if (ascending) "up" else "down",
+            "elevationMeters" to elevation.toString(),
+        ),
+    )
+    return ElevationEvaluation(
+        next,
+        DynamicCandidate(EventPriority.ELEVATION, "event.elevation", Guidance.Elevation(boundary), reason),
+    )
+}
+
+private data class SunriseEvaluation(
+    val state: GuideState,
+    val candidate: DynamicCandidate?,
+)
+
+private fun evaluateSunrise(
+    previous: GuideState,
+    state: GuideState,
+    frame: SensorFrame,
+    config: GuideConfig,
+    onRoute: Boolean,
+    eventIntervalOpen: Boolean,
+): SunriseEvaluation {
+    val localDate = sunriseLocalDate(frame.timestamp, frame.lon)
+    val localDay = localDate.toEpochDay()
+    val dayChanged = state.sunriseLocalDay != localDay
+    val consumed = if (dayChanged) emptySet() else state.consumedSunriseThresholds
+    val sunrise = sunriseEpochSeconds(frame.timestamp, frame.lat, frame.lon)
+    if (sunrise == null) {
+        return SunriseEvaluation(
+            state.copy(
+                sunriseLocalDay = localDay,
+                sunriseEvaluated = true,
+                consumedSunriseThresholds = consumed,
+            ),
+            null,
+        )
+    }
+    val minutes = (sunrise - frame.timestamp / 1000.0) / 60.0
+    val firstEvaluation = dayChanged || !state.sunriseEvaluated
+    val oldMinutes = previous.lastTimestamp?.let { (sunrise - it / 1000.0) / 60.0 } ?: minutes
+    val newlyCrossed = when {
+        minutes <= 0.0 -> config.sunriseAnnounceMinutes.filter { it !in consumed }.toSet()
+        firstEvaluation -> config.sunriseAnnounceMinutes.filter { minutes <= it && it !in consumed }.toSet()
+        else -> config.sunriseAnnounceMinutes.filter {
+            oldMinutes > it && minutes <= it && it !in consumed
+        }.toSet()
+    }
+    val next = state.copy(
+        sunriseLocalDay = localDay,
+        sunriseEvaluated = true,
+        consumedSunriseThresholds = consumed + newlyCrossed,
+    )
+    if (
+        minutes <= 0.0 || newlyCrossed.isEmpty() || !config.sunriseEnabled ||
+        !onRoute || !eventIntervalOpen
+    ) {
+        return SunriseEvaluation(next, null)
+    }
+    val minutesRemaining = minutes.roundToInt().coerceAtLeast(1)
+    val reason = Reason(
+        rule = "event.sunrise",
+        thresholds = mapOf(
+            "eventMinIntervalSeconds" to config.eventMinIntervalSeconds,
+            "sunriseAnnounceMinutes" to newlyCrossed.maxOrNull()!!.toDouble(),
+        ),
+        details = mapOf(
+            "event" to "E8",
+            "thresholdMinutes" to newlyCrossed.sortedDescending().joinToString(","),
+            "minutesRemaining" to minutesRemaining.toString(),
+            "startAnnouncement" to firstEvaluation.toString(),
+            "sunriseEpochSeconds" to sunrise.toString(),
+        ),
+    )
+    return SunriseEvaluation(
+        next,
+        DynamicCandidate(EventPriority.SUNRISE, "event.sunrise", Guidance.Sunrise(minutesRemaining), reason),
+    )
+}
+
+private fun evaluateSunriseStandalone(
+    state: GuideState,
+    frame: SensorFrame,
+    config: GuideConfig,
+): GuideState {
+    val intervalOpen = state.lastPeriodicEventAt == null ||
+        elapsedSeconds(frame.timestamp, state.lastPeriodicEventAt) >= config.eventMinIntervalSeconds
+    return evaluateSunrise(
+        previous = state,
+        state = state,
+        frame = frame,
+        config = config,
+        onRoute = false,
+        eventIntervalOpen = intervalOpen,
+    ).state
+}
+
+private fun sunriseLocalDate(timestamp: Long, longitude: Double): LocalDate =
+    Instant.ofEpochMilli(timestamp)
+        .atZone(ZoneOffset.UTC)
+        .plusSeconds((longitude * 240.0).toLong())
+        .toLocalDate()
 
 private data class SunsetEvaluation(
     val state: GuideState,
@@ -510,6 +652,23 @@ private fun sunsetEpochSeconds(timestamp: Long, latitude: Double, longitude: Dou
     val sunsetMinutesUtc = 720.0 - 4.0 * longitude + hourAngleMinutes - equation
     val midnight = localDate.atStartOfDay(ZoneOffset.UTC).toEpochSecond()
     return midnight + sunsetMinutesUtc * 60.0
+}
+
+/** Deterministic NOAA-style sunrise approximation; null denotes polar no-sunrise. */
+internal fun sunriseEpochSeconds(timestamp: Long, latitude: Double, longitude: Double): Double? {
+    val localDate = sunriseLocalDate(timestamp, longitude)
+    val dayOfYear = localDate.dayOfYear
+    val gamma = 2.0 * Math.PI / 365.0 * (dayOfYear - 1 + 0.5)
+    val declination = 0.006918 - 0.399912 * cos(gamma) + 0.070257 * sin(gamma) - 0.006758 * cos(2 * gamma) + 0.000907 * sin(2 * gamma)
+    val equation = 229.18 * (0.000075 + 0.001868 * cos(gamma) - 0.032077 * sin(gamma) - 0.014615 * cos(2 * gamma) - 0.040849 * sin(2 * gamma))
+    val zenith = Math.toRadians(90.833)
+    val latitudeRadians = Math.toRadians(latitude)
+    val cosHour = (cos(zenith) - sin(latitudeRadians) * sin(declination)) / (cos(latitudeRadians) * cos(declination))
+    if (cosHour !in -1.0..1.0) return null
+    val hourAngleMinutes = Math.toDegrees(kotlin.math.acos(cosHour)) * 4.0
+    val sunriseMinutesUtc = 720.0 - 4.0 * longitude - hourAngleMinutes - equation
+    val midnight = localDate.atStartOfDay(ZoneOffset.UTC).toEpochSecond()
+    return midnight + sunriseMinutesUtc * 60.0
 }
 
 private data class TurnEvaluation(

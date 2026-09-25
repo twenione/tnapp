@@ -18,4 +18,9 @@ class GuidancePhrasesTest {
         assertEquals("45미터 앞, 왼쪽으로 꺾입니다", GuidancePhrases.turnAhead(45.0, Side.LEFT))
         assertEquals("오른쪽입니다", GuidancePhrases.turnNow(Side.RIGHT))
     }
+
+    @Test
+    fun sunrisePhraseIncludesMinutes() {
+        assertEquals("일출까지 10분입니다", GuidancePhrases.sunrise(10))
+    }
 }

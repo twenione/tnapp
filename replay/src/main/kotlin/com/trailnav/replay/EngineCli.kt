@@ -158,6 +158,7 @@ private fun decision(guidance: Guidance?): String = when (guidance) {
     is Guidance.Elevation -> "ELEVATION"
     is Guidance.Waypoint -> "WAYPOINT"
     is Guidance.Sunset -> "SUNSET"
+    is Guidance.Sunrise -> "SUNRISE"
     is Guidance.Status -> "STATUS"
     Guidance.Arrived -> "ARRIVED"
 }

@@ -65,7 +65,7 @@ VARIANTS = {
     ),
     "sunset-periodic-gate": (
         "if (!config.sunsetEnabled) return SunsetEvaluation(state, null)",
-        "if (!config.sunsetEnabled || !config.periodicEnabled) return SunsetEvaluation(state, null) /* D-033 E7 incorrectly gated */",
+        "if (!config.sunsetEnabled || !config.elapsedEnabled) return SunsetEvaluation(state, null) /* D-033 E7 incorrectly gated */",
     ),
     "sunset-no-start": (
         "val firstEvaluation = !previous.sunsetEvaluated",
@@ -84,12 +84,12 @@ VARIANTS = {
         "evaluateDynamicGuidance(initializedState, next.copy(offRoute = false), directedMatch, frame, config, suppressAnnouncements = false).state /* D-033 off-route event gate removed */",
     ),
     "event-reverse-gate": (
-        "config.slopeEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedSlopeIndices",
-        "config.slopeEnabled && config.periodicEnabled && onRoute && eventIntervalOpen && index !in previous.consumedSlopeIndices /* D-033 reverse event gate removed */",
+        "config.slopeEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedSlopeIndices",
+        "config.slopeEnabled && onRoute && eventIntervalOpen && index !in previous.consumedSlopeIndices /* D-033 reverse event gate removed */",
     ),
     "event-min-interval": (
-        "config.milestoneEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && freshCrossed.isNotEmpty()",
-        "config.milestoneEnabled && config.periodicEnabled && onRoute && forward && freshCrossed.isNotEmpty() /* D-033 event interval removed */",
+        "config.milestoneEnabled && onRoute && forward && eventIntervalOpen && freshCrossed.isNotEmpty()",
+        "config.milestoneEnabled && onRoute && forward && freshCrossed.isNotEmpty() /* D-033 event interval removed */",
     ),
     "event-consumption-queue": (
         "next = next.copy(consumedMilestoneIndices = next.consumedMilestoneIndices + crossed)",

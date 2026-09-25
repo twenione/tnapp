@@ -20,6 +20,8 @@ object GuidancePhrases {
     fun sunset(minutesRemaining: Int?, afterSunset: Boolean): String =
         if (afterSunset) "일몰 시각이 지났습니다" else "일몰까지 ${minutesRemaining ?: 0}분입니다"
 
+    fun sunrise(minutesRemaining: Int): String = "일출까지 ${minutesRemaining}분입니다"
+
     fun turnAhead(distanceMeters: Double, side: Side): String =
         "${formatDistance(distanceMeters)} 앞, ${sideLabel(side)}으로 꺾입니다"
 

@@ -841,6 +841,7 @@ internal fun Guidance?.toSpeech(): String? = when (this) {
     is Guidance.Elevation -> GuidancePhrases.elevation(elevationMeters)
     is Guidance.Waypoint -> GuidancePhrases.waypoint(name)
     is Guidance.Sunset -> GuidancePhrases.sunset(minutesRemaining, afterSunset)
+    is Guidance.Sunrise -> GuidancePhrases.sunrise(minutesRemaining)
     is Guidance.TurnAhead -> GuidancePhrases.turnAhead(distance, side)
     is Guidance.TurnNow -> GuidancePhrases.turnNow(side)
     null -> null
