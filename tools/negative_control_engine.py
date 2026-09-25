@@ -65,7 +65,7 @@ VARIANTS = {
     ),
     "sunset-periodic-gate": (
         "if (!config.sunsetEnabled) return SunsetEvaluation(state, null)",
-        "if (!config.sunsetEnabled || !config.periodicEnabled) return SunsetEvaluation(state, null) /* D-033 E7 incorrectly gated */",
+        "if (!config.sunsetEnabled || !config.elapsedEnabled) return SunsetEvaluation(state, null) /* D-033 E7 incorrectly gated */",
     ),
     "sunset-no-start": (
         "val firstEvaluation = !previous.sunsetEvaluated",
@@ -84,12 +84,12 @@ VARIANTS = {
         "evaluateDynamicGuidance(initializedState, next.copy(offRoute = false), directedMatch, frame, config, suppressAnnouncements = false).state /* D-033 off-route event gate removed */",
     ),
     "event-reverse-gate": (
-        "config.slopeEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedSlopeIndices",
-        "config.slopeEnabled && config.periodicEnabled && onRoute && eventIntervalOpen && index !in previous.consumedSlopeIndices /* D-033 reverse event gate removed */",
+        "config.slopeEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedSlopeIndices",
+        "config.slopeEnabled && onRoute && eventIntervalOpen && index !in previous.consumedSlopeIndices /* D-033 reverse event gate removed */",
     ),
     "event-min-interval": (
-        "config.milestoneEnabled && config.periodicEnabled && onRoute && forward && eventIntervalOpen && freshCrossed.isNotEmpty()",
-        "config.milestoneEnabled && config.periodicEnabled && onRoute && forward && freshCrossed.isNotEmpty() /* D-033 event interval removed */",
+        "config.milestoneEnabled && onRoute && forward && eventIntervalOpen && freshCrossed.isNotEmpty()",
+        "config.milestoneEnabled && onRoute && forward && freshCrossed.isNotEmpty() /* D-033 event interval removed */",
     ),
     "event-consumption-queue": (
         "next = next.copy(consumedMilestoneIndices = next.consumedMilestoneIndices + crossed)",
@@ -118,6 +118,43 @@ VARIANTS = {
     "priority-old-order": (
         "const val REMAINING = 500",
         "const val REMAINING = 300 /* D-033 old priority order */",
+    ),
+    # TASK-038 E5 boundary and E8 sunrise negative controls.
+    "elevation-hysteresis-ignore": (
+        "while (elevation >= (band + 1) * config.elevationBoundaryMeters + config.elevationHysteresisMeters)",
+        "while (elevation >= (band + 1) * config.elevationBoundaryMeters) /* TASK-038 hysteresis ignored */",
+    ),
+    "elevation-descending-drop": (
+        "while (elevation < band * config.elevationBoundaryMeters - config.elevationHysteresisMeters)",
+        "while (false /* TASK-038 descending boundary dropped */)",
+    ),
+    "elevation-start-boundary": (
+        "state.copy(elevationBand = floor(elevation / config.elevationBoundaryMeters).toInt())",
+        "state.copy(elevationBand = floor(elevation / config.elevationBoundaryMeters).toInt() + 1) /* TASK-038 start boundary off-by-one */",
+    ),
+    "sunrise-after-start": (
+        "minutes <= 0.0 -> config.sunriseAnnounceMinutes.filter { it !in consumed }.toSet()",
+        "minutes < -1.0 -> config.sunriseAnnounceMinutes.filter { it !in consumed }.toSet() /* TASK-038 E8 after-start */",
+    ),
+    "sunrise-zero-minute": (
+        "minutes <= 0.0 || newlyCrossed.isEmpty() || !config.sunriseEnabled ||",
+        "minutes < -1.0 || newlyCrossed.isEmpty() || !config.sunriseEnabled || /* TASK-038 E8 zero-minute */",
+    ),
+    "sunrise-consumption-refire": (
+        "consumedSunriseThresholds = consumed + newlyCrossed",
+        "consumedSunriseThresholds = consumed /* TASK-038 E8 consumption removed */",
+    ),
+    "sunrise-day-reset": (
+        "val dayChanged = state.sunriseLocalDay != localDay",
+        "val dayChanged = false /* TASK-038 E8 local-day reset removed */",
+    ),
+    "sunrise-epoch-day": (
+        "val dayOfYear = localDate.dayOfYear",
+        "val dayOfYear = localDate.toEpochDay().toInt() /* TASK-038 E8 epoch-day drift */",
+    ),
+    "sunrise-min-interval": (
+        "!config.sunriseEnabled ||\n        !onRoute || !eventIntervalOpen",
+        "!config.sunriseEnabled ||\n        !onRoute /* TASK-038 E8 min interval ignored */",
     ),
 }
 
@@ -186,6 +223,10 @@ def main() -> int:
                 "event-offroute-gate", "event-reverse-gate", "event-min-interval",
                 "event-consumption-queue", "event-threshold-refire", "elevation-fallback",
                 "priority-old-order", "reverse-events-suppressed", "reverse-status-repeat",
+                "elevation-hysteresis-ignore", "elevation-descending-drop", "elevation-start-boundary",
+                "sunrise-after-start", "sunrise-zero-minute",
+                "sunrise-consumption-refire", "sunrise-day-reset", "sunrise-epoch-day",
+                "sunrise-min-interval",
             }
             if name not in {"turn-consumption", "turn-direction-gate", *route_preprocessing_variants, *sunset_variants, *event_variants}:
                 commands.append(("config-sensitivity", ["python", "tools/config_sensitivity.py", "--cli", str(cli)]))

@@ -16,8 +16,21 @@ class DynamicGuidanceTest {
     )
 
     @Test
+    fun individualEventDefaultsAreDisabledExceptSunset() {
+        val config = GuideConfig()
+        check(!config.milestoneEnabled)
+        check(!config.elapsedEnabled)
+        check(!config.remainingEnabled)
+        check(!config.slopeEnabled)
+        check(!config.elevationEnabled)
+        check(!config.waypointEnabled)
+        check(config.sunsetEnabled)
+        check(!config.sunriseEnabled)
+    }
+
+    @Test
     fun milestoneThreshold() {
-        val config = GuideConfig(periodicEnabled = true, milestoneIntervalMeters = 200.0, eventMinIntervalSeconds = 0.0)
+        val config = GuideConfig(milestoneEnabled = true, milestoneIntervalMeters = 200.0, eventMinIntervalSeconds = 0.0)
         var state = GuideState.initial(route)
         state = guide(state, SensorFrame(0L, 10.0005, 20.0, 5f, 1f, null), config).nextState
         val result = guide(state, SensorFrame(1_000L, 10.0022, 20.0, 5f, 1f, null), config)
@@ -27,21 +40,11 @@ class DynamicGuidanceTest {
 
     @Test
     fun remainingThresholds() {
-        val config = GuideConfig(periodicEnabled = true, remainingAnnounceMeters = listOf(3000.0, 2800.0, 2400.0), eventMinIntervalSeconds = 0.0)
+        val config = GuideConfig(remainingEnabled = true, remainingAnnounceMeters = listOf(3000.0, 2800.0, 2400.0), eventMinIntervalSeconds = 0.0)
         var state = GuideState.initial(route)
         state = guide(state, SensorFrame(0L, 10.008, 20.0, 5f, 1f, null), config).nextState
         val result = guide(state, SensorFrame(1_000L, 10.0095, 20.0, 5f, 1f, null), config)
         check(result.guidance is Guidance.Remaining)
-    }
-
-    @Test
-    fun periodicGate() {
-        val config = GuideConfig(periodicEnabled = false, milestoneIntervalMeters = 200.0, eventMinIntervalSeconds = 0.0)
-        var state = GuideState.initial(route)
-        state = guide(state, SensorFrame(0L, 10.0005, 20.0, 5f, 1f, null), config).nextState
-        val result = guide(state, SensorFrame(1_000L, 10.0022, 20.0, 5f, 1f, null), config)
-        check(result.guidance !is Guidance.Milestone)
-        check(result.nextState.consumedMilestoneIndices.isNotEmpty())
     }
 
     @Test
@@ -54,7 +57,7 @@ class DynamicGuidanceTest {
                 "<trkpt lat=\"10.003\" lon=\"20.0\"/>" +
                 "</trkseg></trk></gpx>"
         )
-        val config = GuideConfig(periodicEnabled = true, milestoneIntervalMeters = 100.0, eventMinIntervalSeconds = 60.0)
+        val config = GuideConfig(milestoneEnabled = true, milestoneIntervalMeters = 100.0, eventMinIntervalSeconds = 60.0)
         var state = GuideState.initial(intervalRoute)
         state = guide(state, SensorFrame(0L, 10.0001, 20.0, 5f, 1f, null), config).nextState
         val first = guide(state, SensorFrame(1_000L, 10.0011, 20.0, 5f, 1f, null), config)
@@ -65,7 +68,7 @@ class DynamicGuidanceTest {
 
     @Test
     fun eventToggle() {
-        val config = GuideConfig(periodicEnabled = true, milestoneEnabled = false, milestoneIntervalMeters = 200.0, eventMinIntervalSeconds = 0.0)
+        val config = GuideConfig( milestoneEnabled = false, milestoneIntervalMeters = 200.0, eventMinIntervalSeconds = 0.0)
         var state = GuideState.initial(route)
         state = guide(state, SensorFrame(0L, 10.0005, 20.0, 5f, 1f, null), config).nextState
         val result = guide(state, SensorFrame(1_000L, 10.0022, 20.0, 5f, 1f, null), config)
@@ -101,7 +104,7 @@ class DynamicGuidanceTest {
         val result = guide(
             GuideState.initial(sunsetRoute),
             SensorFrame(epoch("2026-09-21T09:00:00Z"), 37.5665, 126.9780, 80f, 0f, null),
-            GuideConfig(periodicEnabled = false),
+            GuideConfig(),
         )
         check(result.guidance is Guidance.Sunset)
         check(result.reason.rule == "input.accuracy-filter")
@@ -126,7 +129,7 @@ class DynamicGuidanceTest {
 
     @Test
     fun elapsedThreshold() {
-        val config = GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0)
+        val config = GuideConfig(elapsedEnabled = true, eventMinIntervalSeconds = 0.0)
         val first = guide(GuideState.initial(route), SensorFrame(0L, 10.0005, 20.0, 5f, 1f, null), config)
         val second = guide(first.nextState, SensorFrame(3_600_000L, 10.0015, 20.0, 5f, 1f, null), config)
         check(second.guidance is Guidance.Elapsed)
@@ -145,31 +148,13 @@ class DynamicGuidanceTest {
         check(segment.endS > segment.startS)
     }
 
-    @Test
-    fun elevationSlot() {
-        val xml = "<gpx><trk><trkseg>" +
-            "<trkpt lat=\"10.0\" lon=\"20.0\"><ele>101</ele></trkpt>" +
-            "<trkpt lat=\"10.0005\" lon=\"20.0\"><ele>110</ele></trkpt>" +
-            "<trkpt lat=\"10.001\" lon=\"20.0\"><ele>119</ele></trkpt>" +
-            "</trkseg></trk></gpx>"
-        val routeWithElevation = RouteModel.fromGpx(xml)
-        val config = GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0)
-        val frame = SensorFrame(0L, 10.0005, 20.0, 5f, 1f, null)
-        val state = guide(GuideState.initial(routeWithElevation), frame, config).nextState
-        val first = slotContent(state, config)
-        check(first.content is Guidance.Elevation)
-        check((first.content as Guidance.Elevation).elevationMeters == 110.0)
-        val repeat = slotContent(first.nextState, config)
-        check(repeat.content is Guidance.Status)
-        check(repeat.nextState == first.nextState)
-    }
 
     @Test
     fun waypointWindow() {
         val xml = "<gpx><wpt lat=\"10.001\" lon=\"20.0\"><name>View</name></wpt>" +
             "<trk><trkseg>${pointXml(0)}${pointXml(1)}${pointXml(2)}</trkseg></trk></gpx>"
         val routeWithWaypoint = RouteModel.fromGpx(xml)
-        val config = GuideConfig(periodicEnabled = true, eventMinIntervalSeconds = 0.0, waypointAnnounceLeadMeters = 75.0)
+        val config = GuideConfig(waypointEnabled = true, eventMinIntervalSeconds = 0.0, waypointAnnounceLeadMeters = 75.0)
         val primed = GuideState.initial(routeWithWaypoint).copy(
             lastMatch = MatchResult(0.0, 0.0, 0, routeWithWaypoint.points.first(), ProgressDirection.FORWARD),
             lastTimestamp = 0L,
@@ -188,7 +173,8 @@ class DynamicGuidanceTest {
             }.joinToString("") + "</trkseg></trk></gpx>"
         val routeWithSlope = RouteModel.fromGpx(xml)
         val config = GuideConfig(
-            periodicEnabled = true,
+            remainingEnabled = true,
+            slopeEnabled = true,
             eventMinIntervalSeconds = 0.0,
             remainingAnnounceMeters = listOf(250.0),
             slopeAnnounceLeadMeters = 100.0,
@@ -202,7 +188,7 @@ class DynamicGuidanceTest {
     @Test
     fun offRouteConsumesPeriodicThresholds() {
         val config = GuideConfig(
-            periodicEnabled = true,
+            milestoneEnabled = true,
             eventMinIntervalSeconds = 0.0,
             sunsetEnabled = false,
             milestoneIntervalMeters = 50.0,
@@ -221,7 +207,6 @@ class DynamicGuidanceTest {
     @Test
     fun offRouteGateDoesNotRecordPeriodicAnnouncement() {
         val config = GuideConfig(
-            periodicEnabled = true,
             eventMinIntervalSeconds = 0.0,
             sunsetEnabled = false,
             milestoneIntervalMeters = 50.0,
@@ -245,7 +230,7 @@ class DynamicGuidanceTest {
                 "</trkseg></trk></gpx>"
         )
         check(reverseRoute.slopeSegments.isNotEmpty())
-        val config = GuideConfig(periodicEnabled = true, sunsetEnabled = false, eventMinIntervalSeconds = 0.0)
+        val config = GuideConfig(slopeEnabled = true, sunsetEnabled = false, eventMinIntervalSeconds = 0.0)
         val primed = GuideState.initial(reverseRoute).copy(
             lastMatch = MatchResult(0.0, reverseRoute.cumulativeMeters[2] + 20.0, 2, reverseRoute.points[2], ProgressDirection.FORWARD),
             lastTimestamp = 0L,
@@ -258,7 +243,7 @@ class DynamicGuidanceTest {
 
     @Test
     fun milestoneConsumptionQueuePreventsRefire() {
-        val config = GuideConfig(periodicEnabled = true, sunsetEnabled = false, eventMinIntervalSeconds = 0.0, milestoneIntervalMeters = 100.0)
+        val config = GuideConfig(milestoneEnabled = true, sunsetEnabled = false, eventMinIntervalSeconds = 0.0, milestoneIntervalMeters = 100.0)
         val primed = GuideState.initial(route).copy(
             lastMatch = MatchResult(0.0, 0.0, 0, route.points.first(), ProgressDirection.FORWARD),
             lastTimestamp = 0L,
@@ -279,7 +264,7 @@ class DynamicGuidanceTest {
                 "<trkpt lat=\"${10.0 + index * 0.00045}\" lon=\"20.0\"><ele>$elevation</ele></trkpt>"
             }.joinToString("") + "</trkseg></trk></gpx>"
         val slopeRoute = RouteModel.fromGpx(xml)
-        val config = GuideConfig(periodicEnabled = true, sunsetEnabled = false, eventMinIntervalSeconds = 0.0)
+        val config = GuideConfig(slopeEnabled = true, sunsetEnabled = false, eventMinIntervalSeconds = 0.0)
         val state = GuideState.initial(slopeRoute).copy(
             lastMatch = MatchResult(0.0, 0.0, 0, slopeRoute.points.first(), ProgressDirection.FORWARD),
             lastTimestamp = 0L,
@@ -291,35 +276,9 @@ class DynamicGuidanceTest {
         check(result.guidance !is Guidance.Slope)
     }
 
-    @Test
-    fun unstableElevationUsesSlotFallback() {
-        val xml = "<gpx><trk><trkseg>" +
-            "<trkpt lat=\"10.0\" lon=\"20.0\"><ele>0</ele></trkpt>" +
-            "<trkpt lat=\"10.0005\" lon=\"20.0\"><ele>100</ele></trkpt>" +
-            "<trkpt lat=\"10.001\" lon=\"20.0\"><ele>0</ele></trkpt>" +
-            "</trkseg></trk></gpx>"
-        val unstable = RouteModel.fromGpx(xml)
-        val state = GuideState.initial(unstable).copy(lastMatch = MatchResult(0.0, 50.0, 0, unstable.points.first()))
-        check(!unstable.elevationUse.used)
-        check(slotContent(state, GuideConfig(periodicEnabled = true)).content is Guidance.Status)
-    }
 
     @Test
     fun eventPriorityKeepsRemainingAboveSlope() {
         check(EventPriority.REMAINING > EventPriority.SLOPE)
     }
-
-    @Test
-    fun slotFallsBackWhenElevationIsUnavailable() {
-        val config = GuideConfig(periodicEnabled = true, sunsetEnabled = false)
-        val state = guide(
-            GuideState.initial(route),
-            SensorFrame(0L, 10.0005, 20.0, 5f, 1f, null),
-            config,
-        ).nextState
-        val result = slotContent(state, config)
-        check(result.content is Guidance.Status)
-        check(result.nextState == state)
-    }
-
 }

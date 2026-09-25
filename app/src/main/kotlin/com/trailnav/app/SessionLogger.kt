@@ -172,6 +172,7 @@ class JsonlSessionLogger(
             is com.trailnav.core.Guidance.Elevation -> "ELEVATION"
             is com.trailnav.core.Guidance.Waypoint -> "WAYPOINT"
             is com.trailnav.core.Guidance.Sunset -> "SUNSET"
+            is com.trailnav.core.Guidance.Sunrise -> "SUNRISE"
             is com.trailnav.core.Guidance.Status -> "STATUS"
             com.trailnav.core.Guidance.Arrived -> "ARRIVED"
         }

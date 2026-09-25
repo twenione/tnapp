@@ -186,7 +186,6 @@ class GuidanceTest {
         </trkseg></trk></gpx>""")
         val config = GuideConfig(
             reverseWarningDwellSeconds = 2.0,
-            periodicEnabled = false,
             sunsetEnabled = false,
             minimumSessionSecondsBeforeArrival = 0.0,
         )
@@ -215,7 +214,6 @@ class GuidanceTest {
             <trkpt lat="37.5665" lon="126.9780"/><trkpt lat="37.5865" lon="126.9780"/>
         </trkseg></trk></gpx>""")
         val config = GuideConfig(
-            periodicEnabled = true,
             elapsedEnabled = true,
             elapsedAnnounceIntervalSeconds = 1.0,
             eventMinIntervalSeconds = 0.0,
@@ -238,7 +236,6 @@ class GuidanceTest {
         }
 
         val sunsetConfig = config.copy(
-            periodicEnabled = false,
             elapsedEnabled = false,
             sunsetEnabled = true,
             reverseWarningDwellSeconds = 60.0,
