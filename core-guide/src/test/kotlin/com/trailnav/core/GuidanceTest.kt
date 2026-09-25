@@ -2,6 +2,7 @@ package com.trailnav.core
 
 import kotlin.test.Test
 import kotlin.math.cos
+import java.time.Instant
 
 /** Off-route hysteresis, accuracy filtering, arrival, and re-announcement checks. */
 class GuidanceTest {
@@ -177,6 +178,97 @@ class GuidanceTest {
             "a full reverse dwell must emit the reverse warning"
         }
     }
+
+    @Test
+    fun reverseStatusIsIssuedOnceAndResetsAfterLeavingReverse() {
+        val route = RouteModel.fromGpx("""<gpx><trk><trkseg>
+            <trkpt lat="10.0" lon="20.0"/><trkpt lat="10.004" lon="20.0"/>
+        </trkseg></trk></gpx>""")
+        val config = GuideConfig(
+            reverseWarningDwellSeconds = 2.0,
+            periodicEnabled = false,
+            sunsetEnabled = false,
+            minimumSessionSecondsBeforeArrival = 0.0,
+        )
+        var state = guide(GuideState.initial(route), SensorFrame(0L, 10.002, 20.0, 5f, 1f, null), config).nextState
+        val beforeDwell = guide(state, SensorFrame(1_000L, 10.0018, 20.0, 5f, 1f, null), config)
+        check(beforeDwell.guidance !is Guidance.Status)
+        state = beforeDwell.nextState
+
+        val firstStatus = guide(state, SensorFrame(3_000L, 10.0016, 20.0, 5f, 1f, null), config)
+        check(firstStatus.guidance is Guidance.Status)
+        check(firstStatus.nextState.reverseStatusIssued)
+        val repeated = guide(firstStatus.nextState, SensorFrame(4_000L, 10.0014, 20.0, 5f, 1f, null), config)
+        check(repeated.guidance == null) { "reverse status must not repeat on every frame" }
+
+        val forward = guide(repeated.nextState, SensorFrame(5_000L, 10.0016, 20.0, 5f, 1f, null), config)
+        check(forward.nextState.direction == ProgressDirection.FORWARD)
+        check(!forward.nextState.reverseStatusIssued)
+        val reverseAgain = guide(forward.nextState, SensorFrame(6_000L, 10.0014, 20.0, 5f, 1f, null), config)
+        val secondStatus = guide(reverseAgain.nextState, SensorFrame(8_000L, 10.0012, 20.0, 5f, 1f, null), config)
+        check(secondStatus.guidance is Guidance.Status)
+    }
+
+    @Test
+    fun reverseAllowsElapsedAndSunsetEventsAfterDwell() {
+        val route = RouteModel.fromGpx("""<gpx><trk><trkseg>
+            <trkpt lat="37.5665" lon="126.9780"/><trkpt lat="37.5865" lon="126.9780"/>
+        </trkseg></trk></gpx>""")
+        val config = GuideConfig(
+            periodicEnabled = true,
+            elapsedEnabled = true,
+            elapsedAnnounceIntervalSeconds = 1.0,
+            eventMinIntervalSeconds = 0.0,
+            reverseWarningDwellSeconds = 60.0,
+            sunsetEnabled = false,
+            minimumSessionSecondsBeforeArrival = 0.0,
+        )
+        val start = guide(
+            GuideState.initial(route),
+            SensorFrame(0L, 37.5765, 126.9780, 5f, 1f, null),
+            config,
+        )
+        val reverse = guide(
+            start.nextState,
+            SensorFrame(61_000L, 37.5755, 126.9780, 5f, 1f, null),
+            config,
+        )
+        check(reverse.guidance is Guidance.Elapsed) {
+            "elapsed event must be allowed in reverse after the dwell"
+        }
+
+        val sunsetConfig = config.copy(
+            periodicEnabled = false,
+            elapsedEnabled = false,
+            sunsetEnabled = true,
+            reverseWarningDwellSeconds = 60.0,
+        )
+        val sunsetStart = guide(
+            GuideState.initial(route),
+            SensorFrame(epoch("2026-09-21T08:59:00Z"), 37.5765, 126.9780, 5f, 1f, null),
+            sunsetConfig,
+        )
+        var state = guide(
+            sunsetStart.nextState,
+            SensorFrame(epoch("2026-09-21T08:59:30Z"), 37.5770, 126.9780, 5f, 1f, null),
+            sunsetConfig,
+        ).nextState
+        state = guide(
+            state,
+            SensorFrame(epoch("2026-09-21T09:00:30Z"), 37.5765, 126.9780, 5f, 1f, null),
+            sunsetConfig,
+        ).nextState
+        val reverseSunset = guide(
+            state,
+            SensorFrame(epoch("2026-09-21T09:01:45Z"), 37.5760, 126.9780, 5f, 1f, null),
+            sunsetConfig,
+        )
+        check(reverseSunset.guidance is Guidance.Sunset) {
+            "sunset must be emitted while reverse dwell is active"
+        }
+    }
+
+    private fun epoch(value: String): Long = Instant.parse(value).toEpochMilli()
 
     @Test
     fun enterDwellDoesNotTriggerAfterSubsecondGap() {

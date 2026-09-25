@@ -228,6 +228,8 @@ data class GuideState(
     val lastAnnouncementAt: Long? = null,
     val lastAnnouncementDistance: Double? = null,
     val reverseSince: Long? = null,
+    /** True after the one-time reverse-dwell status has been emitted. */
+    val reverseStatusIssued: Boolean = false,
     val arrived: Boolean = false,
     val completedTurnAheadIndices: Set<Int> = emptySet(),
     val completedTurnNowIndices: Set<Int> = emptySet(),

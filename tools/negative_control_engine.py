@@ -99,6 +99,18 @@ VARIANTS = {
         "index !in previous.consumedSlopeIndices",
         "true /* D-033 consumed E4 threshold refires */",
     ),
+    "reverse-sunset-drop": (
+        "if (dynamic.guidance != null) {",
+        "if (false /* D-033 reverse E7 result dropped */) {",
+    ),
+    "reverse-events-suppressed": (
+        "val dynamic = evaluateDynamicGuidance(initializedState, next, directedMatch, frame, config)\n        if (dynamic.guidance != null)",
+        "val dynamic = evaluateDynamicGuidance(initializedState, next, directedMatch, frame, config, suppressAnnouncements = true)\n        if (dynamic.guidance != null) /* D-033 reverse events suppressed */",
+    ),
+    "reverse-status-repeat": (
+        "if (!dynamic.state.reverseStatusIssued) {",
+        "if (true /* D-033 reverse status repeats */) {",
+    ),
     "elevation-fallback": (
         "if (!route.elevationUse.used || route.smoothedElevationMeters.isEmpty())",
         "if (route.smoothedElevationMeters.isEmpty()) /* D-033 E5 fallback ignored */",
@@ -168,12 +180,12 @@ def main() -> int:
             route_preprocessing_variants = {"elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter"}
             sunset_variants = {
                 "sunset-drop-pending", "sunset-periodic-gate", "sunset-no-start",
-                "sunset-epoch-day", "sunset-skip-accuracy",
+                "sunset-epoch-day", "sunset-skip-accuracy", "reverse-sunset-drop",
             }
             event_variants = {
                 "event-offroute-gate", "event-reverse-gate", "event-min-interval",
                 "event-consumption-queue", "event-threshold-refire", "elevation-fallback",
-                "priority-old-order",
+                "priority-old-order", "reverse-events-suppressed", "reverse-status-repeat",
             }
             if name not in {"turn-consumption", "turn-direction-gate", *route_preprocessing_variants, *sunset_variants, *event_variants}:
                 commands.append(("config-sensitivity", ["python", "tools/config_sensitivity.py", "--cli", str(cli)]))
