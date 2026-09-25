@@ -27,7 +27,7 @@ class ElevationBoundaryTest {
     fun boundaryCrossingEmitsAscendingAndDescendingEvents() {
         var state = GuideState.initial(route)
         state = guide(state, SensorFrame(0L, 10.0000, 20.0, 5f, 1f, null), config).nextState
-        val up = guide(state, SensorFrame(1_000L, 10.0030, 20.0, 5f, 1f, null), config)
+        val up = guide(state, SensorFrame(1_000L, 10.0035, 20.0, 5f, 1f, null), config)
         check(up.guidance is Guidance.Elevation)
         check(up.reason.details["direction"] == "up")
 
@@ -52,7 +52,7 @@ class ElevationBoundaryTest {
             SensorFrame(0L, 10.0000, 20.0, 5f, 1f, null),
             disabled,
         ).nextState
-        val result = guide(state, SensorFrame(1_000L, 10.0030, 20.0, 5f, 1f, null), disabled)
+        val result = guide(state, SensorFrame(1_000L, 10.0035, 20.0, 5f, 1f, null), disabled)
         check(result.guidance !is Guidance.Elevation)
         check(result.nextState.elevationBand != null)
     }
