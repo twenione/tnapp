@@ -119,23 +119,31 @@ object RouteOrientation {
     }.getOrDefault(emptyList())
 
     private fun parseWaypoints(document: Document): List<GpxWaypoint> = runCatching {
-        val nodes = document.getElementsByTagName("wpt")
+        val standardNodes = document.getElementsByTagName("wpt")
         buildList {
-            for (index in 0 until nodes.length) {
-                val node = nodes.item(index)
-                val lat = node.attributes?.getNamedItem("lat")?.nodeValue?.toDoubleOrNull()
-                val lon = node.attributes?.getNamedItem("lon")?.nodeValue?.toDoubleOrNull()
-                if (lat != null && lon != null && lat.isFinite() && lon.isFinite()) {
-                    val children = node.childNodes
-                    val name = (0 until children.length).asSequence()
-                        .map { children.item(it) }
-                        .firstOrNull { it.localName == "name" || it.nodeName == "name" }
-                        ?.textContent?.trim().orEmpty()
-                    add(GpxWaypoint(lat, lon, name))
-                }
+            for (index in 0 until standardNodes.length) {
+                val node = standardNodes.item(index)
+                parseWaypoint(node)?.let(::add)
+            }
+            val naverNodes = document.getElementsByTagNameNS(NAVER_GPX_NAMESPACE, "waypoint")
+            for (index in 0 until naverNodes.length) {
+                val node = naverNodes.item(index)
+                parseWaypoint(node)?.let(::add)
             }
         }
     }.getOrDefault(emptyList())
+
+    private fun parseWaypoint(node: org.w3c.dom.Node): GpxWaypoint? {
+        val lat = node.attributes?.getNamedItem("lat")?.nodeValue?.toDoubleOrNull()
+        val lon = node.attributes?.getNamedItem("lon")?.nodeValue?.toDoubleOrNull()
+        if (lat == null || lon == null || !lat.isFinite() || !lon.isFinite()) return null
+        val children = node.childNodes
+        val name = (0 until children.length).asSequence()
+            .map { children.item(it) }
+            .firstOrNull { it.localName == "name" || it.nodeName == "name" }
+            ?.textContent?.trim().orEmpty()
+        return GpxWaypoint(lat, lon, name)
+    }
 
     private fun parseDocument(gpxXml: String): Document? = runCatching {
         val factory = DocumentBuilderFactory.newInstance().apply {
@@ -163,4 +171,5 @@ object RouteOrientation {
 
     private const val EARTH_RADIUS_METERS = 6_371_008.8
     private const val ENDPOINT_TIE_METERS = 1.0
+    private const val NAVER_GPX_NAMESPACE = "https://map.naver.com/gpx/1"
 }

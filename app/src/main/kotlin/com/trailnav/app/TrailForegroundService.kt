@@ -388,7 +388,6 @@ class TrailForegroundService : Service() {
         )
         updateOffRoutePauseAvailability(decision.result.nextState.offRoute)
         previousOffRoute = decision.result.nextState.offRoute
-        val reverseStatus = guidance.isReverseStatus()
         val spoken = guidance.toSpeech()
         val guidanceVoiceKind = if (guidance is Guidance.Sunset) VoiceKind.SUNSET else VoiceKind.GUIDANCE
         val guidanceVoiceAllowed = shouldSpeakVoice(ending, paused, guidanceVoiceKind)
@@ -403,7 +402,6 @@ class TrailForegroundService : Service() {
             timestampMillis = SystemClock.elapsedRealtime(),
             onRoute = !decision.result.nextState.offRoute && !gpsAccuracyRejected,
             arrived = decision.result.nextState.arrived,
-            suppressAnnouncement = reverseStatus,
         ) == true
         val frameSpeech = listOfNotNull(
             spoken?.takeIf { guidanceVoiceAllowed },
