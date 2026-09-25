@@ -161,6 +161,30 @@ class RouteOrientationTest {
     }
 
     @Test
+    fun reversePreservesNaverWaypointsAsStandardWaypoints() {
+        val source = """
+            <gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1" xmlns:nmap="https://map.naver.com/gpx/1">
+              <metadata><extensions><nmap:walkCourse><nmap:waypoints>
+                <nmap:waypoint index="0" lat="10.0000" lon="20.0000"><nmap:type>start</nmap:type><nmap:name>출발지</nmap:name><nmap:desc>start</nmap:desc></nmap:waypoint>
+                <nmap:waypoint index="1" lat="10.0000" lon="20.0010"><nmap:type>waypoint</nmap:type><nmap:name>전망대</nmap:name><nmap:desc>view</nmap:desc></nmap:waypoint>
+                <nmap:waypoint index="2" lat="10.0000" lon="20.0020"><nmap:type>goal</nmap:type><nmap:name>도착지</nmap:name><nmap:desc>goal</nmap:desc></nmap:waypoint>
+              </nmap:waypoints></nmap:walkCourse></extensions></metadata>
+              <trk><trkseg>
+                <trkpt lat="10.0000" lon="20.0000"><ele>100</ele></trkpt>
+                <trkpt lat="10.0000" lon="20.0010"><ele>120</ele></trkpt>
+                <trkpt lat="10.0000" lon="20.0020"><ele>140</ele></trkpt>
+              </trkseg></trk>
+            </gpx>
+        """.trimIndent()
+
+        val reversed = RouteModel.fromGpx(RouteOrientation.reverseGpx(source))
+
+        assertEquals(listOf("출발지", "전망대", "도착지"), reversed.waypoints.map { it.name })
+        assertEquals(3, reversed.waypoints.size)
+        assertEquals(listOf(140.0, 120.0, 100.0), reversed.elevationMeters)
+    }
+
+    @Test
     fun preparationStageLabelsAreShortAndExplicit() {
         assertEquals("안내를 준비중", RoutePreparationStage.PREPARING.label)
         assertEquals("시작점 잡힘", RoutePreparationStage.START_FOUND.label)
