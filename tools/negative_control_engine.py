@@ -138,7 +138,7 @@ VARIANTS = {
     ),
     "sunrise-after-start": (
         "minutes <= 0.0 -> config.sunriseAnnounceMinutes.filter { it !in consumed }.toSet()",
-        "minutes < 0.0 -> config.sunriseAnnounceMinutes.filter { it !in consumed }.toSet() /* TASK-038 E8 after-start */",
+        "minutes < -1.0 -> config.sunriseAnnounceMinutes.filter { it !in consumed }.toSet() /* TASK-038 E8 after-start */",
     ),
     "sunrise-zero-minute": (
         "minutes <= 0.0 || newlyCrossed.isEmpty() || !config.sunriseEnabled ||",

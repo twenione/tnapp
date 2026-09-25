@@ -72,12 +72,24 @@ class SunriseGuidanceTest {
         )
         check(zero.guidance !is Guidance.Sunrise)
 
-        val justBefore = guide(
+    }
+
+    @Test
+    fun afterSunriseConsumesThresholdsWithoutAnnouncing() {
+        val seed = Instant.parse("2026-09-20T19:00:00Z").toEpochMilli()
+        val sunrise = sunriseEpochSeconds(seed, 37.5665, 126.9780)!!
+        val before = guide(
             GuideState.initial(route),
-            SensorFrame(((sunrise - 0.1 * 60.0) * 1000.0).roundToLong(), 37.5665, 126.9780, 5f, 1f, null),
+            SensorFrame(((sunrise - 1.0 * 60.0) * 1000.0).roundToLong(), 37.5665, 126.9780, 5f, 1f, null),
             config,
         )
-        check(justBefore.guidance !is Guidance.Sunrise)
+        val after = guide(
+            before.nextState,
+            SensorFrame(((sunrise + 0.5 * 60.0) * 1000.0).roundToLong(), 37.5665, 126.9780, 5f, 1f, null),
+            config,
+        )
+        check(after.guidance !is Guidance.Sunrise)
+        check(after.nextState.consumedSunriseThresholds.containsAll(listOf(30, 10)))
     }
 
     @Test
