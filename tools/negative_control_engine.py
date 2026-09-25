@@ -132,10 +132,6 @@ VARIANTS = {
         "state.copy(elevationBand = floor(elevation / config.elevationBoundaryMeters).toInt())",
         "state.copy(elevationBand = floor(elevation / config.elevationBoundaryMeters).toInt() + 1) /* TASK-038 start boundary off-by-one */",
     ),
-    "elevation-offroute-announce": (
-        "!config.elevationEnabled || !onRoute || !eventIntervalOpen",
-        "!config.elevationEnabled || !eventIntervalOpen /* TASK-038 off-route E5 announced */",
-    ),
     "sunrise-after-start": (
         "minutes <= 0.0 -> config.sunriseAnnounceMinutes.filter { it !in consumed }.toSet()",
         "minutes < -1.0 -> config.sunriseAnnounceMinutes.filter { it !in consumed }.toSet() /* TASK-038 E8 after-start */",
@@ -228,7 +224,7 @@ def main() -> int:
                 "event-consumption-queue", "event-threshold-refire", "elevation-fallback",
                 "priority-old-order", "reverse-events-suppressed", "reverse-status-repeat",
                 "elevation-hysteresis-ignore", "elevation-descending-drop", "elevation-start-boundary",
-                "elevation-offroute-announce", "sunrise-after-start", "sunrise-zero-minute",
+                "sunrise-after-start", "sunrise-zero-minute",
                 "sunrise-consumption-refire", "sunrise-day-reset", "sunrise-epoch-day",
                 "sunrise-min-interval",
             }
