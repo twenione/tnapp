@@ -119,6 +119,51 @@ VARIANTS = {
         "const val REMAINING = 500",
         "const val REMAINING = 300 /* D-033 old priority order */",
     ),
+    # TASK-038 E5 boundary and E8 sunrise negative controls.
+    "elevation-hysteresis-ignore": (
+        "while (elevation >= (band + 1) * config.elevationBoundaryMeters + config.elevationHysteresisMeters)",
+        "while (elevation >= (band + 1) * config.elevationBoundaryMeters) /* TASK-038 hysteresis ignored */",
+    ),
+    "elevation-descending-drop": (
+        "while (elevation < band * config.elevationBoundaryMeters - config.elevationHysteresisMeters)",
+        "while (false /* TASK-038 descending boundary dropped */)",
+    ),
+    "elevation-start-boundary": (
+        "state.copy(elevationBand = floor(elevation / config.elevationBoundaryMeters).toInt())",
+        "state.copy(elevationBand = floor(elevation / config.elevationBoundaryMeters).toInt() + 1) /* TASK-038 start boundary off-by-one */",
+    ),
+    "elevation-offroute-announce": (
+        "!config.elevationEnabled || !onRoute || !eventIntervalOpen",
+        "!config.elevationEnabled || !eventIntervalOpen /* TASK-038 off-route E5 announced */",
+    ),
+    "sunrise-after-start": (
+        "minutes <= 0.0 -> config.sunriseAnnounceMinutes.filter { it !in consumed }.toSet()",
+        "minutes < 0.0 -> config.sunriseAnnounceMinutes.filter { it !in consumed }.toSet() /* TASK-038 E8 after-start */",
+    ),
+    "sunrise-zero-minute": (
+        "minutes <= 0.0 || newlyCrossed.isEmpty() || !config.sunriseEnabled ||",
+        "minutes < 0.0 || newlyCrossed.isEmpty() || !config.sunriseEnabled || /* TASK-038 E8 zero-minute */",
+    ),
+    "sunrise-consumption-refire": (
+        "consumedSunriseThresholds = consumed + newlyCrossed",
+        "consumedSunriseThresholds = consumed /* TASK-038 E8 consumption removed */",
+    ),
+    "sunrise-day-reset": (
+        "val dayChanged = state.sunriseLocalDay != localDay",
+        "val dayChanged = false /* TASK-038 E8 local-day reset removed */",
+    ),
+    "sunrise-epoch-day": (
+        "val dayOfYear = localDate.dayOfYear",
+        "val dayOfYear = localDate.toEpochDay().toInt() /* TASK-038 E8 epoch-day drift */",
+    ),
+    "sunrise-min-interval": (
+        "!onRoute || !eventIntervalOpen",
+        "!onRoute /* TASK-038 E8 min interval ignored */",
+    ),
+    "sunrise-offroute-announce": (
+        "!onRoute || !eventIntervalOpen",
+        "!eventIntervalOpen /* TASK-038 E8 off-route gate removed */",
+    ),
 }
 
 
@@ -186,6 +231,10 @@ def main() -> int:
                 "event-offroute-gate", "event-reverse-gate", "event-min-interval",
                 "event-consumption-queue", "event-threshold-refire", "elevation-fallback",
                 "priority-old-order", "reverse-events-suppressed", "reverse-status-repeat",
+                "elevation-hysteresis-ignore", "elevation-descending-drop", "elevation-start-boundary",
+                "elevation-offroute-announce", "sunrise-after-start", "sunrise-zero-minute",
+                "sunrise-consumption-refire", "sunrise-day-reset", "sunrise-epoch-day",
+                "sunrise-min-interval", "sunrise-offroute-announce",
             }
             if name not in {"turn-consumption", "turn-direction-gate", *route_preprocessing_variants, *sunset_variants, *event_variants}:
                 commands.append(("config-sensitivity", ["python", "tools/config_sensitivity.py", "--cli", str(cli)]))
