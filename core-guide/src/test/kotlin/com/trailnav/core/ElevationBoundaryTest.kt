@@ -11,6 +11,8 @@ class ElevationBoundaryTest {
         <trkpt lat="10.0020" lon="20.0000"><ele>90</ele></trkpt>
         <trkpt lat="10.0025" lon="20.0000"><ele>100</ele></trkpt>
         <trkpt lat="10.0030" lon="20.0000"><ele>110</ele></trkpt>
+        <trkpt lat="10.0035" lon="20.0000"><ele>119</ele></trkpt>
+        <trkpt lat="10.0040" lon="20.0000"><ele>128</ele></trkpt>
     </trkseg></trk></gpx>""")
 
     private val config = GuideConfig(
@@ -37,7 +39,7 @@ class ElevationBoundaryTest {
     @Test
     fun hysteresisPreventsBoundaryChatter() {
         val primed = GuideState.initial(route).copy(elevationBand = 1)
-        val result = guide(primed, SensorFrame(1_000L, 10.00225, 20.0, 5f, 1f, null), config)
+        val result = guide(primed, SensorFrame(1_000L, 10.002375, 20.0, 5f, 1f, null), config)
         check(result.guidance == null)
         check(result.nextState.elevationBand == 1)
     }
