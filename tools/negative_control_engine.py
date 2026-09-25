@@ -142,7 +142,7 @@ VARIANTS = {
     ),
     "sunrise-zero-minute": (
         "minutes <= 0.0 || newlyCrossed.isEmpty() || !config.sunriseEnabled ||",
-        "minutes < 0.0 || newlyCrossed.isEmpty() || !config.sunriseEnabled || /* TASK-038 E8 zero-minute */",
+        "minutes < -1.0 || newlyCrossed.isEmpty() || !config.sunriseEnabled || /* TASK-038 E8 zero-minute */",
     ),
     "sunrise-consumption-refire": (
         "consumedSunriseThresholds = consumed + newlyCrossed",
@@ -157,12 +157,12 @@ VARIANTS = {
         "val dayOfYear = localDate.toEpochDay().toInt() /* TASK-038 E8 epoch-day drift */",
     ),
     "sunrise-min-interval": (
-        "!onRoute || !eventIntervalOpen",
-        "!onRoute /* TASK-038 E8 min interval ignored */",
+        "!config.sunriseEnabled ||\n        !onRoute || !eventIntervalOpen",
+        "!config.sunriseEnabled ||\n        !onRoute /* TASK-038 E8 min interval ignored */",
     ),
     "sunrise-offroute-announce": (
-        "!onRoute || !eventIntervalOpen",
-        "!eventIntervalOpen /* TASK-038 E8 off-route gate removed */",
+        "!config.sunriseEnabled ||\n        !onRoute || !eventIntervalOpen",
+        "!config.sunriseEnabled ||\n        !eventIntervalOpen /* TASK-038 E8 off-route gate removed */",
     ),
 }
 
