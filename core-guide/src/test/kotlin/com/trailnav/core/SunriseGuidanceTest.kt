@@ -77,7 +77,7 @@ class SunriseGuidanceTest {
     fun sunriseLocalDayResetsConsumptionAndOffRouteOnlyConsumes() {
         val seed = Instant.parse("2026-09-20T19:00:00Z").toEpochMilli()
         val firstSunrise = sunriseEpochSeconds(seed, 37.5665, 126.9780)!!
-        val nextSunrise = sunriseEpochSeconds((firstSunrise + 86_400.0) * 1000.0, 37.5665, 126.9780)!!
+        val nextSunrise = sunriseEpochSeconds(((firstSunrise + 86_400.0) * 1000.0).roundToLong(), 37.5665, 126.9780)!!
         val oldLocalDay = Instant.ofEpochMilli(seed)
             .atZone(java.time.ZoneOffset.UTC)
             .plusSeconds((126.9780 * 240.0).toLong())
