@@ -436,28 +436,41 @@ class MainActivity : AppCompatActivity() {
             status.text = "이 경로의 파일 권한이 없습니다. 다시 가져오기 필요"
             return
         }
-        try {
-            if (launchMapIntent(uri, isSend = false)) {
-                return
-            }
-            val cachedUri = copyRouteToMapCache(route, uri)
-            if (cachedUri != null) {
-                if (launchMapIntent(cachedUri, isSend = false)) {
-                    return
-                }
-                if (launchMapIntent(cachedUri, isSend = true)) {
-                    return
-                }
-            }
-            showMapUnavailable()
-        } catch (_: android.content.ActivityNotFoundException) {
-            showMapUnavailable()
-        } catch (_: SecurityException) {
-            showMapUnavailable()
+        if (launchMapIntent(uri, isSend = false)) return
+        val cachedUri = copyRouteToMapCache(route, uri)
+        if (cachedUri != null) {
+            if (launchMapIntent(cachedUri, isSend = false)) return
+            if (launchMapIntent(cachedUri, isSend = true)) return
         }
+        val diagnosticUri = cachedUri ?: uri
+        val counts = mapQueryCounts(diagnosticUri)
+        val actualType = contentResolver.getType(diagnosticUri)?.takeIf { it.isNotBlank() }
+        val shapes = fallbackIntentShapes(actualType)
+        val fallbackUris = buildList {
+            cachedUri?.let { add(it) }
+            add(uri)
+        }.distinctBy(Uri::toString)
+        val outcome = runFallbackAttempts(fallbackUris.map(Uri::toString), shapes) { uriKey, shape ->
+            val target = Uri.parse(uriKey)
+            val intent = mapViewIntent(target, shape.mimeType)
+            try {
+                startActivity(intent)
+                FallbackAttemptResult.SUCCESS
+            } catch (_: android.content.ActivityNotFoundException) {
+                FallbackAttemptResult.NOT_FOUND
+            } catch (_: SecurityException) {
+                FallbackAttemptResult.SECURITY_REJECTED
+            }
+        }
+        outcome.successShape?.let { shape ->
+            status.text = "연결 앱 선택창을 열었습니다 (방식: ${shape.label})"
+            return
+        }
+        showMapUnavailable(mapFallbackDiagnostic(counts, outcome))
     }
 
     private fun launchMapIntent(uri: Uri, isSend: Boolean): Boolean {
+        return try {
         val exactType = "application/gpx+xml"
         val exactIntent = if (isSend) mapSendIntent(uri, exactType) else mapViewIntent(uri, exactType)
         val exactMatches = queryResolvedApps(exactIntent).filter(::looksLikeMapApp)
@@ -482,22 +495,27 @@ class MainActivity : AppCompatActivity() {
                 mapViewIntent(uri, launchType, packageName)
             }
         }
-        return when (plan) {
-            MapLaunchPlan.None -> false
-            is MapLaunchPlan.Direct -> {
-                startActivity(launchIntent(plan.packageName))
-                true
+            when (plan) {
+                MapLaunchPlan.None -> false
+                is MapLaunchPlan.Direct -> {
+                    startActivity(launchIntent(plan.packageName))
+                    true
+                }
+                is MapLaunchPlan.Chooser -> {
+                    val primary = launchIntent(plan.primaryPackage)
+                    val alternatives = plan.alternativePackages.map { packageName -> launchIntent(packageName) }
+                    startActivity(
+                        Intent.createChooser(primary, "지도 앱 선택").apply {
+                            putExtra(Intent.EXTRA_INITIAL_INTENTS, alternatives.toTypedArray())
+                        },
+                    )
+                    true
+                }
             }
-            is MapLaunchPlan.Chooser -> {
-                val primary = launchIntent(plan.primaryPackage)
-                val alternatives = plan.alternativePackages.map { packageName -> launchIntent(packageName) }
-                startActivity(
-                    Intent.createChooser(primary, "지도 앱 선택").apply {
-                        putExtra(Intent.EXTRA_INITIAL_INTENTS, alternatives.toTypedArray())
-                    },
-                )
-                true
-            }
+        } catch (_: android.content.ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
         }
     }
 
@@ -524,9 +542,29 @@ class MainActivity : AppCompatActivity() {
             ResolvedApp(packageName, info.loadLabel(packageManager)?.toString().orEmpty())
         }
 
-    private fun showMapUnavailable() {
+    private fun mapQueryCounts(uri: Uri): MapQueryCounts {
+        val exactType = "application/gpx+xml"
+        val actualType = contentResolver.getType(uri)?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+        fun counts(intent: Intent): Pair<Int, Int> {
+            val raw = queryResolvedApps(intent)
+            return raw.size to raw.count(::looksLikeMapApp)
+        }
+        val (untypedRaw, untypedFiltered) = counts(mapViewIntent(uri, null))
+        val (exactRaw, exactFiltered) = counts(mapViewIntent(uri, exactType))
+        val (actualRaw, actualFiltered) = counts(mapViewIntent(uri, actualType))
+        return MapQueryCounts(
+            untypedRaw = untypedRaw,
+            untypedFiltered = untypedFiltered,
+            exactRaw = exactRaw,
+            exactFiltered = exactFiltered,
+            actualRaw = actualRaw,
+            actualFiltered = actualFiltered,
+        )
+    }
+
+    private fun showMapUnavailable(diagnostic: String? = null) {
         val message = "GPX를 열 수 있는 지도 앱이 없습니다"
-        status.text = message
+        status.text = if (diagnostic.isNullOrBlank()) message else "$message\n$diagnostic"
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
