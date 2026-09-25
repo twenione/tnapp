@@ -120,7 +120,12 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         emaDeltaMeters = ema,
         direction = direction,
         stationary = stationary,
-        reverseSince = reverseSince
+        reverseSince = reverseSince,
+        reverseStatusIssued = if (direction == ProgressDirection.REVERSE) {
+            initializedState.reverseStatusIssued
+        } else {
+            false
+        }
     )
 
     if (isArrived(next.route, directedMatch, frame.timestamp, next.sessionStartTimestamp, config)) {
@@ -191,11 +196,23 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
     val reverseWarning = reverseSince != null &&
         elapsedSeconds(frame.timestamp, reverseSince) >= config.reverseWarningDwellSeconds
     if (reverseWarning) {
-        next = evaluateDynamicGuidance(initializedState, next, directedMatch, frame, config, suppressAnnouncements = true).state
-        val sunset = evaluateSunsetStandalone(next, frame, config, higherPriority = true)
+        val dynamic = evaluateDynamicGuidance(initializedState, next, directedMatch, frame, config)
+        if (dynamic.guidance != null) {
+            return GuideResult(dynamic.guidance, dynamic.state, dynamic.reason)
+        }
+        if (!dynamic.state.reverseStatusIssued) {
+            return GuideResult(
+                Guidance.Status("역방향 진행 중", directedMatch.distanceMeters, direction.name.lowercase()),
+                dynamic.state.copy(reverseStatusIssued = true),
+                Reason(
+                    rule = "matching.reverse-dwell",
+                    thresholds = mapOf("reverseWarningDwellSeconds" to config.reverseWarningDwellSeconds)
+                )
+            )
+        }
         return GuideResult(
-            Guidance.Status("역방향 진행 중", directedMatch.distanceMeters, direction.name.lowercase()),
-            sunset.state,
+            null,
+            dynamic.state,
             Reason(
                 rule = "matching.reverse-dwell",
                 thresholds = mapOf("reverseWarningDwellSeconds" to config.reverseWarningDwellSeconds)
