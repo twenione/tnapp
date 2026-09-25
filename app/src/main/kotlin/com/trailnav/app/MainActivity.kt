@@ -473,30 +473,30 @@ class MainActivity : AppCompatActivity() {
 
     private fun launchMapIntent(uri: Uri, isSend: Boolean): Boolean {
         return try {
-        val exactType = "application/gpx+xml"
-        val exactIntent = if (isSend) mapSendIntent(uri, exactType) else mapViewIntent(uri, exactType)
-        val exactMatches = queryResolvedApps(exactIntent).filter(::looksLikeMapApp)
-        val actualType = contentResolver.getType(uri)?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
-        val genericIntent = if (isSend) mapSendIntent(uri, actualType) else mapViewIntent(uri, actualType)
-        val genericMatches = queryResolvedApps(genericIntent).filter(::looksLikeMapApp)
-        val untypedMatches = if (isSend) {
-            emptyList()
-        } else {
-            queryResolvedApps(mapViewIntent(uri, type = null)).filter(::looksLikeMapApp)
-        }
-        val plan = chooseMapLaunchPlan(untypedMatches, exactMatches, genericMatches)
-        val launchType = when {
-            untypedMatches.isNotEmpty() -> null
-            exactMatches.isNotEmpty() -> exactType
-            else -> actualType
-        }
-        val launchIntent = { packageName: String ->
-            if (isSend) {
-                mapSendIntent(uri, launchType ?: actualType, packageName)
+            val exactType = "application/gpx+xml"
+            val exactIntent = if (isSend) mapSendIntent(uri, exactType) else mapViewIntent(uri, exactType)
+            val exactMatches = queryResolvedApps(exactIntent).filter(::looksLikeMapApp)
+            val actualType = contentResolver.getType(uri)?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+            val genericIntent = if (isSend) mapSendIntent(uri, actualType) else mapViewIntent(uri, actualType)
+            val genericMatches = queryResolvedApps(genericIntent).filter(::looksLikeMapApp)
+            val untypedMatches = if (isSend) {
+                emptyList()
             } else {
-                mapViewIntent(uri, launchType, packageName)
+                queryResolvedApps(mapViewIntent(uri, type = null)).filter(::looksLikeMapApp)
             }
-        }
+            val plan = chooseMapLaunchPlan(untypedMatches, exactMatches, genericMatches)
+            val launchType = when {
+                untypedMatches.isNotEmpty() -> null
+                exactMatches.isNotEmpty() -> exactType
+                else -> actualType
+            }
+            val launchIntent = { packageName: String ->
+                if (isSend) {
+                    mapSendIntent(uri, launchType ?: actualType, packageName)
+                } else {
+                    mapViewIntent(uri, launchType, packageName)
+                }
+            }
             when (plan) {
                 MapLaunchPlan.None -> false
                 is MapLaunchPlan.Direct -> {
