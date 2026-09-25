@@ -16,14 +16,13 @@ class OnRouteVoiceScheduler(
     /**
      * Returns true exactly when a prompt should be spoken for this frame.
      * Off-route, arrival, and invalid accuracy frames reset the period.
-     * A suppressed frame consumes a due slot so a reverse status cannot cause
-     * an immediate prompt on the next 1 Hz frame.
+     * Direction is intentionally irrelevant to this scheduler.  The engine
+     * owns reverse-event policy; the scheduler only gates on-route cadence.
      */
     fun onFrame(
         timestampMillis: Long,
         onRoute: Boolean,
         arrived: Boolean = false,
-        suppressAnnouncement: Boolean = false,
     ): Boolean {
         if (!enabled) return false
         if (!onRoute || arrived) {
@@ -41,7 +40,7 @@ class OnRouteVoiceScheduler(
         }
         if (timestampMillis - previous < intervalMillis) return false
         lastAnnouncementAtMillis = timestampMillis
-        return !suppressAnnouncement
+        return true
     }
 
     /** Apply a new UI selection to an already running service. */

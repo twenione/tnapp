@@ -75,10 +75,10 @@ class VoiceAndGpsTest {
     }
 
     @Test
-    fun reverseFrameConsumesDueSlotWithoutSpeaking() {
+    fun reverseFrameStillSpeaksAtConfiguredInterval() {
         val scheduler = OnRouteVoiceScheduler(enabled = true, intervalSeconds = 60L)
         scheduler.onFrame(0L, onRoute = true)
-        assertFalse(scheduler.onFrame(60_000L, onRoute = true, suppressAnnouncement = true))
+        assertTrue(scheduler.onFrame(60_000L, onRoute = true))
         assertFalse(scheduler.onFrame(60_001L, onRoute = true))
     }
 
