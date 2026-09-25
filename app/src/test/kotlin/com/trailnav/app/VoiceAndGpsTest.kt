@@ -12,14 +12,14 @@ import kotlin.test.assertTrue
 
 class VoiceAndGpsTest {
     @Test
-    fun periodicVoiceModeUsesOffPromptAndToneWireValues() {
+    fun periodicVoiceModeMigratesLegacyValuesToTone() {
         assertEquals(NavigationPreferences.PeriodicVoiceMode.OFF,
             NavigationPreferences.PeriodicVoiceMode.fromWire("OFF"))
-        assertEquals(NavigationPreferences.PeriodicVoiceMode.PROMPT,
+        assertEquals(NavigationPreferences.PeriodicVoiceMode.TONE,
             NavigationPreferences.PeriodicVoiceMode.fromWire("PROMPT"))
         assertEquals(NavigationPreferences.PeriodicVoiceMode.TONE,
             NavigationPreferences.PeriodicVoiceMode.fromWire("TONE"))
-        assertEquals(NavigationPreferences.PeriodicVoiceMode.PROMPT,
+        assertEquals(NavigationPreferences.PeriodicVoiceMode.TONE,
             NavigationPreferences.PeriodicVoiceMode.fromWire("unknown"))
     }
     @Test
@@ -43,6 +43,7 @@ class VoiceAndGpsTest {
         }
         assertTrue(GuidanceVoicePolicy.decide(paused = true, kind = VoiceKind.SUNSET).allowed)
         assertNull(GuidanceVoicePolicy.decide(paused = true, kind = VoiceKind.SUNSET).suppressionReason)
+        assertFalse(shouldSpeakVoice(ending = true, paused = false, kind = VoiceKind.SUNSET))
     }
 
     @Test
@@ -152,15 +153,15 @@ class VoiceAndGpsTest {
     @Test
     fun gpsSignalPromptsDoNotSuggestPermissionForGrantedButUnavailableSignal() {
         assertEquals(
-            "GPS 신호를 찾는 중입니다. 실외로 이동하면 더 빨리 잡힙니다.",
+            "GPS 신호를 찾는 중입니다.",
             GpsSignalEvent.NoFixTimeout.toSpeechPrompt(),
         )
         assertEquals(
-            "GPS 신호가 일시적으로 끊겼습니다. 실외로 이동하거나 잠시 기다려 주세요.",
+            "GPS 신호가 일시적으로 끊겼습니다.",
             GpsSignalEvent.ProviderError.toSpeechPrompt(),
         )
         assertEquals(
-            "GPS 신호가 약합니다. 안내 정확도가 떨어질 수 있습니다.",
+            "GPS 신호가 약합니다.",
             GpsSignalEvent.WeakSignal(80f).toSpeechPrompt(),
         )
     }

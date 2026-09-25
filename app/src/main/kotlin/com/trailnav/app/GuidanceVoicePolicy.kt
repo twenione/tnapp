@@ -14,6 +14,9 @@ internal object GuidanceVoicePolicy {
         else VoiceDecision(allowed = true)
 }
 
+internal fun shouldSpeakVoice(ending: Boolean, paused: Boolean, kind: VoiceKind): Boolean =
+    !ending && GuidanceVoicePolicy.decide(paused, kind).allowed
+
 /** Tracks one five-minute off-route episode and emits one pause affordance. */
 internal class GuidancePauseAvailability(
     private val dwellMillis: Long = 5 * 60 * 1_000L,

@@ -12,9 +12,6 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioTrack
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.view.KeyEvent
@@ -67,8 +64,12 @@ class TrailForegroundService : Service() {
     private var mediaSession: MediaSession? = null
     private var sensorManager: SensorManager? = null
     private var shakeListener: SensorEventListener? = null
-    private var acknowledgementTone: AudioTrack? = null
+    private var tonePlayer: TonePlayer? = null
+    private var ending = false
+    private var endStartId: Int? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    private val endTimeout = Runnable { finishUserEnd() }
 
     private val noLocationWarning = Runnable {
         if (sessionStarted) {
@@ -124,8 +125,7 @@ class TrailForegroundService : Service() {
             }
             ACTION_END_GUIDANCE, ACTION_NOTIFICATION_END -> {
                 if (sessionStarted) {
-                    endReason = "user-end"
-                    stopSelfResult(startId)
+                    beginUserEnd(startId)
                 }
                 return START_NOT_STICKY
             }
@@ -195,6 +195,7 @@ class TrailForegroundService : Service() {
             routeWaypointCount = parsedRoute.waypoints.size,
         )
         tts = TtsController(this) { status -> logger?.appendSystem(status) }
+        tonePlayer = TonePlayer()
         guideSession = null
         currentRoute = null
         currentGuideConfig = config
@@ -204,6 +205,8 @@ class TrailForegroundService : Service() {
         pauseAvailability.reset()
         offRoutePausePrompted = false
         endReason = "service-destroy"
+        ending = false
+        endStartId = null
         activeSessionId = sessionId
         lastLocation = null
         lastLocationSeq = null
@@ -265,6 +268,35 @@ class TrailForegroundService : Service() {
         mainHandler.postDelayed(routeOrientationTimeout, ROUTE_ORIENTATION_TIMEOUT_MILLIS)
     }
 
+    private fun beginUserEnd(startId: Int) {
+        if (ending) return
+        ending = true
+        endReason = "user-end"
+        endStartId = startId
+        mainHandler.removeCallbacks(noLocationWarning)
+        mainHandler.removeCallbacks(routeOrientationTimeout)
+        source?.stop()
+        source = null
+        uninstallOnDemandTriggers()
+        tonePlayer?.close()
+        onRouteVoiceScheduler?.reset()
+        val finished = tts?.speakWithCompletion(GuidancePhrases.ended(), flush = true) {
+            mainHandler.post { finishUserEnd() }
+        } == true
+        if (finished) {
+            mainHandler.removeCallbacks(endTimeout)
+            mainHandler.postDelayed(endTimeout, END_TTS_TIMEOUT_MILLIS)
+        } else {
+            finishUserEnd()
+        }
+    }
+
+    private fun finishUserEnd() {
+        if (!ending) return
+        mainHandler.removeCallbacks(endTimeout)
+        stopSelfResult(endStartId ?: return)
+    }
+
     private fun formatDistance(value: Double?): String = value?.let { "%.2f".format(it) } ?: ""
 
     private fun updateOnRouteVoiceConfiguration(
@@ -290,6 +322,7 @@ class TrailForegroundService : Service() {
     }
 
     private fun onLocation(location: TrailLocation) {
+        if (ending) return
         val gpsEvent = gpsSignalMonitor?.onLocation(location)
         // A first callback, even with poor accuracy, means the no-fix timer
         // must stop. The monitor also emits the weak-signal warning for the
@@ -358,7 +391,7 @@ class TrailForegroundService : Service() {
         val reverseStatus = guidance.isReverseStatus()
         val spoken = guidance.toSpeech()
         val guidanceVoiceKind = if (guidance is Guidance.Sunset) VoiceKind.SUNSET else VoiceKind.GUIDANCE
-        val guidanceVoiceAllowed = GuidanceVoicePolicy.decide(paused, guidanceVoiceKind).allowed
+        val guidanceVoiceAllowed = shouldSpeakVoice(ending, paused, guidanceVoiceKind)
         val gpsAccuracyRejected = decision.result.reason.rule == "input.accuracy-filter"
         val periodic = if (paused) {
             onRouteVoiceScheduler?.reset()
@@ -410,22 +443,15 @@ class TrailForegroundService : Service() {
             )
             tts?.speak(recoveryPrompt)
         }
-        if (!paused && periodic && onRouteVoiceMode == NavigationPreferences.PeriodicVoiceMode.PROMPT) {
-            logger?.appendSystem(
-                "voice.on-route",
-                mapOf("prompt" to ON_ROUTE_VOICE_PROMPT),
-            )
-            tts?.speak(ON_ROUTE_VOICE_PROMPT)
-        }
-        if (!paused && periodic && onRouteVoiceMode == NavigationPreferences.PeriodicVoiceMode.TONE) {
+        if (!ending && !paused && periodic && onRouteVoiceMode == NavigationPreferences.PeriodicVoiceMode.TONE) {
             logger?.appendSystem("voice.on-route-tone", mapOf("mode" to "TONE"))
-            playAcknowledgementTone()
+            tonePlayer?.play(ToneSynth.periodicSignal())
         }
         if (periodic) {
             logger?.appendGuide(
                 location,
                 decision.result,
-                if (onRouteVoiceMode == NavigationPreferences.PeriodicVoiceMode.PROMPT) ON_ROUTE_VOICE_PROMPT else null,
+                null,
                 requireNotNull(sourceSeq),
                 trigger = "slot",
             )
@@ -436,6 +462,7 @@ class TrailForegroundService : Service() {
     override fun onDestroy() {
         mainHandler.removeCallbacks(noLocationWarning)
         mainHandler.removeCallbacks(routeOrientationTimeout)
+        mainHandler.removeCallbacks(endTimeout)
         source?.stop()
         source = null
         if (sessionStarted) logger?.appendSystem(
@@ -444,6 +471,8 @@ class TrailForegroundService : Service() {
         )
         tts?.close()
         tts = null
+        tonePlayer?.close()
+        tonePlayer = null
         gpsSignalMonitor?.stop()
         gpsSignalMonitor = null
         onRouteVoiceScheduler?.reset()
@@ -505,6 +534,7 @@ class TrailForegroundService : Service() {
     }
 
     private fun pauseGuidance(source: String) {
+        if (ending) return
         if (paused) return
         tts?.speak("안내를 일시중지했습니다")
         paused = true
@@ -516,6 +546,7 @@ class TrailForegroundService : Service() {
     }
 
     private fun resumeGuidance(source: String) {
+        if (ending) return
         if (!paused) return
         paused = false
         tts?.speak("안내를 다시 시작합니다")
@@ -527,6 +558,7 @@ class TrailForegroundService : Service() {
     }
 
     private fun updateOffRoutePauseAvailability(offRoute: Boolean) {
+        if (ending) return
         val now = SystemClock.elapsedRealtime()
         if (!offRoute) offRoutePausePrompted = false
         if (!paused && pauseAvailability.onFrame(offRoute, now)) {
@@ -538,13 +570,14 @@ class TrailForegroundService : Service() {
     }
 
     private fun announceGpsSignal(event: GpsSignalEvent) {
+        if (ending) return
         if (event is GpsSignalEvent.WeakSignal) {
             logger?.appendSystem(
                 "location.accuracy-warning",
                 mapOf("accuracy_m" to event.accuracyMeters.toString()),
             )
         }
-        if (!GuidanceVoicePolicy.decide(paused, VoiceKind.GPS).allowed) {
+        if (!shouldSpeakVoice(ending, paused, VoiceKind.GPS)) {
             logger?.appendSystem(
                 "voice.suppressed",
                 mapOf("type" to "gps", "reason" to "paused"),
@@ -646,17 +679,13 @@ class TrailForegroundService : Service() {
         sensorManager = null
         shakeListener = null
         shakeStats.flush()?.let(::appendShakeStats)
-        acknowledgementTone?.run {
-            if (playState == AudioTrack.PLAYSTATE_PLAYING) stop()
-            release()
-        }
-        acknowledgementTone = null
     }
 
     private fun handleOnDemand(source: OnDemandSource) {
+        if (ending) return
         if (onDemandRouter.accept(source, SystemClock.elapsedRealtime()) == null) return
         logger?.appendSystem("ondemand.request", mapOf("source" to source.wireName, "paused" to paused.toString()))
-        playAcknowledgementTone()
+        tonePlayer?.play(ToneSynth.acknowledgement())
         val session = guideSession
         val location = lastLocation
         val sourceSeq = lastLocationSeq
@@ -708,42 +737,6 @@ class TrailForegroundService : Service() {
                 "threshold_exceedances" to snapshot.thresholdExceedances.toString(),
             ),
         )
-    }
-
-    private fun playAcknowledgementTone() {
-        val sampleRate = 8_000
-        val durationMillis = 150
-        val samples = sampleRate * durationMillis / 1_000
-        val pcm = ByteArray(samples * 2)
-        for (index in 0 until samples) {
-            val envelope = 1.0 - (index.toDouble() / samples)
-            val value = (kotlin.math.sin(2.0 * Math.PI * 880.0 * index / sampleRate) * envelope * Short.MAX_VALUE * 0.25).toInt().toShort()
-            pcm[index * 2] = (value.toInt() and 0xff).toByte()
-            pcm[index * 2 + 1] = (value.toInt() shr 8).toByte()
-        }
-        acknowledgementTone?.run {
-            if (playState == AudioTrack.PLAYSTATE_PLAYING) stop()
-            release()
-        }
-        val attributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
-        val format = AudioFormat.Builder()
-            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-            .setSampleRate(sampleRate)
-            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-            .build()
-        acknowledgementTone = AudioTrack.Builder()
-            .setAudioAttributes(attributes)
-            .setAudioFormat(format)
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .setBufferSizeInBytes(pcm.size)
-            .build()
-            .also { track ->
-                track.write(pcm, 0, pcm.size)
-                track.play()
-            }
     }
 
     private fun notificationAction(action: String, requestCode: Int, label: String): NotificationCompat.Action {
@@ -800,7 +793,6 @@ class TrailForegroundService : Service() {
         const val EXTRA_ACTION_SOURCE = "com.trailnav.app.ACTION_SOURCE"
         const val EXTRA_SERVICE_STATE = "com.trailnav.app.SERVICE_STATE"
         const val EXTRA_ACTIVE_SESSION_ID = "com.trailnav.app.ACTIVE_SESSION_ID"
-        const val ON_ROUTE_VOICE_PROMPT = "정상적으로 경로를 따라가고 있습니다."
         const val ACTION_ROUTE_PREPARATION_UPDATE = "com.trailnav.app.ROUTE_PREPARATION_UPDATE"
         const val EXTRA_ROUTE_PREPARATION_STAGE = "route_preparation_stage"
         const val ACTION_GPS_SIGNAL_UPDATE = "com.trailnav.app.GPS_SIGNAL_UPDATE"
@@ -827,6 +819,7 @@ class TrailForegroundService : Service() {
         const val EXTRA_RIBBON_NEXT_TURN_SIDE = "ribbon_next_turn_side"
         private const val LOCATION_FIX_TIMEOUT_MILLIS = 15_000L
         private const val ROUTE_ORIENTATION_TIMEOUT_MILLIS = 30_000L
+        private const val END_TTS_TIMEOUT_MILLIS = 3_000L
         private const val CHANNEL_ID = "trailnav.navigation"
         private const val NOTIFICATION_ID = 1001
     }
@@ -854,7 +847,7 @@ internal fun Guidance?.toSpeech(): String? = when (this) {
 }
 
 internal fun GpsSignalEvent.toSpeechPrompt(): String = when (this) {
-    GpsSignalEvent.NoFixTimeout -> "GPS 신호를 찾는 중입니다. 실외로 이동하면 더 빨리 잡힙니다."
-    GpsSignalEvent.ProviderError -> "GPS 신호가 일시적으로 끊겼습니다. 실외로 이동하거나 잠시 기다려 주세요."
-    is GpsSignalEvent.WeakSignal -> "GPS 신호가 약합니다. 안내 정확도가 떨어질 수 있습니다."
+    GpsSignalEvent.NoFixTimeout -> "GPS 신호를 찾는 중입니다."
+    GpsSignalEvent.ProviderError -> "GPS 신호가 일시적으로 끊겼습니다."
+    is GpsSignalEvent.WeakSignal -> "GPS 신호가 약합니다."
 }

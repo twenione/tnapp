@@ -17,19 +17,18 @@ internal object NavigationPreferences {
 
     enum class PeriodicVoiceMode {
         OFF,
-        PROMPT,
         TONE;
 
         companion object {
             fun fromWire(value: String?): PeriodicVoiceMode =
-                values().firstOrNull { it.name == value } ?: PROMPT
+                if (value == OFF.name) OFF else TONE
         }
     }
 
     data class VoiceConfig(
         val enabled: Boolean,
         val intervalSeconds: Long,
-        val mode: PeriodicVoiceMode = if (enabled) PeriodicVoiceMode.PROMPT else PeriodicVoiceMode.OFF,
+        val mode: PeriodicVoiceMode = if (enabled) PeriodicVoiceMode.TONE else PeriodicVoiceMode.OFF,
     )
 
     fun voice(context: Context): VoiceConfig {
@@ -44,7 +43,7 @@ internal object NavigationPreferences {
         context: Context,
         enabled: Boolean,
         intervalSeconds: Long,
-        mode: PeriodicVoiceMode = if (enabled) PeriodicVoiceMode.PROMPT else PeriodicVoiceMode.OFF,
+        mode: PeriodicVoiceMode = if (enabled) PeriodicVoiceMode.TONE else PeriodicVoiceMode.OFF,
     ) {
         val active = enabled && intervalSeconds > 0L && mode != PeriodicVoiceMode.OFF
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()

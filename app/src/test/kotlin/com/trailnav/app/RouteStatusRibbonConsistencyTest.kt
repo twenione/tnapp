@@ -48,7 +48,7 @@ class RouteStatusRibbonConsistencyTest {
             val speech = GuidancePhrases.routeStatus(row.status)
             assertTrue(speech.contains(row.routeText), row.name)
             assertTrue(speech.contains(row.directionText), row.name)
-            assertTrue(speech.contains("종착지까지 ${GuidancePhrases.formatDistance(row.status.remainingMeters)}"), row.name)
+            assertTrue(speech.contains("목적지까지 ${GuidancePhrases.formatDistance(row.status.remainingMeters)}"), row.name)
             row.extraText?.let { assertTrue(speech.contains(it), row.name) }
             assertEquals(row.status.onRoute, !row.ribbon.offRoute, row.name)
             assertEquals(row.status.direction, row.ribbon.direction, row.name)
