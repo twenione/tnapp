@@ -160,10 +160,6 @@ VARIANTS = {
         "!config.sunriseEnabled ||\n        !onRoute || !eventIntervalOpen",
         "!config.sunriseEnabled ||\n        !onRoute /* TASK-038 E8 min interval ignored */",
     ),
-    "sunrise-offroute-announce": (
-        "!config.sunriseEnabled ||\n        !onRoute || !eventIntervalOpen",
-        "!config.sunriseEnabled ||\n        !eventIntervalOpen /* TASK-038 E8 off-route gate removed */",
-    ),
 }
 
 
@@ -234,7 +230,7 @@ def main() -> int:
                 "elevation-hysteresis-ignore", "elevation-descending-drop", "elevation-start-boundary",
                 "elevation-offroute-announce", "sunrise-after-start", "sunrise-zero-minute",
                 "sunrise-consumption-refire", "sunrise-day-reset", "sunrise-epoch-day",
-                "sunrise-min-interval", "sunrise-offroute-announce",
+                "sunrise-min-interval",
             }
             if name not in {"turn-consumption", "turn-direction-gate", *route_preprocessing_variants, *sunset_variants, *event_variants}:
                 commands.append(("config-sensitivity", ["python", "tools/config_sensitivity.py", "--cli", str(cli)]))

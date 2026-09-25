@@ -92,8 +92,9 @@ class ElevationBoundaryTest {
 
     @Test
     fun offRouteElevationCrossingIsConsumedWithoutAnnouncement() {
+        val offRouteConfig = config.copy(minimumSessionSecondsBeforeArrival = 100_000.0)
         val offRoute = GuideState.initial(route).copy(offRoute = true, elevationBand = 0)
-        val result = guide(offRoute, SensorFrame(1_000L, 10.0035, 20.0, 5f, 1f, null), config)
+        val result = guide(offRoute, SensorFrame(1_000L, 10.0040, 20.0, 5f, 1f, null), offRouteConfig)
         check(result.guidance !is Guidance.Elevation)
         check(result.nextState.offRoute)
     }

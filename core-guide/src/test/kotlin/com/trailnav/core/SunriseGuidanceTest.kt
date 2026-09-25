@@ -78,13 +78,20 @@ class SunriseGuidanceTest {
     fun afterSunriseConsumesThresholdsWithoutAnnouncing() {
         val seed = Instant.parse("2026-09-20T19:00:00Z").toEpochMilli()
         val sunrise = sunriseEpochSeconds(seed, 37.5665, 126.9780)!!
-        val before = guide(
-            GuideState.initial(route),
-            SensorFrame(((sunrise - 1.0 * 60.0) * 1000.0).roundToLong(), 37.5665, 126.9780, 5f, 1f, null),
-            config,
+        val beforeTimestamp = ((sunrise - 1.0 * 60.0) * 1000.0).roundToLong()
+        val localDay = Instant.ofEpochMilli(beforeTimestamp)
+            .atZone(java.time.ZoneOffset.UTC)
+            .plusSeconds((126.9780 * 240.0).toLong())
+            .toLocalDate()
+            .toEpochDay()
+        val before = GuideState.initial(route).copy(
+            sunriseEvaluated = true,
+            sunriseLocalDay = localDay,
+            lastTimestamp = beforeTimestamp,
+            sessionStartTimestamp = beforeTimestamp,
         )
         val after = guide(
-            before.nextState,
+            before,
             SensorFrame(((sunrise + 0.5 * 60.0) * 1000.0).roundToLong(), 37.5665, 126.9780, 5f, 1f, null),
             config,
         )
