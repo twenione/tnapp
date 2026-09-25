@@ -38,13 +38,15 @@ class MapOpenFallbackTest {
             calls += "$uri:${shape.label}"
             if (uri == "original" && shape.mimeType == "application/gpx+xml") {
                 FallbackAttemptResult.SUCCESS
+            } else if (uri == "cache" && shape.mimeType == null) {
+                FallbackAttemptResult.SECURITY_REJECTED
             } else {
                 FallbackAttemptResult.NOT_FOUND
             }
         }
         assertEquals(5, outcome.attempts)
-        assertEquals(4, outcome.notFound)
-        assertEquals(0, outcome.securityRejected)
+        assertEquals(3, outcome.notFound)
+        assertEquals(1, outcome.securityRejected)
         assertEquals("application/gpx+xml", outcome.successShape?.mimeType)
         assertEquals(5, calls.size)
         assertTrue(calls.last().startsWith("original:"))

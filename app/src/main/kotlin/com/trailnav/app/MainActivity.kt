@@ -443,8 +443,10 @@ class MainActivity : AppCompatActivity() {
             if (launchMapIntent(cachedUri, isSend = true)) return
         }
         val diagnosticUri = cachedUri ?: uri
-        val counts = mapQueryCounts(diagnosticUri)
-        val actualType = contentResolver.getType(diagnosticUri)?.takeIf { it.isNotBlank() }
+        val counts = runCatching { mapQueryCounts(diagnosticUri) }.getOrDefault(MapQueryCounts())
+        val actualType = runCatching { contentResolver.getType(diagnosticUri) }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
         val shapes = fallbackIntentShapes(actualType)
         val fallbackUris = buildList {
             cachedUri?.let { add(it) }
