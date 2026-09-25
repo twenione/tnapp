@@ -180,7 +180,7 @@ class RouteOrientationTest {
         val reversed = RouteModel.fromGpx(RouteOrientation.reverseGpx(source))
 
         assertEquals(listOf("출발지", "전망대", "도착지"), reversed.waypoints.map { it.name })
-        assertEquals(listOf(20.0, 20.001, 20.002), reversed.waypoints.map { it.lon })
+        assertEquals(listOf(20.0, 20.001, 20.002), reversed.waypoints.map { it.longitude })
         assertEquals(3, reversed.waypoints.size)
         assertEquals(listOf(140.0, 120.0, 100.0), reversed.elevationMeters)
     }
