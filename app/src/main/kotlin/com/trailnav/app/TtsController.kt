@@ -4,9 +4,9 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.media.AudioTrack
 import android.os.Build
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import java.util.ArrayDeque
 import java.util.Locale
 
@@ -22,6 +22,7 @@ class TtsController(
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
         .build()
     private val pending = ArrayDeque<PendingUtterance>()
+    private val completions = mutableMapOf<String, () -> Unit>()
     private val tts = TextToSpeech(context.applicationContext, this)
     private var ready = false
 
@@ -36,6 +37,12 @@ class TtsController(
                 onStatus("tts.audio-attributes-failed:$attributeResult")
             }
             tts.language = Locale.KOREAN
+            tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String) = Unit
+                override fun onDone(utteranceId: String) = complete(utteranceId)
+                override fun onError(utteranceId: String) = complete(utteranceId)
+                override fun onStop(utteranceId: String, interrupted: Boolean) = complete(utteranceId)
+            })
             onStatus("tts.ready")
             while (pending.isNotEmpty()) {
                 val utterance = pending.removeFirst()
@@ -56,42 +63,23 @@ class TtsController(
         speakReady(text, flush)
     }
 
-    /** Plays the periodic signal with navigation attributes and without focus. */
-    fun playSignalTone() {
-        val sampleRate = 8_000
-        val durationMillis = 150
-        val samples = sampleRate * durationMillis / 1_000
-        val pcm = ByteArray(samples * 2)
-        for (index in 0 until samples) {
-            val envelope = 1.0 - (index.toDouble() / samples)
-            val value = (kotlin.math.sin(2.0 * Math.PI * 880.0 * index / sampleRate) * envelope * Short.MAX_VALUE * 0.25).toInt().toShort()
-            pcm[index * 2] = (value.toInt() and 0xff).toByte()
-            pcm[index * 2 + 1] = (value.toInt() shr 8).toByte()
+    /** Returns false when the utterance cannot be started and must not block shutdown. */
+    fun speakWithCompletion(text: String, flush: Boolean = false, onFinished: () -> Unit): Boolean {
+        if (text.isBlank() || !ready || !requestFocus()) return false
+        val id = "guide-${System.nanoTime()}"
+        completions[id] = onFinished
+        val result = tts.speak(text, if (flush) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, id)
+        if (result != TextToSpeech.SUCCESS) {
+            completions.remove(id)
+            onStatus("tts.failed:$result")
+            return false
         }
-        val format = android.media.AudioFormat.Builder()
-            .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
-            .setSampleRate(sampleRate)
-            .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO)
-            .build()
-        val toneAttributes = android.media.AudioAttributes.Builder()
-            .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
-        AudioTrack.Builder()
-            .setAudioAttributes(toneAttributes)
-            .setAudioFormat(format)
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .setBufferSizeInBytes(pcm.size)
-            .build()
-            .also { track ->
-                track.write(pcm, 0, pcm.size)
-                track.setNotificationMarkerPosition(samples)
-                track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
-                    override fun onMarkerReached(track: AudioTrack) = track.release()
-                    override fun onPeriodicNotification(track: AudioTrack) = Unit
-                })
-                track.play()
-            }
+        onStatus("tts.queued")
+        return true
+    }
+
+    private fun complete(utteranceId: String) {
+        completions.remove(utteranceId)?.invoke()
     }
 
     private fun speakReady(text: String, flush: Boolean) {
@@ -107,6 +95,8 @@ class TtsController(
     private data class PendingUtterance(val text: String, val flush: Boolean)
 
     fun close() {
+        completions.clear()
+        pending.clear()
         tts.stop()
         tts.shutdown()
         focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }

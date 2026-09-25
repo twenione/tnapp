@@ -29,23 +29,34 @@ class RouteRibbonView @JvmOverloads constructor(
     }
     private var state: RouteRibbonState? = null
     private var preparationStage = RoutePreparationStage.PREPARING
+    private var showIdleLabel = true
 
     init {
         backgroundPaint.color = Color.rgb(24, 28, 36)
         isFocusable = false
-        contentDescription = "경로 상대 위치 리본"
+        contentDescription = "안내 대기 중"
     }
 
     fun update(newState: RouteRibbonState?) {
         state = newState
+        showIdleLabel = false
         if (newState != null) preparationStage = RoutePreparationStage.DIRECTION_CONFIRMED
         invalidate()
     }
 
     fun updatePreparation(stage: RoutePreparationStage) {
         state = null
+        showIdleLabel = false
         preparationStage = stage
         contentDescription = stage.label
+        invalidate()
+    }
+
+    fun reset() {
+        state = null
+        preparationStage = RoutePreparationStage.PREPARING
+        showIdleLabel = true
+        contentDescription = "안내 대기 중"
         invalidate()
     }
 
@@ -60,7 +71,7 @@ class RouteRibbonView @JvmOverloads constructor(
 
         val current = state
         if (current == null) {
-            drawText(canvas, preparationStage.label, left + dp(12f), top + dp(40f), 22f)
+            drawText(canvas, if (showIdleLabel) "안내 대기 중" else preparationStage.label, left + dp(12f), top + dp(40f), 22f)
             return
         }
 

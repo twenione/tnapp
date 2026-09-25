@@ -12,7 +12,8 @@ object GuidancePhrases {
     fun arrived(): String = "목적지에 도착했습니다"
     fun milestone(distanceMeters: Double): String = "${formatDistance(distanceMeters)} 지점입니다"
     fun elapsed(hours: Int): String = "출발 ${hours}시간 경과"
-    fun remaining(distanceMeters: Double): String = "종착지까지 ${formatDistance(distanceMeters)}"
+    fun remaining(distanceMeters: Double): String = "목적지까지 ${formatDistance(distanceMeters)}"
+    fun ended(): String = "안내를 종료합니다."
     fun slope(kind: SlopeKind): String = if (kind == SlopeKind.ASCENT) "잠시 후 오르막입니다" else "잠시 후 내리막입니다"
     fun elevation(elevationMeters: Double): String = "현재 고도 약 ${round(elevationMeters).toInt()}미터"
     fun waypoint(name: String): String = "잠시 후 ${name}입니다"
@@ -39,7 +40,7 @@ object GuidancePhrases {
             ProgressDirection.STATIONARY -> "정지"
             ProgressDirection.UNKNOWN -> "방향 확인 중"
         }
-        val remaining = "종착지까지 ${formatDistance(status.remainingMeters)}"
+        val remaining = "목적지까지 ${formatDistance(status.remainingMeters)}"
         val next = status.nextTurn?.let {
             "다음 꺾임은 ${formatDistance(it.distanceMeters)} 앞 ${sideLabel(it.side)}"
         } ?: "다음 꺾임 정보가 없습니다"

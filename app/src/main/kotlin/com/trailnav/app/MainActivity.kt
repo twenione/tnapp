@@ -43,13 +43,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var mapButton: Button
     private lateinit var navigationState: TextView
     private var intervalButtons: List<Pair<Button, Long>> = emptyList()
-    private var modeButtons: List<Pair<Button, NavigationPreferences.PeriodicVoiceMode>> = emptyList()
     private var selectedRoute: Uri? = null
     private var selectedRouteSummary: String? = null
     private var selectedSavedRoute: SavedRoute? = null
     private var onRouteVoiceEnabled = false
     private var onRouteVoiceIntervalSeconds = 0L
     private var onRouteVoiceMode = NavigationPreferences.PeriodicVoiceMode.OFF
+    private var lastServiceState: String? = null
 
     private val ribbonReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: android.content.Context, intent: Intent) {
@@ -245,26 +245,17 @@ class MainActivity : AppCompatActivity() {
         val onRouteVoicePresets = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        val onRouteVoiceModeControls = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-        val intervalChoices = listOf(
-            0L to "끄기",
-            60L to "1분",
-            180L to "3분",
-            300L to "5분",
-        )
-        intervalButtons = intervalChoices.map { (intervalSeconds, label) ->
+        intervalButtons = VoiceSelectionUi.INTERVAL_CHOICES.map { (intervalSeconds, label) ->
             Button(this).apply {
                 text = label
                 setOnClickListener {
                     onRouteVoiceIntervalSeconds = intervalSeconds
-                    if (intervalSeconds == 0L) {
-                        onRouteVoiceMode = NavigationPreferences.PeriodicVoiceMode.OFF
-                    } else if (onRouteVoiceMode == NavigationPreferences.PeriodicVoiceMode.OFF) {
-                        onRouteVoiceMode = NavigationPreferences.PeriodicVoiceMode.PROMPT
+                    onRouteVoiceMode = if (intervalSeconds > 0L) {
+                        NavigationPreferences.PeriodicVoiceMode.TONE
+                    } else {
+                        NavigationPreferences.PeriodicVoiceMode.OFF
                     }
-                    onRouteVoiceEnabled = intervalSeconds > 0L && onRouteVoiceMode != NavigationPreferences.PeriodicVoiceMode.OFF
+                    onRouteVoiceEnabled = intervalSeconds > 0L
                     NavigationPreferences.saveVoice(this@MainActivity, onRouteVoiceEnabled, intervalSeconds, onRouteVoiceMode)
                     renderVoiceSelections()
                     if (NavigationPreferences.state(this@MainActivity) != NavigationPreferences.STATE_IDLE) {
@@ -278,28 +269,6 @@ class MainActivity : AppCompatActivity() {
                 onRouteVoicePresets.addView(button, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             } to intervalSeconds
         }
-        val modeChoices = listOf(
-            NavigationPreferences.PeriodicVoiceMode.PROMPT,
-            NavigationPreferences.PeriodicVoiceMode.TONE,
-        )
-        modeButtons = modeChoices.map { mode ->
-            Button(this).apply {
-                text = VoiceSelectionUi.modeLabel(mode)
-                setOnClickListener {
-                    if (onRouteVoiceIntervalSeconds > 0L) {
-                        onRouteVoiceMode = mode
-                        onRouteVoiceEnabled = true
-                        NavigationPreferences.saveVoice(this@MainActivity, onRouteVoiceEnabled, onRouteVoiceIntervalSeconds, mode)
-                    }
-                    renderVoiceSelections()
-                    if (NavigationPreferences.state(this@MainActivity) != NavigationPreferences.STATE_IDLE) {
-                        sendServiceAction(TrailForegroundService.ACTION_UPDATE_ON_ROUTE_VOICE, "ui")
-                    }
-                }
-            }.also { button ->
-                onRouteVoiceModeControls.addView(button, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            } to mode
-        }
         root.addView(header)
         root.addView(routeRibbon, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (250 * resources.displayMetrics.density).toInt()))
         root.addView(import)
@@ -307,7 +276,6 @@ class MainActivity : AppCompatActivity() {
         root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(mapButton)
         root.addView(onRouteVoicePresets)
-        root.addView(onRouteVoiceModeControls)
         navigationState = TextView(this).apply {
             text = "안내 대기 중"
             textSize = 20f
@@ -583,10 +551,6 @@ class MainActivity : AppCompatActivity() {
             val selected = VoiceSelectionUi.intervalSelected(onRouteVoiceIntervalSeconds, intervalSeconds)
             applyButtonSelection(button, selected, button.text.toString().removePrefix("✓ "))
         }
-        modeButtons.forEach { (button, mode) ->
-            val selected = VoiceSelectionUi.modeSelected(onRouteVoiceEnabled, onRouteVoiceMode, mode)
-            applyButtonSelection(button, selected, VoiceSelectionUi.modeLabel(mode))
-        }
     }
 
     private fun applyButtonSelection(button: Button, selected: Boolean, label: String) {
@@ -598,6 +562,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyServiceState(state: String) {
+        if (shouldResetRibbon(lastServiceState, state)) {
+            routeRibbon.reset()
+            updateGpsIndicator(0.0)
+        }
+        lastServiceState = state
         when (state) {
             NavigationPreferences.STATE_RUNNING -> {
                 navigationState.text = "안내 중"
