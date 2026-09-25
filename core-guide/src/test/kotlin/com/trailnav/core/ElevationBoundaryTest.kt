@@ -5,8 +5,10 @@ import kotlin.test.Test
 class ElevationBoundaryTest {
     private val route = RouteModel.fromGpx("""<gpx><trk><trkseg>
         <trkpt lat="10.0000" lon="20.0000"><ele>50</ele></trkpt>
-        <trkpt lat="10.0005" lon="20.0000"><ele>125</ele></trkpt>
-        <trkpt lat="10.0010" lon="20.0000"><ele>225</ele></trkpt>
+        <trkpt lat="10.0005" lon="20.0000"><ele>85</ele></trkpt>
+        <trkpt lat="10.0010" lon="20.0000"><ele>125</ele></trkpt>
+        <trkpt lat="10.0015" lon="20.0000"><ele>165</ele></trkpt>
+        <trkpt lat="10.0020" lon="20.0000"><ele>205</ele></trkpt>
     </trkseg></trk></gpx>""")
 
     private val config = GuideConfig(
@@ -21,7 +23,7 @@ class ElevationBoundaryTest {
     fun boundaryCrossingEmitsAscendingAndDescendingEvents() {
         var state = GuideState.initial(route)
         state = guide(state, SensorFrame(0L, 10.0000, 20.0, 5f, 1f, null), config).nextState
-        val up = guide(state, SensorFrame(1_000L, 10.0005, 20.0, 5f, 1f, null), config)
+        val up = guide(state, SensorFrame(1_000L, 10.0010, 20.0, 5f, 1f, null), config)
         check(up.guidance is Guidance.Elevation)
         check(up.reason.details["direction"] == "up")
 
@@ -46,7 +48,7 @@ class ElevationBoundaryTest {
             SensorFrame(0L, 10.0000, 20.0, 5f, 1f, null),
             disabled,
         ).nextState
-        val result = guide(state, SensorFrame(1_000L, 10.0005, 20.0, 5f, 1f, null), disabled)
+        val result = guide(state, SensorFrame(1_000L, 10.0010, 20.0, 5f, 1f, null), disabled)
         check(result.guidance !is Guidance.Elevation)
         check(result.nextState.elevationBand != null)
     }
