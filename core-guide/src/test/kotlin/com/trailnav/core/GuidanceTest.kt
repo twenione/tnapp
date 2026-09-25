@@ -260,7 +260,7 @@ class GuidanceTest {
         ).nextState
         val reverseSunset = guide(
             state,
-            SensorFrame(epoch("2026-09-21T09:01:45Z"), 37.5760, 126.9780, 5f, 1f, null),
+            SensorFrame(epoch("2026-09-21T09:05:00Z"), 37.5760, 126.9780, 5f, 1f, null),
             sunsetConfig,
         )
         check(reverseSunset.guidance is Guidance.Sunset) {
