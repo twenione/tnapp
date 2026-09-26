@@ -55,6 +55,10 @@ VARIANTS = {
         "val elevation = classifyElevation(elevations, cumulative, config)",
         "val elevation = classifyElevation(elevations, cumulative, config).copy(used = true, reason = \"ok\") /* D-033 fallback removed */",
     ),
+    "turn-axis-simplified": (
+        "val positionOnOriginalAxis = originalCumulative[originalPointIndices[index]]",
+        "val positionOnOriginalAxis = cumulative[index] /* D-033 simplified turn axis */",
+    ),
     "waypoint-near-filter": (
         "if (projection.distanceMeters <= config.waypointNearRouteMeters) {",
         "if (true /* D-033 waypoint near-route filter removed */) {",
@@ -186,7 +190,9 @@ def main() -> int:
         route = workspace / "core-guide/src/main/kotlin/com/trailnav/core/Route.kt"
         route_original = route.read_text(encoding="utf-8")
         for name, (needle, replacement) in VARIANTS.items():
-            target = route if name in {"elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter"} else engine
+            target = route if name in {
+                "turn-axis-simplified", "elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter"
+            } else engine
             target_original = route_original if target == route else original
             variant_engine = target_original.replace(needle, replacement, 1)
             if variant_engine == target_original:
@@ -214,7 +220,9 @@ def main() -> int:
                 target.write_text(target_original, encoding="utf-8")
                 continue
             commands = [("replay", ["python", "tools/replay.py", "--cli", str(cli), "--contract"])]
-            route_preprocessing_variants = {"elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter"}
+            route_preprocessing_variants = {
+                "turn-axis-simplified", "elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter"
+            }
             sunset_variants = {
                 "sunset-drop-pending", "sunset-periodic-gate", "sunset-no-start",
                 "sunset-epoch-day", "sunset-skip-accuracy", "reverse-sunset-drop",
