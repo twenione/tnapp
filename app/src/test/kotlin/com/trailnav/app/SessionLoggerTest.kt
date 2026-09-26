@@ -8,6 +8,7 @@ import java.io.File
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class SessionLoggerTest {
@@ -23,6 +24,7 @@ class SessionLoggerTest {
             sessionId = sessionId,
             codeHash = "sha256:test",
             configHash = "sha256:config",
+            eventSettings = EventSettings.defaults().toWireMap(),
             routeHash = "sha256:route",
             appVersion = "test",
             routeElevationUsed = true,
@@ -34,8 +36,12 @@ class SessionLoggerTest {
             logger.appendEnvelope(location, "loc", "location")
             val locationSeq = logger.appendLocation(location)
             logger.appendGuide(location, result, null, locationSeq)
-            logger.appendGuide(location, result, "경로 위입니다", locationSeq, trigger = "slot")
+            logger.appendGuide(location, result, "경로 위입니다", locationSeq, trigger = "on-demand")
             logger.appendSystem("service.started", mapOf("battery_pct" to "90"))
+            logger.appendSystem(
+                "events.config",
+                EventSettings.defaults().toWireMap().mapValues { (_, enabled) -> enabled.toString() },
+            )
             logger.appendError("test", "synthetic")
         }
         val manifest = File(directory, "manifest.json").readText()
@@ -43,8 +49,9 @@ class SessionLoggerTest {
         assertTrue(manifest.contains("\"elevation_used\":true"))
         assertTrue(manifest.contains("\"elevation_reason\":\"ok\""))
         assertTrue(manifest.contains("\"waypoint_count\":2"))
+        assertTrue(manifest.contains("\"events\":{\"E1\":false,\"E2\":false,\"E3\":true,\"E4\":true,\"E5\":false,\"E6\":true,\"E7\":true,\"E8\":true}"))
         val events = File(directory, "events.ndjson").readLines().filter { it.isNotBlank() }
-        assertEquals(6, events.size)
+        assertEquals(7, events.size)
         assertTrue(events[0].contains("\"stream\":\"envelope\""))
         assertTrue(events[0].contains("\"event_stream\":\"loc\""))
         assertTrue(events[1].contains("\"stream\":\"loc\""))
@@ -52,12 +59,26 @@ class SessionLoggerTest {
         assertTrue(events[2].contains("\"src_seq\":1"))
         assertTrue(events[2].contains("\"rule\":\"matching.on-route\""))
         assertTrue(events[3].contains("\"stream\":\"guide\""))
-        assertTrue(events[3].contains("\"trigger\":\"slot\""))
+        assertTrue(events[3].contains("\"trigger\":\"on-demand\""))
         assertTrue(events[4].contains("\"stream\":\"sys\""))
-        assertTrue(events[5].contains("\"stream\":\"err\""))
+        assertTrue(events[5].contains("\"kind\":\"events.config\""))
+        assertTrue(events[5].contains("\"E1\":\"false\""))
+        assertTrue(events[5].contains("\"E8\":\"true\""))
+        assertTrue(events[6].contains("\"stream\":\"err\""))
         val seqs = events.map { Regex("\"seq\":(\\d+)").find(it)!!.groupValues[1].toInt() }
-        assertEquals(listOf(0, 1, 2, 3, 4, 5), seqs)
+        assertEquals(listOf(0, 1, 2, 3, 4, 5, 6), seqs)
         directory.deleteRecursively()
+    }
+
+    @Test
+    fun eventSelectionChangesSessionConfigHash() {
+        val defaults = EventSettings.defaults()
+        val allOff = GuideEvent.values().fold(defaults) { settings, event -> settings.withEnabled(event, false) }
+        val enabledMilestone = allOff.withEnabled(GuideEvent.MILESTONE, true)
+        val firstHash = JsonlSessionLogger.sha256(allOff.toGuideConfig().toString())
+        val secondHash = JsonlSessionLogger.sha256(enabledMilestone.toGuideConfig().toString())
+
+        assertNotEquals(firstHash, secondHash)
     }
 
     @Test

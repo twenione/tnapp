@@ -1,7 +1,13 @@
 package com.trailnav.app
 
+import com.trailnav.core.Guidance
+
 /** Voice categories that share the pause gate. Kept free of Android APIs for JVM tests. */
 internal enum class VoiceKind { GUIDANCE, RECOVERY, GPS, ON_ROUTE, SUNSET }
+
+/** Only E7 sunset guidance bypasses the paused-session voice suppression gate. */
+internal fun voiceKindFor(guidance: Guidance?): VoiceKind =
+    if (guidance is Guidance.Sunset) VoiceKind.SUNSET else VoiceKind.GUIDANCE
 
 internal data class VoiceDecision(
     val allowed: Boolean,

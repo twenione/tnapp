@@ -28,6 +28,7 @@ class JsonlSessionLogger(
     private val sessionId: String = UUID.randomUUID().toString(),
     private val codeHash: String,
     private val configHash: String,
+    private val eventSettings: Map<String, Boolean>,
     private val routeHash: String,
     private val appVersion: String,
     private val routeElevationUsed: Boolean = false,
@@ -40,6 +41,9 @@ class JsonlSessionLogger(
 
     init {
         require(UUID_REGEX.matches(sessionId)) { "sessionId must be a UUID" }
+        require(eventSettings.keys == GuideEvent.values().map { it.id }.toSet()) {
+            "eventSettings must contain exactly E1 through E8"
+        }
         directory.mkdirs()
         sequence = nextSequence(eventsFile)
         writer = BufferedWriter(OutputStreamWriter(FileOutputStream(eventsFile, true), StandardCharsets.UTF_8))
@@ -58,13 +62,16 @@ class JsonlSessionLogger(
     }
 
     private fun writeManifest() {
+        val eventsJson = GuideEvent.values().joinToString(separator = ",", prefix = "{", postfix = "}") { event ->
+            "\"${event.id}\":${eventSettings.getValue(event.id)}"
+        }
         File(directory, "manifest.json").writeText(
             """{
               "session_id":"${escape(sessionId)}",
               "schema_version":"0.1.0-draft",
               "started_at_wall":"${java.time.Instant.now()}",
               "app":{"version":"${escape(appVersion)}","code_hash":"${escape(codeHash)}"},
-              "engine":{"config":{"implementation":"core-guide","config_hash":"${escape(configHash)}"},"rng_seed":0},
+              "engine":{"config":{"implementation":"core-guide","config_hash":"${escape(configHash)}","events":$eventsJson},"rng_seed":0},
               "route":{"gpx_hash":"${escape(routeHash)}","elevation_used":$routeElevationUsed,"elevation_reason":"${escape(routeElevationReason)}","waypoint_count":$routeWaypointCount},
               "clock":{"monotonic_source":"location-frame-timestamp","timestamp_unit":"seconds","t_order":"per-stream","seq_order":"append"},
               "privacy":{"upload_default":false}

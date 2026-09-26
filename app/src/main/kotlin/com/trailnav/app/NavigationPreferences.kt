@@ -53,6 +53,18 @@ internal object NavigationPreferences {
             .apply()
     }
 
+    fun eventSettings(context: Context): EventSettings {
+        val storedValues = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).all
+            .mapValues { (_, value) -> value as? Boolean }
+        return EventSettings.fromPreferenceValues(storedValues)
+    }
+
+    fun saveEventSettings(context: Context, settings: EventSettings) {
+        val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        settings.toPreferenceValues().forEach { (key, enabled) -> editor.putBoolean(key, enabled) }
+        editor.apply()
+    }
+
     fun state(context: Context): String = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         .getString(KEY_SERVICE_STATE, STATE_IDLE) ?: STATE_IDLE
 
