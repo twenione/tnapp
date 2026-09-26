@@ -46,13 +46,12 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
     }
     if (frame.accuracy.toDouble() > config.accuracyRejectMeters) {
         val sunset = evaluateSunsetStandalone(initializedState, frame, config, higherPriority = false)
-        val sunriseState = evaluateSunriseStandalone(sunset.state, frame, config)
         if (sunset.guidance != null) {
-            return GuideResult(sunset.guidance, sunriseState, sunset.reason.copy(rule = "input.accuracy-filter"))
+            return GuideResult(sunset.guidance, sunset.state, sunset.reason.copy(rule = "input.accuracy-filter"))
         }
         return GuideResult(
             null,
-            sunriseState,
+            sunset.state,
             Reason(
                 rule = "input.accuracy-filter",
                 thresholds = mapOf("accuracyRejectMeters" to config.accuracyRejectMeters),
