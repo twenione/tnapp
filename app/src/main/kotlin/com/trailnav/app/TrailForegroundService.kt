@@ -246,13 +246,7 @@ class TrailForegroundService : Service() {
         )
         logger?.appendSystem(
             "ondemand.config",
-            mapOf(
-                "media_button_enabled" to onDemandConfig.mediaButtonEnabled.toString(),
-                "shake_enabled" to onDemandConfig.shakeEnabled.toString(),
-                "debounce_ms" to onDemandConfig.debounceMillis.toString(),
-                "shake_threshold" to onDemandConfig.shakeThresholdMetersPerSecondSquared.toString(),
-                "shake_hits" to onDemandConfig.shakeHitsRequired.toString(),
-                "shake_window_ms" to onDemandConfig.shakeWindowMillis.toString(),
+            onDemandConfig.toWireMap() + mapOf(
                 "shake_sampling" to "SENSOR_DELAY_GAME",
                 "shake_stats" to "per-minute-aggregates",
             ),
@@ -674,11 +668,14 @@ class TrailForegroundService : Service() {
         sensorManager = null
         shakeListener = null
         shakeStats.flush()?.let(::appendShakeStats)
+        onDemandRouter.flushSuppressedEvents().forEach(::appendShakeCooldownSuppression)
     }
 
     private fun handleOnDemand(source: OnDemandSource) {
         if (ending) return
-        if (onDemandRouter.accept(source, SystemClock.elapsedRealtime()) == null) return
+        val accepted = onDemandRouter.accept(source, SystemClock.elapsedRealtime())
+        onDemandRouter.takeSuppressedEvents().forEach(::appendShakeCooldownSuppression)
+        if (accepted == null) return
         logger?.appendSystem("ondemand.request", mapOf("source" to source.wireName, "paused" to paused.toString()))
         tonePlayer?.play(ToneSynth.acknowledgement())
         val session = guideSession
@@ -719,6 +716,10 @@ class TrailForegroundService : Service() {
         logger?.appendGuide(location, result, text, sourceSeq, trigger = "on-demand")
         tts?.speak(text, flush = true)
         logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "route-status", "paused" to paused.toString()))
+    }
+
+    private fun appendShakeCooldownSuppression(suppression: ShakeCooldownSuppression) {
+        logger?.appendSystem("ondemand.suppressed", suppression.toWireMap())
     }
 
     private fun appendShakeStats(snapshot: ShakeStatsSnapshot) {
