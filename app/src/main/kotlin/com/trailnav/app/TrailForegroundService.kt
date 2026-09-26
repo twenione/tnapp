@@ -173,7 +173,8 @@ class TrailForegroundService : Service() {
             stopSelf()
             return
         }
-        val config = GuideConfig()
+        val eventSettings = NavigationPreferences.eventSettings(this)
+        val config = eventSettings.toGuideConfig()
         val parsedRoute = try {
             RouteModel.fromGpx(xml, config)
         } catch (error: Throwable) {
@@ -188,6 +189,7 @@ class TrailForegroundService : Service() {
             sessionId = sessionId,
             codeHash = BuildConfig.GIT_CODE_HASH,
             configHash = "sha256:${JsonlSessionLogger.sha256(config.toString())}",
+            eventSettings = eventSettings.toWireMap(),
             routeHash = "sha256:${JsonlSessionLogger.sha256(xml)}",
             appVersion = BuildConfig.VERSION_NAME,
             routeElevationUsed = parsedRoute.elevationUsed,
@@ -237,6 +239,10 @@ class TrailForegroundService : Service() {
                 "interval_seconds" to (if (onRouteVoiceIntervalSeconds > 0L) onRouteVoiceIntervalSeconds else 0L).toString(),
                 "mode" to onRouteVoiceMode.name,
             ),
+        )
+        logger?.appendSystem(
+            "events.config",
+            eventSettings.toWireMap().mapValues { (_, enabled) -> enabled.toString() },
         )
         logger?.appendSystem(
             "ondemand.config",
@@ -389,7 +395,7 @@ class TrailForegroundService : Service() {
         updateOffRoutePauseAvailability(decision.result.nextState.offRoute)
         previousOffRoute = decision.result.nextState.offRoute
         val spoken = guidance.toSpeech()
-        val guidanceVoiceKind = if (guidance is Guidance.Sunset) VoiceKind.SUNSET else VoiceKind.GUIDANCE
+        val guidanceVoiceKind = voiceKindFor(guidance)
         val guidanceVoiceAllowed = shouldSpeakVoice(ending, paused, guidanceVoiceKind)
         val gpsAccuracyRejected = decision.result.reason.rule == "input.accuracy-filter"
         val periodic = if (paused) {
@@ -444,15 +450,6 @@ class TrailForegroundService : Service() {
         if (!ending && !paused && periodic && onRouteVoiceMode == NavigationPreferences.PeriodicVoiceMode.TONE) {
             logger?.appendSystem("voice.on-route-tone", mapOf("mode" to "TONE"))
             tonePlayer?.play(ToneSynth.periodicSignal())
-        }
-        if (periodic) {
-            logger?.appendGuide(
-                location,
-                decision.result,
-                null,
-                requireNotNull(sourceSeq),
-                trigger = "slot",
-            )
         }
         updateNotification(decision.result.guidance)
     }

@@ -15,8 +15,11 @@ object GuidancePhrases {
     fun remaining(distanceMeters: Double): String = "목적지까지 ${formatDistance(distanceMeters)}"
     fun ended(): String = "안내를 종료합니다."
     fun slope(kind: SlopeKind): String = if (kind == SlopeKind.ASCENT) "잠시 후 오르막입니다" else "잠시 후 내리막입니다"
-    fun elevation(elevationMeters: Double): String = "현재 고도 약 ${round(elevationMeters).toInt()}미터"
-    fun waypoint(name: String): String = "잠시 후 ${name}입니다"
+    fun elevation(elevationMeters: Double): String = "고도 ${round(elevationMeters).toInt()}미터 통과"
+    fun waypoint(name: String): String {
+        val spokenName = name.replace("#", "").replace(Regex("\\s+"), " ").trim().ifBlank { "지점" }
+        return "잠시 후 ${spokenName}입니다"
+    }
     fun sunset(minutesRemaining: Int?, afterSunset: Boolean): String =
         if (afterSunset) "일몰 시각이 지났습니다" else "일몰까지 ${minutesRemaining ?: 0}분입니다"
 

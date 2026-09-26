@@ -2,7 +2,9 @@ package com.trailnav.app
 
 import com.trailnav.core.Guidance
 import com.trailnav.core.GuideConfig
+import com.trailnav.core.Side
 import com.trailnav.core.RouteModel
+import com.trailnav.core.SlopeKind
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertEquals
@@ -44,6 +46,33 @@ class VoiceAndGpsTest {
         assertTrue(GuidanceVoicePolicy.decide(paused = true, kind = VoiceKind.SUNSET).allowed)
         assertNull(GuidanceVoicePolicy.decide(paused = true, kind = VoiceKind.SUNSET).suppressionReason)
         assertFalse(shouldSpeakVoice(ending = true, paused = false, kind = VoiceKind.SUNSET))
+    }
+
+    @Test
+    fun onlySunsetGuidanceMapsToThePauseExemptVoiceKind() {
+        val automaticGuidance = listOf<Guidance?>(
+            Guidance.Milestone(1_000.0),
+            Guidance.Elapsed(1),
+            Guidance.Remaining(2_000.0),
+            Guidance.Slope(SlopeKind.ASCENT, 25.0),
+            Guidance.Elevation(300.0),
+            Guidance.Waypoint(1, "망경대", 100.0),
+            Guidance.Sunrise(10),
+            Guidance.TurnAhead(50.0, Side.LEFT),
+            Guidance.TurnNow(Side.RIGHT),
+            Guidance.OffRoute(30.0, "right"),
+            Guidance.Arrived,
+            Guidance.Status("상태 안내"),
+            null,
+        )
+
+        automaticGuidance.forEach { guidance ->
+            assertEquals(VoiceKind.GUIDANCE, voiceKindFor(guidance))
+            assertFalse(shouldSpeakVoice(ending = false, paused = true, kind = voiceKindFor(guidance)))
+        }
+        val sunset = Guidance.Sunset(minutesRemaining = 30)
+        assertEquals(VoiceKind.SUNSET, voiceKindFor(sunset))
+        assertTrue(shouldSpeakVoice(ending = false, paused = true, kind = voiceKindFor(sunset)))
     }
 
     @Test

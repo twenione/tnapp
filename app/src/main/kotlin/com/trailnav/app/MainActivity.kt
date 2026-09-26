@@ -41,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pauseResumeButton: Button
     private lateinit var endButton: Button
     private lateinit var mapButton: Button
+    private lateinit var eventSettingsButton: Button
     private lateinit var navigationState: TextView
     private var intervalButtons: List<Pair<Button, Long>> = emptyList()
     private var selectedRoute: Uri? = null
@@ -242,6 +243,10 @@ class MainActivity : AppCompatActivity() {
             isEnabled = false
             setOnClickListener { openSelectedRouteInMap() }
         }
+        eventSettingsButton = Button(this).apply {
+            text = "안내 설정"
+            setOnClickListener { showEventSettingsDialog() }
+        }
         val onRouteVoicePresets = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
@@ -275,6 +280,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(export)
         root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(mapButton)
+        root.addView(eventSettingsButton)
         root.addView(onRouteVoicePresets)
         navigationState = TextView(this).apply {
             text = "안내 대기 중"
@@ -630,6 +636,26 @@ class MainActivity : AppCompatActivity() {
             val selected = VoiceSelectionUi.intervalSelected(onRouteVoiceIntervalSeconds, intervalSeconds)
             applyButtonSelection(button, selected, button.text.toString().removePrefix("✓ "))
         }
+    }
+
+    private fun showEventSettingsDialog() {
+        if (isFinishing || isDestroyed) return
+        val currentSettings = NavigationPreferences.eventSettings(this)
+        val checked = EventSettingsUi.checkedItems(currentSettings)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("안내 설정")
+            .setMultiChoiceItems(EventSettingsUi.labels().toTypedArray(), checked) { _, which, isChecked ->
+                if (which in checked.indices) checked[which] = isChecked
+            }
+            .setNegativeButton("취소", null)
+            .setPositiveButton("저장") { _, _ ->
+                EventSettingsUi.resolveDialogSelection(checked, accepted = true)?.let { settings ->
+                    NavigationPreferences.saveEventSettings(this, settings)
+                    status.text = "안내 설정을 저장했습니다. 다음 안내 시작부터 적용됩니다"
+                }
+            }
+            .setCancelable(true)
+            .show()
     }
 
     private fun applyButtonSelection(button: Button, selected: Boolean, label: String) {
