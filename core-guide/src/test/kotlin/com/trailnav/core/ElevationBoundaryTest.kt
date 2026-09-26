@@ -35,6 +35,12 @@ class ElevationBoundaryTest {
         <trkpt lat="10.0040" lon="20.0000"><ele>200</ele></trkpt>
     </trkseg></trk></gpx>""")
 
+    private fun linearElevationRoute(elevations: List<Int>): RouteModel = RouteModel.fromGpx(
+        "<gpx><trk><trkseg>" + elevations.mapIndexed { index, elevation ->
+            "<trkpt lat=\"${10.0 + index * 0.0003}\" lon=\"20.0\"><ele>$elevation</ele></trkpt>"
+        }.joinToString("") + "</trkseg></trk></gpx>"
+    )
+
     @Test
     fun boundaryCrossingEmitsAscendingAndDescendingEvents() {
         var state = GuideState.initial(route)
@@ -100,7 +106,7 @@ class ElevationBoundaryTest {
     }
 
     @Test
-    fun disabledElevationStillAdvancesBand() {
+    fun toggleOffSilentButAdvancesBand() {
         val disabled = config.copy(elevationEnabled = false)
         var state = guide(
             GuideState.initial(route),
@@ -111,5 +117,68 @@ class ElevationBoundaryTest {
         val result = guide(state, SensorFrame(1_000L, 10.0035, 20.0, 5f, 1f, null), disabled)
         check(result.guidance !is Guidance.Elevation)
         check(result.nextState.elevationBand != null)
+    }
+
+    @Test
+    fun boundaryConfigChangesCrossings() {
+        val testRoute = linearElevationRoute((0..180 step 10).toList())
+        fun boundaries(boundary: Double): List<Double> {
+            val configured = config.copy(elevationBoundaryMeters = boundary, elevationHysteresisMeters = 0.0)
+            var state = GuideState.initial(testRoute)
+            val emitted = mutableListOf<Double>()
+            (0..18).forEach { index ->
+                val result = guide(
+                    state,
+                    SensorFrame(index * 1_000L, 10.0 + index * 0.0003, 20.0, 5f, 1f, null),
+                    configured,
+                )
+                if (result.guidance is Guidance.Elevation) {
+                    emitted += result.reason.details["boundaryMeters"]!!.toDouble()
+                }
+                state = result.nextState
+            }
+            return emitted
+        }
+        val hundred = boundaries(100.0)
+        val fifty = boundaries(50.0)
+        check(hundred == listOf(100.0)) { "100 m boundary emitted $hundred" }
+        check(fifty == listOf(50.0, 100.0, 150.0)) { "50 m boundary emitted $fifty" }
+    }
+
+    @Test
+    fun hysteresisConfigChangesChatter() {
+        val testRoute = RouteModel.fromGpx(
+            "<gpx><trk><trkseg>" + (0..200 step 10).mapIndexed { index, elevation ->
+                "<trkpt lat=\"${10.0 + index * 0.0005}\" lon=\"20.0\"><ele>$elevation</ele></trkpt>"
+            }.joinToString("") + "</trkseg></trk></gpx>"
+        )
+        fun chatter(hysteresis: Double): Int {
+            val configured = config.copy(
+                elevationBoundaryMeters = 100.0,
+                elevationHysteresisMeters = hysteresis,
+                eventMinIntervalSeconds = 0.0,
+            )
+            val start = guide(
+                GuideState.initial(testRoute),
+                SensorFrame(0L, 10.00498, 20.0, 5f, 1f, null),
+                configured,
+            )
+            var state = start.nextState
+            var emitted = 0
+            repeat(60) { index ->
+                val lat = if (index % 2 == 0) 10.00502 else 10.00498
+                val result = guide(state, SensorFrame((index + 1) * 1_000L, lat, 20.0, 5f, 1f, null), configured)
+                if (result.guidance is Guidance.Elevation) emitted++
+                state = result.nextState
+            }
+            return emitted
+        }
+        check(chatter(10.0) == 0) { "10 m hysteresis should absorb the ±0.4 m chatter" }
+        check(chatter(30.0) == 0) { "30 m hysteresis should absorb the ±0.4 m chatter" }
+        val zeroHysteresisEvents = chatter(0.0)
+        check(zeroHysteresisEvents == 60) {
+            "zero hysteresis should expose all 60 alternating crossings, got $zeroHysteresisEvents; " +
+                "routeUse=${testRoute.elevationUse}, profile=${testRoute.smoothedElevationMeters}"
+        }
     }
 }
