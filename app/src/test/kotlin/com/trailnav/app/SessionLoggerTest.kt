@@ -90,4 +90,34 @@ class SessionLoggerTest {
         val decision = session.accept(TrailLocation(0L, 10.0001, 20.0, 5f, 1f, null, "fake"))
         assertTrue(decision.result.reason.rule.isNotBlank())
     }
+
+    @Test
+    fun onDemandConfigAndSuppressionAreRecordedWithRequiredFields() {
+        val directory = createTempDir(prefix = "tnapp-ondemand-")
+        JsonlSessionLogger(
+            directory = directory,
+            sessionId = UUID.randomUUID().toString(),
+            codeHash = "sha256:test",
+            configHash = "sha256:config",
+            eventSettings = EventSettings.defaults().toWireMap(),
+            routeHash = "sha256:route",
+            appVersion = "test",
+        ).use { logger ->
+            logger.appendSystem("ondemand.config", OnDemandConfig().toWireMap())
+            logger.appendSystem(
+                "ondemand.suppressed",
+                ShakeCooldownSuppression(count = 3, remainingMillis = 270_000L).toWireMap(),
+            )
+        }
+
+        val events = File(directory, "events.ndjson").readLines()
+        assertTrue(events[0].contains("\"kind\":\"ondemand.config\""))
+        assertTrue(events[0].contains("\"shake_cooldown_ms\":\"300000\""))
+        assertTrue(events[1].contains("\"kind\":\"ondemand.suppressed\""))
+        assertTrue(events[1].contains("\"source\":\"shake\""))
+        assertTrue(events[1].contains("\"reason\":\"cooldown\""))
+        assertTrue(events[1].contains("\"count\":\"3\""))
+        assertTrue(events[1].contains("\"remaining_ms\":\"270000\""))
+        directory.deleteRecursively()
+    }
 }
