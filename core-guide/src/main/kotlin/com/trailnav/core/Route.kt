@@ -316,7 +316,13 @@ internal object GpxRouteParser {
         val simplifiedIndices = douglasPeuckerIndices(projected, config.douglasPeuckerEpsilonMeters)
         val simplified = simplifiedIndices.map { projected[it] }
         val simplifiedCumulative = cumulative(simplified)
-        val turns = extractTurns(simplified, simplifiedCumulative, config)
+        val turns = extractTurns(
+            simplified,
+            simplifiedCumulative,
+            simplifiedIndices,
+            cumulative,
+            config,
+        )
         val elevations = usable.map { it.elevationMeters }
         val elevation = classifyElevation(elevations, cumulative, config)
         val slopes = if (elevation.used) extractSlopeSegments(cumulative, elevation.smoothed, config) else emptyList()
@@ -516,6 +522,8 @@ internal object GpxRouteParser {
     private fun extractTurns(
         points: List<EnuPoint>,
         cumulative: List<Double>,
+        originalPointIndices: List<Int>,
+        originalCumulative: List<Double>,
         config: GuideConfig
     ): List<TurnPoint> {
         if (points.size < 3) return emptyList()
@@ -530,7 +538,14 @@ internal object GpxRouteParser {
             val outgoing = RouteMath.headingDegrees(points[index], after)
             val signed = RouteMath.signedAngle(outgoing - incoming)
             if (abs(signed) >= config.turnAngleThresholdDegrees) {
-                result.add(TurnPoint(at, if (signed > 0.0) Side.RIGHT else Side.LEFT, abs(signed)))
+                val positionOnOriginalAxis = originalCumulative[originalPointIndices[index]]
+                result.add(
+                    TurnPoint(
+                        positionOnOriginalAxis,
+                        if (signed > 0.0) Side.RIGHT else Side.LEFT,
+                        abs(signed),
+                    ),
+                )
             }
         }
         return result
