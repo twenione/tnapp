@@ -50,16 +50,64 @@ internal fun runFallbackAttempts(
 }
 
 internal data class MapQueryCounts(
-    val untypedRaw: Int = 0,
-    val untypedFiltered: Int = 0,
-    val exactRaw: Int = 0,
-    val exactFiltered: Int = 0,
-    val actualRaw: Int = 0,
-    val actualFiltered: Int = 0,
+    val originalUntypedRaw: Int = 0,
+    val originalUntypedFiltered: Int = 0,
+    val originalExactRaw: Int = 0,
+    val originalExactFiltered: Int = 0,
+    val originalActualRaw: Int = 0,
+    val originalActualFiltered: Int = 0,
+    val copyUntypedRaw: Int = 0,
+    val copyUntypedFiltered: Int = 0,
+    val copyExactRaw: Int = 0,
+    val copyExactFiltered: Int = 0,
+    val copyActualRaw: Int = 0,
+    val copyActualFiltered: Int = 0,
+) {
+    /** Compatibility aliases for callers that only recorded the original URI. */
+    val untypedRaw: Int get() = originalUntypedRaw
+    val untypedFiltered: Int get() = originalUntypedFiltered
+    val exactRaw: Int get() = originalExactRaw
+    val exactFiltered: Int get() = originalExactFiltered
+    val actualRaw: Int get() = originalActualRaw
+    val actualFiltered: Int get() = originalActualFiltered
+
+    /** Six-argument compatibility constructor for the previous diagnostic tests. */
+    constructor(
+        untypedRaw: Int,
+        untypedFiltered: Int,
+        exactRaw: Int,
+        exactFiltered: Int,
+        actualRaw: Int,
+        actualFiltered: Int,
+    ) : this(
+        originalUntypedRaw = untypedRaw,
+        originalUntypedFiltered = untypedFiltered,
+        originalExactRaw = exactRaw,
+        originalExactFiltered = exactFiltered,
+        originalActualRaw = actualRaw,
+        originalActualFiltered = actualFiltered,
+    )
+}
+
+internal data class MapCandidateDiagnostics(
+    val candidates: List<String> = emptyList(),
+    val excludedLabels: List<String> = emptyList(),
 )
 
-internal fun mapFallbackDiagnostic(counts: MapQueryCounts, outcome: FallbackOutcome): String =
-    "지도 앱 조회 무타입 ${counts.untypedRaw}/${counts.untypedFiltered}, " +
-        "정확 ${counts.exactRaw}/${counts.exactFiltered}, " +
-        "실제 ${counts.actualRaw}/${counts.actualFiltered}; " +
+internal fun mapFallbackDiagnostic(
+    counts: MapQueryCounts,
+    outcome: FallbackOutcome,
+    candidates: MapCandidateDiagnostics = MapCandidateDiagnostics(),
+): String {
+    val excluded = candidates.excludedLabels.distinct().take(8)
+    val candidateLabels = candidates.candidates.joinToString(", ").ifBlank { "없음" }
+    val excludedLabels = excluded.joinToString(", ").ifBlank { "없음" }
+    return "후보 ${candidates.candidates.size}개: $candidateLabels / 제외: $excludedLabels / " +
+        "원본[무타입 ${counts.originalUntypedRaw}/${counts.originalUntypedFiltered}, " +
+        "정확 ${counts.originalExactRaw}/${counts.originalExactFiltered}, " +
+        "실제 ${counts.originalActualRaw}/${counts.originalActualFiltered}] " +
+        "사본[무타입 ${counts.copyUntypedRaw}/${counts.copyUntypedFiltered}, " +
+        "정확 ${counts.copyExactRaw}/${counts.copyExactFiltered}, " +
+        "실제 ${counts.copyActualRaw}/${counts.copyActualFiltered}] / " +
         "fallback ${outcome.attempts}회(미설치 ${outcome.notFound}, 보안거부 ${outcome.securityRejected})"
+}
