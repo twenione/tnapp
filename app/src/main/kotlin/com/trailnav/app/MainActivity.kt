@@ -429,6 +429,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private data class MapUriSource(
+        val kind: MapUriKind,
+        val uri: Uri,
+    )
+
+    private data class MapDiscovery(
+        val merge: MapMergeResult,
+        val counts: MapQueryCounts,
+        val sources: List<MapUriSource>,
+    )
+
     private fun openSelectedRouteInMap() {
         val route = selectedSavedRoute ?: return
         val uri = selectedRoute ?: return
@@ -436,25 +447,131 @@ class MainActivity : AppCompatActivity() {
             status.text = "이 경로의 파일 권한이 없습니다. 다시 가져오기 필요"
             return
         }
-        if (launchMapIntent(uri, isSend = false)) return
+
+        // Make the provider-backed copy before discovery. Some map apps only
+        // advertise support for a filename with a .gpx extension.
         val cachedUri = copyRouteToMapCache(route, uri)
-        if (cachedUri != null) {
-            if (launchMapIntent(cachedUri, isSend = false)) return
-            if (launchMapIntent(cachedUri, isSend = true)) return
+        val sources = buildList {
+            add(MapUriSource(MapUriKind.ORIGINAL, uri))
+            cachedUri?.let { copy ->
+                if (copy.toString() != uri.toString()) add(MapUriSource(MapUriKind.COPY, copy))
+            }
         }
-        val diagnosticUri = cachedUri ?: uri
-        val counts = runCatching { mapQueryCounts(diagnosticUri) }.getOrDefault(MapQueryCounts())
-        val actualType = runCatching { contentResolver.getType(diagnosticUri) }
-            .getOrNull()
-            ?.takeIf { it.isNotBlank() }
+        val discovery = discoverMapCandidates(sources)
+        val diagnostics = MapCandidateDiagnostics(
+            candidates = discovery.merge.candidates.map { it.label },
+            excludedLabels = discovery.merge.excludedLabels,
+        )
+        val discoveryLine = mapFallbackDiagnostic(
+            discovery.counts,
+            FallbackOutcome(null, 0, 0, 0),
+            diagnostics,
+        )
+
+        if (requiresUserChoice(discovery.merge.candidates)) {
+            status.text = discoveryLine
+            showMapChoiceDialog(discovery, diagnostics)
+        } else {
+            runMapFallback(discovery, diagnostics)
+        }
+    }
+
+    private fun discoverMapCandidates(sources: List<MapUriSource>): MapDiscovery {
+        val observations = mutableListOf<MapObservation>()
+        var counts = MapQueryCounts()
+        sources.forEach { source ->
+            val actualType = runCatching { contentResolver.getType(source.uri) }
+                .getOrNull()
+                ?.takeIf { it.isNotBlank() }
+                ?: "application/octet-stream"
+            mapIntentShapes(actualType).forEach { shape ->
+                val rawApps = runCatching {
+                    queryResolvedApps(mapViewIntent(source.uri, shape.mimeType))
+                }.getOrDefault(emptyList())
+                val filteredCount = rawApps.count(::looksLikeMapApp)
+                counts = when (source.kind to shape.kind) {
+                    MapUriKind.ORIGINAL to MapIntentShapeKind.UNTYPED -> counts.copy(
+                        originalUntypedRaw = rawApps.size,
+                        originalUntypedFiltered = filteredCount,
+                    )
+                    MapUriKind.ORIGINAL to MapIntentShapeKind.EXACT -> counts.copy(
+                        originalExactRaw = rawApps.size,
+                        originalExactFiltered = filteredCount,
+                    )
+                    MapUriKind.ORIGINAL to MapIntentShapeKind.ACTUAL -> counts.copy(
+                        originalActualRaw = rawApps.size,
+                        originalActualFiltered = filteredCount,
+                    )
+                    MapUriKind.COPY to MapIntentShapeKind.UNTYPED -> counts.copy(
+                        copyUntypedRaw = rawApps.size,
+                        copyUntypedFiltered = filteredCount,
+                    )
+                    MapUriKind.COPY to MapIntentShapeKind.EXACT -> counts.copy(
+                        copyExactRaw = rawApps.size,
+                        copyExactFiltered = filteredCount,
+                    )
+                    MapUriKind.COPY to MapIntentShapeKind.ACTUAL -> counts.copy(
+                        copyActualRaw = rawApps.size,
+                        copyActualFiltered = filteredCount,
+                    )
+                    else -> counts
+                }
+                observations += MapObservation(source.kind, shape, rawApps)
+            }
+        }
+        return MapDiscovery(mergeMapCandidates(observations), counts, sources)
+    }
+
+    private fun showMapChoiceDialog(discovery: MapDiscovery, diagnostics: MapCandidateDiagnostics) {
+        if (isFinishing || isDestroyed) return
+        val candidates = discovery.merge.candidates
+        val labels = mapChoiceLabels(candidates)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("지도 앱 선택")
+            .setItems(labels.toTypedArray()) { _, which ->
+                when (val selection = mapChoiceAt(candidates, which)) {
+                    is MapChoiceSelection.Candidate -> launchMapCandidate(selection.candidate, discovery.sources)
+                    MapChoiceSelection.OtherApps -> runMapFallback(discovery, diagnostics)
+                    null -> Unit
+                }
+            }
+            .setNegativeButton("취소", null)
+            .setCancelable(true)
+            .show()
+    }
+
+    private fun launchMapCandidate(candidate: MapCandidate, sources: List<MapUriSource>) {
+        val sourceByKind = sources.associateBy { it.kind }
+        val outcome = runCandidateAttempts(candidate) { combo ->
+            val source = sourceByKind[combo.uriKind]
+                ?: return@runCandidateAttempts CandidateAttemptResult.NOT_FOUND
+            try {
+                startActivity(mapViewIntent(source.uri, combo.shape.mimeType, candidate.packageName))
+                CandidateAttemptResult.SUCCESS
+            } catch (_: android.content.ActivityNotFoundException) {
+                CandidateAttemptResult.NOT_FOUND
+            } catch (_: SecurityException) {
+                CandidateAttemptResult.SECURITY_REJECTED
+            }
+        }
+        val success = outcome.successCombo
+        if (success != null) {
+            status.text = "${candidate.label}에서 열었습니다 (방식: ${success.uriKind.label}·${success.shape.label})"
+        } else {
+            val message = "${candidate.label}에서 열 수 없습니다 (${outcome.lastReason})"
+            status.text = message
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun runMapFallback(discovery: MapDiscovery, diagnostics: MapCandidateDiagnostics) {
+        val fallbackSources = discovery.sources.sortedByDescending { it.kind.priority }
+        val actualType = fallbackSources.firstOrNull()?.let { source ->
+            runCatching { contentResolver.getType(source.uri) }.getOrNull()
+        }
         val shapes = fallbackIntentShapes(actualType)
-        val fallbackUris = buildList {
-            cachedUri?.let { add(it) }
-            add(uri)
-        }.distinctBy(Uri::toString)
-        val outcome = runFallbackAttempts(fallbackUris.map(Uri::toString), shapes) { uriKey, shape ->
-            val target = Uri.parse(uriKey)
-            val intent = mapViewIntent(target, shape.mimeType)
+        val outcome = runFallbackAttempts(fallbackSources.map { it.uri.toString() }, shapes) { uriKey, shape ->
+            val intent = mapViewIntent(Uri.parse(uriKey), shape.mimeType)
             try {
                 startActivity(intent)
                 FallbackAttemptResult.SUCCESS
@@ -468,57 +585,7 @@ class MainActivity : AppCompatActivity() {
             status.text = "연결 앱 선택창을 열었습니다 (방식: ${shape.label})"
             return
         }
-        showMapUnavailable(mapFallbackDiagnostic(counts, outcome))
-    }
-
-    private fun launchMapIntent(uri: Uri, isSend: Boolean): Boolean {
-        return try {
-            val exactType = "application/gpx+xml"
-            val exactIntent = if (isSend) mapSendIntent(uri, exactType) else mapViewIntent(uri, exactType)
-            val exactMatches = queryResolvedApps(exactIntent).filter(::looksLikeMapApp)
-            val actualType = contentResolver.getType(uri)?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
-            val genericIntent = if (isSend) mapSendIntent(uri, actualType) else mapViewIntent(uri, actualType)
-            val genericMatches = queryResolvedApps(genericIntent).filter(::looksLikeMapApp)
-            val untypedMatches = if (isSend) {
-                emptyList()
-            } else {
-                queryResolvedApps(mapViewIntent(uri, type = null)).filter(::looksLikeMapApp)
-            }
-            val plan = chooseMapLaunchPlan(untypedMatches, exactMatches, genericMatches)
-            val launchType = when {
-                untypedMatches.isNotEmpty() -> null
-                exactMatches.isNotEmpty() -> exactType
-                else -> actualType
-            }
-            val launchIntent = { packageName: String ->
-                if (isSend) {
-                    mapSendIntent(uri, launchType ?: actualType, packageName)
-                } else {
-                    mapViewIntent(uri, launchType, packageName)
-                }
-            }
-            when (plan) {
-                MapLaunchPlan.None -> false
-                is MapLaunchPlan.Direct -> {
-                    startActivity(launchIntent(plan.packageName))
-                    true
-                }
-                is MapLaunchPlan.Chooser -> {
-                    val primary = launchIntent(plan.primaryPackage)
-                    val alternatives = plan.alternativePackages.map { packageName -> launchIntent(packageName) }
-                    startActivity(
-                        Intent.createChooser(primary, "지도 앱 선택").apply {
-                            putExtra(Intent.EXTRA_INITIAL_INTENTS, alternatives.toTypedArray())
-                        },
-                    )
-                    true
-                }
-            }
-        } catch (_: android.content.ActivityNotFoundException) {
-            false
-        } catch (_: SecurityException) {
-            false
-        }
+        showMapUnavailable(mapFallbackDiagnostic(discovery.counts, outcome, diagnostics))
     }
 
     private fun mapViewIntent(uri: Uri, type: String?, packageName: String? = null): Intent = Intent(Intent.ACTION_VIEW).apply {
@@ -529,40 +596,12 @@ class MainActivity : AppCompatActivity() {
         clipData = android.content.ClipData.newRawUri("", uri)
     }
 
-    private fun mapSendIntent(uri: Uri, type: String, packageName: String? = null): Intent = Intent(Intent.ACTION_SEND).apply {
-        this.type = type
-        if (packageName != null) setPackage(packageName)
-        putExtra(Intent.EXTRA_STREAM, uri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        clipData = android.content.ClipData.newRawUri("", uri)
-    }
-
     private fun queryResolvedApps(intent: Intent): List<ResolvedApp> = packageManager
         .queryIntentActivities(intent, 0)
         .mapNotNull { info ->
             val packageName = info.activityInfo?.packageName ?: return@mapNotNull null
             ResolvedApp(packageName, info.loadLabel(packageManager)?.toString().orEmpty())
         }
-
-    private fun mapQueryCounts(uri: Uri): MapQueryCounts {
-        val exactType = "application/gpx+xml"
-        val actualType = contentResolver.getType(uri)?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
-        fun counts(intent: Intent): Pair<Int, Int> {
-            val raw = queryResolvedApps(intent)
-            return raw.size to raw.count(::looksLikeMapApp)
-        }
-        val (untypedRaw, untypedFiltered) = counts(mapViewIntent(uri, null))
-        val (exactRaw, exactFiltered) = counts(mapViewIntent(uri, exactType))
-        val (actualRaw, actualFiltered) = counts(mapViewIntent(uri, actualType))
-        return MapQueryCounts(
-            untypedRaw = untypedRaw,
-            untypedFiltered = untypedFiltered,
-            exactRaw = exactRaw,
-            exactFiltered = exactFiltered,
-            actualRaw = actualRaw,
-            actualFiltered = actualFiltered,
-        )
-    }
 
     private fun showMapUnavailable(diagnostic: String? = null) {
         val message = "GPX를 열 수 있는 지도 앱이 없습니다"
