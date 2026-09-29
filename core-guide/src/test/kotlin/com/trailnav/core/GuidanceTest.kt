@@ -209,6 +209,88 @@ class GuidanceTest {
     }
 
     @Test
+    fun reverseEventWinsOverStatusOnSameFrameAndStatusFollows() {
+        val route = RouteModel.fromGpx("""<gpx><trk><trkseg>
+            <trkpt lat="10.0" lon="20.0"/><trkpt lat="10.004" lon="20.0"/>
+        </trkseg></trk></gpx>""")
+        val config = GuideConfig(
+            elapsedEnabled = true,
+            elapsedAnnounceIntervalSeconds = 120.0,
+            eventMinIntervalSeconds = 3_600.0,
+            reverseWarningDwellSeconds = 60.0,
+            sunsetEnabled = false,
+            minimumSessionSecondsBeforeArrival = 0.0,
+        )
+        var state = guide(GuideState.initial(route), SensorFrame(0L, 10.002, 20.0, 5f, 1f, null), config).nextState
+        state = guide(state, SensorFrame(60_000L, 10.0018, 20.0, 5f, 1f, null), config).nextState
+        val eventFrame = guide(state, SensorFrame(120_000L, 10.0016, 20.0, 5f, 1f, null), config)
+        check(eventFrame.nextState.direction == ProgressDirection.REVERSE)
+        check(eventFrame.guidance is Guidance.Elapsed) { "periodic event must win the first reverse-dwell frame" }
+        check(!eventFrame.nextState.reverseStatusIssued) { "status must remain eligible after the event wins" }
+        val followingFrame = guide(eventFrame.nextState, SensorFrame(121_000L, 10.0014, 20.0, 5f, 1f, null), config)
+        check(followingFrame.guidance is Guidance.Status)
+        check(followingFrame.nextState.reverseStatusIssued)
+    }
+
+    @Test
+    fun reverseStatusReissuedAfterStationary() {
+        val route = RouteModel.fromGpx("""<gpx><trk><trkseg>
+            <trkpt lat="10.0" lon="20.0"/><trkpt lat="10.004" lon="20.0"/>
+        </trkseg></trk></gpx>""")
+        val config = GuideConfig(
+            reverseWarningDwellSeconds = 2.0,
+            sunsetEnabled = false,
+            minimumSessionSecondsBeforeArrival = 0.0,
+        )
+        var state = guide(GuideState.initial(route), SensorFrame(0L, 10.002, 20.0, 5f, 1f, null), config).nextState
+        state = guide(state, SensorFrame(1_000L, 10.0018, 20.0, 5f, 1f, null), config).nextState
+        val firstStatus = guide(state, SensorFrame(3_000L, 10.0016, 20.0, 5f, 1f, null), config)
+        check(firstStatus.guidance is Guidance.Status)
+        check(firstStatus.nextState.reverseStatusIssued)
+
+        val stationary = guide(firstStatus.nextState, SensorFrame(4_000L, 10.0016, 20.0, 5f, 0f, null), config)
+        check(stationary.nextState.direction == ProgressDirection.STATIONARY) {
+            "speed=0 must classify stationary; got direction=${stationary.nextState.direction}, state.stationary=${stationary.nextState.stationary}, reason=${stationary.reason.rule}"
+        }
+        check(!stationary.nextState.reverseStatusIssued)
+        state = guide(stationary.nextState, SensorFrame(5_000L, 10.0014, 20.0, 5f, 1f, null), config).nextState
+        val secondStatus = guide(state, SensorFrame(7_000L, 10.0012, 20.0, 5f, 1f, null), config)
+        check(secondStatus.guidance is Guidance.Status)
+        check(secondStatus.nextState.reverseStatusIssued)
+    }
+
+    @Test
+    fun sunsetDoesNotRefireAfterLeavingReverse() {
+        val route = RouteModel.fromGpx("""<gpx><trk><trkseg>
+            <trkpt lat="37.5665" lon="126.9780"/><trkpt lat="37.5865" lon="126.9780"/>
+        </trkseg></trk></gpx>""")
+        val config = GuideConfig(
+            sunsetEnabled = true,
+            sunsetAnnounceMinutes = listOf(30),
+            reverseWarningDwellSeconds = 0.0,
+            eventMinIntervalSeconds = 0.0,
+            minimumSessionSecondsBeforeArrival = 0.0,
+        )
+        var state = guide(GuideState.initial(route), SensorFrame(epoch("2026-09-21T08:50:00Z"), 37.5740, 126.9780, 5f, 1f, null), config).nextState
+        state = guide(state, SensorFrame(epoch("2026-09-21T08:58:00Z"), 37.5760, 126.9780, 5f, 1f, null), config).nextState
+        state = guide(state, SensorFrame(epoch("2026-09-21T09:00:00Z"), 37.5750, 126.9780, 5f, 1f, null), config).nextState
+        state = guide(state, SensorFrame(epoch("2026-09-21T09:01:00Z"), 37.5740, 126.9780, 5f, 1f, null), config).nextState
+        val reverseCrossing = guide(state, SensorFrame(epoch("2026-09-21T09:05:00Z"), 37.5730, 126.9780, 5f, 1f, null), config)
+        check(reverseCrossing.nextState.direction == ProgressDirection.REVERSE) {
+            "expected reverse crossing, got ${reverseCrossing.nextState.direction}; reason=${reverseCrossing.reason.rule}, guidance=${reverseCrossing.guidance}"
+        }
+        check(reverseCrossing.guidance is Guidance.Sunset)
+        val forwardAgain = guide(
+            reverseCrossing.nextState,
+            SensorFrame(epoch("2026-09-21T09:06:00Z"), 37.5750, 126.9780, 5f, 1f, null),
+            config,
+        )
+        check(forwardAgain.nextState.direction == ProgressDirection.FORWARD)
+        check(forwardAgain.guidance !is Guidance.Sunset)
+        check(30 in forwardAgain.nextState.consumedSunsetThresholds)
+    }
+
+    @Test
     fun reverseAllowsElapsedAndSunsetEventsAfterDwell() {
         val route = RouteModel.fromGpx("""<gpx><trk><trkseg>
             <trkpt lat="37.5665" lon="126.9780"/><trkpt lat="37.5865" lon="126.9780"/>
