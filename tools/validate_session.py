@@ -14,6 +14,7 @@ import re
 import sys
 from pathlib import Path
 from typing import Any
+from session_events import manifest_events
 
 MANIFEST_REQUIRED = ("session_id", "schema_version", "started_at_wall", "app", "engine", "route", "clock")
 STREAM_REQUIRED = {
@@ -77,6 +78,9 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
     for field in MANIFEST_REQUIRED:
         if get(manifest, field) is None:
             errors.append(f"manifest.json: missing required field: {field}")
+    _, _, event_error = manifest_events(manifest)
+    if event_error:
+        errors.append("manifest.json: engine.config.events must contain exactly E1..E8 booleans")
     if manifest.get("schema_version") != "0.1.0-draft":
         errors.append("manifest.json: schema_version must be 0.1.0-draft")
     session_id = manifest.get("session_id")

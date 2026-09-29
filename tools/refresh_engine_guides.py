@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from replay import invoke, resolve_cli
+from session_events import event_config_overrides, manifest_events
 
 
 def rewrite_events(raw_lines: list[str], trace: dict[int, dict]) -> tuple[list[str], int]:
@@ -37,7 +38,16 @@ def rewrite_events(raw_lines: list[str], trace: dict[int, dict]) -> tuple[list[s
 
 
 def refresh_session(session: Path, cli: Path) -> int:
-    trace = {int(item["seq"]): item for item in invoke(cli, session) if item.get("kind") == "guide"}
+    overrides: list[str] = []
+    manifest_path = session / "manifest.json"
+    if manifest_path.is_file():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        present, events, error = manifest_events(manifest)
+        if error:
+            raise ValueError(f"manifest engine.config.events invalid: {error}")
+        if present and events is not None:
+            overrides = event_config_overrides(events)
+    trace = {int(item["seq"]): item for item in invoke(cli, session, overrides=overrides) if item.get("kind") == "guide"}
     lines, changed = rewrite_events((session / "events.ndjson").read_text(encoding="utf-8").splitlines(), trace)
     (session / "events.ndjson").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return changed
