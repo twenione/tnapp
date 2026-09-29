@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import tempfile
 
 import negative_control_engine as d033
 
@@ -64,6 +65,19 @@ def test_required_mutation_consumers() -> None:
     ]
 
 
+def test_installed_cli_selects_host_launcher() -> None:
+    with tempfile.TemporaryDirectory(prefix="task042-cli-launcher-") as temporary:
+        workspace = Path(temporary)
+        bin_dir = workspace / "replay/build/install/replay/bin"
+        bin_dir.mkdir(parents=True)
+        unix_cli = bin_dir / "replay"
+        windows_cli = bin_dir / "replay.bat"
+        unix_cli.write_text("#!/bin/sh\n", encoding="utf-8")
+        windows_cli.write_text("@echo off\n", encoding="utf-8")
+        assert d033.installed_cli(workspace, windows=False) == unix_cli
+        assert d033.installed_cli(workspace, windows=True) == windows_cli
+
+
 def test_unique_mutation_needles() -> None:
     source = Path("tools/negative_control_engine.py").read_text(encoding="utf-8")
     engine_path = Path("core-guide/src/main/kotlin/com/trailnav/core/Engine.kt")
@@ -87,5 +101,6 @@ def test_unique_mutation_needles() -> None:
 if __name__ == "__main__":
     test_unmutated_positive_control()
     test_required_mutation_consumers()
+    test_installed_cli_selects_host_launcher()
     test_unique_mutation_needles()
     print("PASS: D-033 unmutated positive control, required-consumer matrix, and unique mutation needles")

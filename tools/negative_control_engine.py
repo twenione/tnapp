@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -373,13 +374,14 @@ def consumer_commands(cli: Path) -> dict[str, list[str]]:
     }
 
 
-def installed_cli(workspace: Path) -> Path:
-    """Prefer the Windows launcher when Gradle creates both script formats."""
-    candidates = (
-        workspace / "replay/build/install/replay/bin/replay.bat",
-        workspace / "replay/build/install/replay/bin/replay",
-    )
-    return next((candidate for candidate in candidates if candidate.is_file()), candidates[-1])
+def installed_cli(workspace: Path, *, windows: bool | None = None) -> Path:
+    """Select the launcher executable for the host running the consumer."""
+    if windows is None:
+        windows = os.name == "nt"
+    windows_cli = workspace / "replay/build/install/replay/bin/replay.bat"
+    unix_cli = workspace / "replay/build/install/replay/bin/replay"
+    candidates = (windows_cli, unix_cli) if windows else (unix_cli, windows_cli)
+    return next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
 
 
 def run(command: list[str], cwd: Path) -> tuple[int, str]:
