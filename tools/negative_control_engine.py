@@ -265,6 +265,16 @@ VARIANTS = {
         "        )\n"
         "    }",
     ),
+    "elevation-reverse-dwell-drop": (
+        "        if (dynamic.guidance != null) {\n"
+        "            return GuideResult(dynamic.guidance, dynamic.state, dynamic.reason)\n"
+        "        }\n"
+        "        if (!dynamic.state.reverseStatusIssued) {",
+        "        if (dynamic.guidance != null && dynamic.guidance !is Guidance.Elevation) {\n"
+        "            return GuideResult(dynamic.guidance, dynamic.state, dynamic.reason)\n"
+        "        }\n"
+        "        if (!dynamic.state.reverseStatusIssued) {",
+    ),
 }
 
 
@@ -293,6 +303,7 @@ CORE_GUIDE_TESTS = {
     ],
     "sunrise-epoch-day": ["com.trailnav.core.SunriseGuidanceTest.sunriseEpochSecondsMatchesReferenceRows"],
     "sunrise-consumes-rejected-accuracy": ["com.trailnav.core.SunriseGuidanceTest.rejectedAccuracyFrameDefersCrossingToNextGoodFrame"],
+    "elevation-reverse-dwell-drop": ["com.trailnav.core.ElevationBoundaryTest.elevationFiresInReverseAfterDwell"],
 }
 
 

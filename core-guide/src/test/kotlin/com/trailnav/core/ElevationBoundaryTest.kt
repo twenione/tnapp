@@ -181,4 +181,24 @@ class ElevationBoundaryTest {
                 "routeUse=${testRoute.elevationUse}, profile=${testRoute.smoothedElevationMeters}"
         }
     }
+
+    @Test
+    fun elevationFiresInReverseAfterDwell() {
+        val config = GuideConfig(
+            elevationEnabled = true,
+            elevationBoundaryMeters = 100.0,
+            elevationHysteresisMeters = 10.0,
+            reverseWarningDwellSeconds = 60.0,
+            eventMinIntervalSeconds = 0.0,
+            sunsetEnabled = false,
+            minimumSessionSecondsBeforeArrival = 0.0,
+        )
+        var state = guide(GuideState.initial(route), SensorFrame(0L, 10.0035, 20.0, 5f, 1f, null), config).nextState
+        state = guide(state, SensorFrame(60_000L, 10.0033, 20.0, 5f, 1f, null), config).nextState
+        state = guide(state, SensorFrame(120_000L, 10.0030, 20.0, 5f, 1f, null), config).nextState
+        val crossing = guide(state, SensorFrame(180_000L, 10.0018, 20.0, 5f, 1f, null), config)
+        check(crossing.nextState.direction == ProgressDirection.REVERSE)
+        check(crossing.guidance is Guidance.Elevation)
+        check(crossing.reason.details["direction"] == "down")
+    }
 }
