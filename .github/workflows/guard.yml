@@ -106,6 +106,8 @@ jobs:
         with:
           gradle-version: '8.14'
       - run: gradle :replay:installDist
+      - name: Engine contract probe (unmutated)
+        run: python tools/replay.py --cli replay/build/install/replay/bin/replay --contract
       - name: Replay golden and log-shape fixtures
         shell: bash
         run: |
@@ -178,6 +180,8 @@ jobs:
           test "$failures" -eq 0
       - name: Failure signature extractor fixtures
         run: python tools/test_preserve_failure_record.py
+      - name: D-033 consumer positive-control unit tests
+        run: python tools/test_negative_control_engine.py
       - name: Synthetic test-data rule negative controls
         run: python tools/test_check_synthetic_test_data.py
       - name: Fixture shape negative controls

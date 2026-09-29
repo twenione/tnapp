@@ -166,9 +166,11 @@ class SunriseGuidanceTest {
     fun sunriseEpochUsesTheLocalCalendarDay() {
         val seed = Instant.parse("2026-09-20T19:00:00Z").toEpochMilli()
         val sunrise = sunriseEpochSeconds(seed, 37.5665, 126.9780)!!
-        val instant = Instant.ofEpochSecond(sunrise.toLong())
-        check(instant.isAfter(Instant.parse("2026-09-20T20:30:00Z")))
-        check(instant.isBefore(Instant.parse("2026-09-20T22:00:00Z")))
+        // Independent fixed solar-date oracle for the synthetic Seoul point.
+        // A days-since-epoch value shifts the NOAA fractional year enough to
+        // miss this two-minute window even though the result stays near dawn.
+        val expected = Instant.parse("2026-09-20T21:18:13Z").epochSecond.toDouble()
+        check(kotlin.math.abs(sunrise - expected) <= 120.0)
     }
 
     @Test

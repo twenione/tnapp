@@ -124,18 +124,41 @@ def contract_probe(cli: Path) -> int:
     """Check D-033 dwell and caller-config contracts through the real CLI."""
     dwell = invoke_probe(cli, ["offRouteEnterDwellSeconds=20"])
     dwell_decisions = [item.get("decision") for item in dwell]
-    expected_dwell = ["CONTINUE", "CONTINUE", "OFF_ROUTE", "CONTINUE", "CONTINUE", "CONTINUE"]
+    expected_dwell = [
+        "CONTINUE",   # frame 0: first on-route fix initializes matching state
+        "CONTINUE",   # frame 1: the 30 m candidate has lasted only one second
+        "OFF_ROUTE",  # frame 2: the same departure persists past the 20 s dwell
+        "CONTINUE",   # frame 3: unchanged distance is inside the reannounce interval
+        "OFF_ROUTE",  # frame 4: distance fell below half the last spoken distance, so reannounce
+        "CONTINUE",   # frame 5: the on-route exit dwell completes
+        "TURN_AHEAD", # frame 6: the next turn is inside the 60 m advance window
+        "CONTINUE",   # frame 7: the one-shot advance warning was already consumed
+        "TURN_NOW",   # frame 8: the same turn enters the 15 m immediate window
+        "CONTINUE",   # frame 9: no new threshold was crossed
+    ]
     if dwell_decisions != expected_dwell:
-        print(f"FAIL D-033 dwell contract actual={dwell_decisions} expected={expected_dwell}")
+        print(f"FAIL: D-033 dwell contract actual={dwell_decisions} expected={expected_dwell}")
+        return 1
+    expected_reasons = {
+        2: "off-route.enter",
+        3: "off-route.holding",
+        4: "off-route.reannounce",
+        6: "turn.ahead",
+        7: "matching.on-route",
+        8: "turn.now",
+    }
+    actual_reasons = {index: dwell[index].get("reason_rule") for index in expected_reasons}
+    if actual_reasons != expected_reasons:
+        print(f"FAIL: D-033 dwell/turn reasons actual={actual_reasons} expected={expected_reasons}")
         return 1
     config = invoke_probe(cli, ["offRouteEnterDistMeters=100", "offRouteEnterDwellSeconds=0"])
     config_decisions = [item.get("decision") for item in config]
     if any(decision == "OFF_ROUTE" for decision in config_decisions):
-        print(f"FAIL D-033 config contract actual={config_decisions}")
+        print(f"FAIL: D-033 config contract actual={config_decisions}")
         return 1
     subsecond_decisions = [item.get("decision") for item in invoke_subsecond_probe(cli)]
     if subsecond_decisions != ["CONTINUE", "CONTINUE", "CONTINUE"]:
-        print(f"FAIL elapsed-ms subsecond contract actual={subsecond_decisions}")
+        print(f"FAIL: elapsed-ms subsecond contract actual={subsecond_decisions}")
         return 1
     print("D-033 replay contract=PASS")
     return 0
