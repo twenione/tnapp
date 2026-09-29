@@ -57,6 +57,8 @@ jobs:
       - run: python tools/check_failure_rule_versions.py
       - name: Validate app-shaped frame and slot event streams
         run: python tools/test_app_session_shape.py
+      - name: Validate optional manifest event settings
+        run: python tools/test_validate_session_events.py
       - name: Check failure rule-version append-only history
         if: github.event_name == 'pull_request'
         shell: bash
@@ -113,6 +115,10 @@ jobs:
           done
       - name: Replay reason and metadata negative controls
         run: python tools/test_replay_negative_controls.py --cli replay/build/install/replay/bin/replay
+      - name: Verify E1..E8 replay configuration contract
+        run: python tools/test_replay_event_config.py --cli replay/build/install/replay/bin/replay
+      - name: Replay event-enabled session with compiled engine
+        run: python tools/test_replay_event_settings.py --cli replay/build/install/replay/bin/replay
 
   negative-control:
     runs-on: ubuntu-latest

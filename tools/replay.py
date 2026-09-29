@@ -9,6 +9,7 @@ import subprocess
 import sys
 from xml.etree import ElementTree as ET
 from pathlib import Path
+from session_events import event_config_overrides, manifest_events
 
 
 def resolve_cli(explicit: str | None) -> Path:
@@ -150,7 +151,15 @@ def replay(root: Path, cli: Path, strict: bool, overrides: list[str] | None = No
     if len(loc_events) != len(frame_guide_events):
         print(f"FAIL: loc event count {len(loc_events)} does not match frame guide event count {len(frame_guide_events)}")
         return 1
-    trace = invoke(cli, root, overrides=overrides)
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else None
+    events_present, event_values, event_error = manifest_events(manifest)
+    if event_error:
+        print(f"FAIL: manifest engine.config.events invalid: {event_error}")
+        return 1
+    effective_overrides = event_config_overrides(event_values) if events_present and event_values is not None else []
+    effective_overrides.extend(overrides or [])
+    trace = invoke(cli, root, overrides=effective_overrides)
     comparisons = [item for item in trace if item.get("kind") == "guide"]
     trigger_trace = [item for item in trace if item.get("kind") == "trigger"]
     if len(comparisons) != len(frame_guide_events):
@@ -213,9 +222,7 @@ def replay(root: Path, cli: Path, strict: bool, overrides: list[str] | None = No
         )
         if status == "MISMATCH":
             mismatches.append(f"seq {item.get('seq')}")
-    manifest_path = root / "manifest.json"
-    if manifest_path.is_file():
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if isinstance(manifest, dict):
         recorded_use = manifest.get("route", {}).get("elevation_use") or {
             "used": manifest.get("route", {}).get("elevation_used"),
             "reason": manifest.get("route", {}).get("elevation_reason"),
@@ -225,7 +232,8 @@ def replay(root: Path, cli: Path, strict: bool, overrides: list[str] | None = No
             if recorded_use.get("reason") != actual_use["reason"] or bool(recorded_use.get("used")) != bool(actual_use["used"]):
                 mismatches.append("manifest elevation_use")
                 print(f"elevation_use MISMATCH actual={actual_use} recorded={recorded_use}")
-    print(f"RESULT comparisons={len(comparisons)} triggers={len(trigger_trace)} mismatches={len(mismatches)} strict={strict}")
+    event_status = "applied" if events_present else "absent"
+    print(f"RESULT comparisons={len(comparisons)} triggers={len(trigger_trace)} mismatches={len(mismatches)} strict={strict} events={event_status}")
     if mismatches and strict:
         print("FAIL: " + ", ".join(mismatches))
         return 1

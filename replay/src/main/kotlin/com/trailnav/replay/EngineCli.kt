@@ -124,7 +124,16 @@ private fun parseArgs(args: List<String>): CliOptions {
                 val assignment = args[++index]
                 val split = assignment.split('=', limit = 2)
                 require(split.size == 2) { "config must be name=value" }
-                overrides[split[0]] = split[1].toDouble()
+                val name = split[0]
+                val rawValue = split[1]
+                val value = rawValue.toDoubleOrNull()
+                    ?: error("config $name must be numeric: $rawValue")
+                if (name in EVENT_TOGGLE_FIELDS) {
+                    require(value == 0.0 || value == 1.0) {
+                        "config $name must be 0 or 1, was $rawValue"
+                    }
+                }
+                overrides[name] = value
             }
             else -> error("unknown argument: ${args[index]}")
         }
@@ -180,7 +189,26 @@ private fun GuideConfig.withOverrides(values: Map<String, Double>): GuideConfig 
     reannounceIntervalSeconds = values["reannounceIntervalSeconds"] ?: reannounceIntervalSeconds,
     turnAheadDistanceMeters = values["turnAheadDistanceMeters"] ?: turnAheadDistanceMeters,
     turnNowDistanceMeters = values["turnNowDistanceMeters"] ?: turnNowDistanceMeters,
-    turnOnRouteMaxOffsetMeters = values["turnOnRouteMaxOffsetMeters"] ?: turnOnRouteMaxOffsetMeters
+    turnOnRouteMaxOffsetMeters = values["turnOnRouteMaxOffsetMeters"] ?: turnOnRouteMaxOffsetMeters,
+    milestoneEnabled = values["milestoneEnabled"]?.let { it == 1.0 } ?: milestoneEnabled,
+    elapsedEnabled = values["elapsedEnabled"]?.let { it == 1.0 } ?: elapsedEnabled,
+    remainingEnabled = values["remainingEnabled"]?.let { it == 1.0 } ?: remainingEnabled,
+    slopeEnabled = values["slopeEnabled"]?.let { it == 1.0 } ?: slopeEnabled,
+    elevationEnabled = values["elevationEnabled"]?.let { it == 1.0 } ?: elevationEnabled,
+    waypointEnabled = values["waypointEnabled"]?.let { it == 1.0 } ?: waypointEnabled,
+    sunsetEnabled = values["sunsetEnabled"]?.let { it == 1.0 } ?: sunsetEnabled,
+    sunriseEnabled = values["sunriseEnabled"]?.let { it == 1.0 } ?: sunriseEnabled
+)
+
+private val EVENT_TOGGLE_FIELDS = setOf(
+    "milestoneEnabled",
+    "elapsedEnabled",
+    "remainingEnabled",
+    "slopeEnabled",
+    "elevationEnabled",
+    "waypointEnabled",
+    "sunsetEnabled",
+    "sunriseEnabled"
 )
 
 private fun runConfigProbe(config: GuideConfig) {
