@@ -147,18 +147,71 @@ class DynamicGuidanceTest {
         check((second.guidance as Guidance.Elapsed).hours == 1)
     }
 
-    @Test
-    fun slopeWindow() {
-        val xml = "<gpx><trk><trkseg>" +
-            listOf(0, 7, 15, 23, 30).mapIndexed { index, elevation ->
-                "<trkpt lat=\"${10.0 + index * 0.00045}\" lon=\"20.0\"><ele>$elevation</ele></trkpt>"
-            }.joinToString("") + "</trkseg></trk></gpx>"
-        val routeWithSlope = RouteModel.fromGpx(xml)
-        val segment = routeWithSlope.slopeSegments.firstOrNull()
-        check(segment != null)
-        check(segment.endS > segment.startS)
+    private fun peakEventRoute(): RouteModel {
+        val elevations = listOf(
+            0, 0, 0, 10, 20, 30, 40, 50, 60, 70,
+            80, 80, 80, 80, 80, 70, 60, 50, 40, 30, 20, 20, 20,
+        )
+        val track = elevations.mapIndexed { index, elevation ->
+            "<trkpt lat=\"${10.0 + index * 0.00045}\" lon=\"20.0\"><ele>$elevation</ele></trkpt>"
+        }.joinToString("")
+        return RouteModel.fromGpx("<gpx><trk><trkseg>$track</trkseg></trk></gpx>").also {
+            check(it.elevationUse.used && it.peaks.isNotEmpty())
+        }
     }
 
+    private fun peakStateAt(route: RouteModel, progressMeters: Double): GuideState {
+        val segment = route.cumulativeMeters.indexOfLast { it <= progressMeters }
+            .coerceIn(0, route.points.lastIndex - 1)
+        return GuideState.initial(route).copy(
+            lastMatch = MatchResult(0.0, progressMeters, segment, route.points[segment], ProgressDirection.FORWARD),
+            lastTimestamp = 0L,
+            sessionStartTimestamp = 0L,
+            direction = ProgressDirection.FORWARD,
+        )
+    }
+
+    private fun frameAtProgress(progressMeters: Double, timestamp: Long) =
+        SensorFrame(timestamp, 10.0 + progressMeters / 111_195.0, 20.0, 5f, 1f, null)
+
+    @Test
+    fun peakEventFiresWithinLeadDistanceAndConsumesOnce() {
+        val route = peakEventRoute()
+        val peak = route.peaks.first()
+        val targetProgress = peak.s - 75.0
+
+        fun announce(leadMeters: Double): GuideResult {
+            val config = GuideConfig(
+                slopeEnabled = true,
+                peakAnnounceLeadMeters = leadMeters,
+                eventMinIntervalSeconds = 0.0,
+                sunsetEnabled = false,
+            )
+            return guide(peakStateAt(route, targetProgress), frameAtProgress(targetProgress, 1_000L), config)
+        }
+
+        val withinDefaultLead = announce(100.0)
+        val slope = withinDefaultLead.guidance as? Guidance.Slope
+        check(slope != null)
+        check(slope.kind == SlopeKind.ASCENT)
+        check(slope.deltaMeters == peak.climbMeters)
+        check(withinDefaultLead.reason.details["event"] == "E4")
+        check(withinDefaultLead.reason.details["peakIndex"] == "0")
+        check(withinDefaultLead.reason.details["peakS"] == peak.s.toString())
+        check(withinDefaultLead.reason.details["elevationMeters"] == peak.elevationMeters.toString())
+        check(withinDefaultLead.reason.details["climbMeters"] == peak.climbMeters.toString())
+
+        val outsideShorterLead = announce(50.0)
+        check(outsideShorterLead.guidance !is Guidance.Slope)
+
+        val config = GuideConfig(slopeEnabled = true, peakAnnounceLeadMeters = 100.0, eventMinIntervalSeconds = 0.0, sunsetEnabled = false)
+        val repeated = guide(
+            withinDefaultLead.nextState,
+            frameAtProgress(peak.s - 25.0, 2_000L),
+            config,
+        )
+        check(repeated.guidance !is Guidance.Slope)
+    }
 
     @Test
     fun waypointWindow() {
@@ -178,22 +231,29 @@ class DynamicGuidanceTest {
 
     @Test
     fun remainingBeatsSlopeWhenThresholdsCrossTogether() {
-        val xml = "<gpx><trk><trkseg>" +
-            listOf(0, 0, 0, 0, 10, 22, 34, 46).mapIndexed { index, elevation ->
-                "<trkpt lat=\"${10.0 + index * 0.00045}\" lon=\"20.0\"><ele>$elevation</ele></trkpt>"
-            }.joinToString("") + "</trkseg></trk></gpx>"
-        val routeWithSlope = RouteModel.fromGpx(xml)
+        val route = peakEventRoute()
+        val peak = route.peaks.first()
+        val targetProgress = peak.s - 50.0
+        val remainingThreshold = route.totalLengthMeters - targetProgress + 1.0
         val config = GuideConfig(
             remainingEnabled = true,
             slopeEnabled = true,
             eventMinIntervalSeconds = 0.0,
-            remainingAnnounceMeters = listOf(250.0),
-            slopeAnnounceLeadMeters = 100.0,
+            remainingAnnounceMeters = listOf(remainingThreshold),
+            peakAnnounceLeadMeters = 100.0,
+            sunsetEnabled = false,
         )
-        var state = guide(GuideState.initial(routeWithSlope), SensorFrame(0L, 10.0, 20.0, 5f, 1f, null), config).nextState
-        val result = guide(state, SensorFrame(1_000L, 10.0013, 20.0, 5f, 1f, null), config)
-        check(result.guidance is Guidance.Remaining)
+        val previous = peakStateAt(route, targetProgress - 10.0)
+        val result = guide(previous, frameAtProgress(targetProgress, 1_000L), config)
+        check(result.guidance is Guidance.Remaining) {
+            "guidance=" + result.guidance + " reason=" + result.reason + " remaining=" +
+                (route.totalLengthMeters - result.nextState.lastMatch!!.projectedMeters) +
+                " target=" + targetProgress + " threshold=" + remainingThreshold
+        }
         check(result.reason.details["event"] == "E3")
+        check(0 in result.nextState.consumedSlopeIndices) {
+            "E4 is consumed even when the higher-priority E3 cue wins"
+        }
     }
 
     @Test
@@ -230,26 +290,25 @@ class DynamicGuidanceTest {
     }
 
     @Test
-    fun reverseGateSuppressesMilestoneAnnouncement() {
-        val reverseRoute = RouteModel.fromGpx(
-            "<gpx><trk><trkseg>" +
-                "<trkpt lat=\"10.0\" lon=\"20.0\"><ele>0</ele></trkpt>" +
-                "<trkpt lat=\"10.0005\" lon=\"20.0\"><ele>0</ele></trkpt>" +
-                "<trkpt lat=\"10.001\" lon=\"20.0\"><ele>0</ele></trkpt>" +
-                "<trkpt lat=\"10.0015\" lon=\"20.0\"><ele>10</ele></trkpt>" +
-                "<trkpt lat=\"10.002\" lon=\"20.0\"><ele>20</ele></trkpt>" +
-                "</trkseg></trk></gpx>"
+    fun reverseGateSuppressesSlopeAnnouncement() {
+        val route = peakEventRoute()
+        val peak = route.peaks.first()
+        val config = GuideConfig(
+            slopeEnabled = true,
+            peakAnnounceLeadMeters = 100.0,
+            reverseWarningDwellSeconds = 0.0,
+            eventMinIntervalSeconds = 0.0,
+            sunsetEnabled = false,
         )
-        check(reverseRoute.slopeSegments.isNotEmpty())
-        val config = GuideConfig(slopeEnabled = true, sunsetEnabled = false, eventMinIntervalSeconds = 0.0)
-        val primed = GuideState.initial(reverseRoute).copy(
-            lastMatch = MatchResult(0.0, reverseRoute.cumulativeMeters[2] + 20.0, 2, reverseRoute.points[2], ProgressDirection.FORWARD),
-            lastTimestamp = 0L,
-            sessionStartTimestamp = 0L,
-            direction = ProgressDirection.FORWARD,
+        val reverseState = peakStateAt(route, peak.s + 20.0).copy(
+            direction = ProgressDirection.REVERSE,
+            emaDeltaMeters = -40.0,
+            reverseSince = 0L,
         )
-        val result = guide(primed, SensorFrame(1_000L, 10.0009, 20.0, 5f, 1f, null), config)
+        val result = guide(reverseState, frameAtProgress(peak.s - 10.0, 1_000L), config)
+        check(result.nextState.direction == ProgressDirection.REVERSE)
         check(result.guidance !is Guidance.Slope)
+        check(0 in result.nextState.consumedSlopeIndices)
     }
 
     @Test
@@ -269,24 +328,14 @@ class DynamicGuidanceTest {
     }
 
     @Test
-    fun slopeThresholdDoesNotRefire() {
-        val xml = "<gpx><trk><trkseg>" +
-            listOf(0, 7, 15, 23, 30).mapIndexed { index, elevation ->
-                "<trkpt lat=\"${10.0 + index * 0.00045}\" lon=\"20.0\"><ele>$elevation</ele></trkpt>"
-            }.joinToString("") + "</trkseg></trk></gpx>"
-        val slopeRoute = RouteModel.fromGpx(xml)
-        val config = GuideConfig(slopeEnabled = true, sunsetEnabled = false, eventMinIntervalSeconds = 0.0)
-        val state = GuideState.initial(slopeRoute).copy(
-            lastMatch = MatchResult(0.0, 0.0, 0, slopeRoute.points.first(), ProgressDirection.FORWARD),
-            lastTimestamp = 0L,
-            sessionStartTimestamp = 0L,
-            direction = ProgressDirection.FORWARD,
-            consumedSlopeIndices = slopeRoute.slopeSegments.indices.toSet(),
-        )
-        val result = guide(state, SensorFrame(1_000L, 10.0, 20.0, 5f, 1f, null), config)
+    fun peakThresholdDoesNotRefireAfterConsumption() {
+        val route = peakEventRoute()
+        val peak = route.peaks.first()
+        val config = GuideConfig(slopeEnabled = true, peakAnnounceLeadMeters = 100.0, eventMinIntervalSeconds = 0.0, sunsetEnabled = false)
+        val state = peakStateAt(route, peak.s - 50.0).copy(consumedSlopeIndices = setOf(0))
+        val result = guide(state, frameAtProgress(peak.s - 25.0, 1_000L), config)
         check(result.guidance !is Guidance.Slope)
     }
-
 
     @Test
     fun eventPriorityKeepsRemainingAboveSlope() {
@@ -333,36 +382,25 @@ class DynamicGuidanceTest {
         check(3_000.0 in disabled.nextState.consumedRemainingThresholds)
     }
 
-    private fun toggleSlopeRoute(): RouteModel = RouteModel.fromGpx(
-        "<gpx><trk><trkseg>" + (List(7) { 0 } + listOf(0, 7, 15, 23, 30)).mapIndexed { index, elevation ->
-            "<trkpt lat=\"${10.0 + index * 0.00045}\" lon=\"20.0\"><ele>$elevation</ele></trkpt>"
-        }.joinToString("") + "</trkseg></trk></gpx>",
-        GuideConfig(slopeLookaheadMeters = 400.0),
-    )
-
     @Test
     fun toggleSlopeOnAndOff() {
-        val slopeRoute = toggleSlopeRoute()
-        check(slopeRoute.slopeSegments.isNotEmpty())
+        val route = peakEventRoute()
+        val peak = route.peaks.first()
         fun run(enabled: Boolean): GuideResult {
-            val configured = GuideConfig(
+            val config = GuideConfig(
                 slopeEnabled = enabled,
-                slopeAnnounceLeadMeters = 75.0,
-                slopeLookaheadMeters = 400.0,
+                peakAnnounceLeadMeters = 75.0,
                 eventMinIntervalSeconds = 0.0,
                 sunsetEnabled = false,
             )
-            var state = guide(GuideState.initial(slopeRoute), SensorFrame(0L, 10.0, 20.0, 5f, 1f, null), configured).nextState
-            state = guide(state, SensorFrame(1_000L, 10.001, 20.0, 5f, 1f, null), configured).nextState
-            state = guide(state, SensorFrame(2_000L, 10.002, 20.0, 5f, 1f, null), configured).nextState
-            return guide(state, SensorFrame(3_000L, 10.0027, 20.0, 5f, 1f, null), configured)
+            return guide(peakStateAt(route, peak.s - 50.0), frameAtProgress(peak.s - 50.0, 1_000L), config)
         }
         val enabled = run(true)
         check(enabled.guidance is Guidance.Slope)
         check(enabled.reason.details["event"] == "E4")
         val disabled = run(false)
         check(disabled.guidance !is Guidance.Slope)
-        check(disabled.nextState.consumedSlopeIndices.isNotEmpty())
+        check(0 in disabled.nextState.consumedSlopeIndices)
     }
 
     @Test
@@ -432,18 +470,17 @@ class DynamicGuidanceTest {
         check(distanceEvents.guidance !is Guidance.Milestone)
         check(distanceEvents.guidance !is Guidance.Remaining)
 
-        val slopeRoute = toggleSlopeRoute()
-        val slope = slopeRoute.slopeSegments.first()
+        val slopeRoute = peakEventRoute()
+        val slope = slopeRoute.peaks.first()
         val slopeConfig = GuideConfig(
             slopeEnabled = true,
-            slopeAnnounceLeadMeters = 75.0,
-            slopeLookaheadMeters = 400.0,
+            peakAnnounceLeadMeters = 75.0,
             reverseWarningDwellSeconds = 0.0,
             eventMinIntervalSeconds = 0.0,
             sunsetEnabled = false,
         )
         val slopeState = GuideState.initial(slopeRoute).copy(
-            lastMatch = MatchResult(0.0, slope.startS - 100.0, 0, slopeRoute.points.first(), ProgressDirection.FORWARD),
+            lastMatch = MatchResult(0.0, slope.s - 100.0, 0, slopeRoute.points.first(), ProgressDirection.FORWARD),
             lastTimestamp = 0L,
             sessionStartTimestamp = 0L,
             emaDeltaMeters = -100.0,
@@ -452,7 +489,7 @@ class DynamicGuidanceTest {
         )
         val slopeResult = guide(
             slopeState,
-            SensorFrame(1_000L, 10.0 + (slope.startS - 20.0) / 111_195.0, 20.0, 5f, 1f, null),
+            SensorFrame(1_000L, 10.0 + (slope.s - 20.0) / 111_195.0, 20.0, 5f, 1f, null),
             slopeConfig,
         )
         check(slopeResult.nextState.direction == ProgressDirection.REVERSE)

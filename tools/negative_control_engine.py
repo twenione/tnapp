@@ -28,6 +28,9 @@ VARIANTS = {'dwell-bypass': ('elapsedSeconds(timestamp, since) >= config.offRout
                     'val delta = now - then\n'
                     '    return if (delta >= 1_000L) delta / 1_000.0 else delta.toDouble() /* D-033 unit '
                     'heuristic */'),
+ 'turn-merge-gap-ignored': ('val suppressAhead = index > 0 &&\n'
+                            '                turn.s - state.route.turns[index - 1].s < config.turnMergeGapMeters',
+                            'val suppressAhead = false /* D-033 turn merge gap ignored */'),
  'turn-consumption': ('next.copy(completedTurnAheadIndices = next.completedTurnAheadIndices + index)',
                       'next.copy(completedTurnAheadIndices = next.completedTurnAheadIndices) /* D-033 turn '
                       'consumption removed */'),
@@ -39,6 +42,8 @@ VARIANTS = {'dwell-bypass': ('elapsedSeconds(timestamp, since) >= config.offRout
                       'config.turnOnRouteMaxOffsetMeters)',
                       'if (direction != ProgressDirection.FORWARD || false /* D-033 on-route offset ignored '
                       '*/)'),
+ 'peak-prominence-ignored': ('if (peakElevation - elevation >= config.peakProminenceMeters)',
+                             'if (true /* D-033 peak prominence ignored */)'),
  'elevation-waypoint-mix': ('val sourcePoints = usable.map { it.point }',
                             'val sourcePoints = usable.map { it.point } + rawWaypoints.map { it.point } /* '
                             'D-033 wpt mixed into route */'),
@@ -258,10 +263,12 @@ MUTATION_REQUIRED_CONSUMERS = {
     "dwell-bypass": OFF_ROUTE_CONSUMERS,
     "config-constant": OFF_ROUTE_CONSUMERS,
     "unit-heuristic": OFF_ROUTE_CONSUMERS,
+    "turn-merge-gap-ignored": CORE_TEST,
     "turn-consumption": frozenset({"core-guide-test", "replay"}),
     "turn-direction-gate": TURN_CONSUMERS,
     "turn-off-route-gate": TURN_CONSUMERS,
     "turn-offset-gate": TURN_OFFSET_CONSUMERS,
+    "peak-prominence-ignored": CORE_TEST,
     "elevation-waypoint-mix": CORE_TEST,
     "elevation-always-ok": CORE_TEST,
     "turn-axis-simplified": TURN_AXIS_CONSUMERS,
@@ -350,7 +357,7 @@ def failed_test_names(workspace: Path) -> list[str]:
 def mutation_needle_failures(engine_source: str, route_source: str) -> list[str]:
     """Require every mutation needle to identify exactly one source site."""
     failures: list[str] = []
-    route_mutations = {"turn-axis-simplified", "elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter"}
+    route_mutations = {"turn-axis-simplified", "elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter", "peak-prominence-ignored"}
     for name, (needle, _) in VARIANTS.items():
         source = route_source if name in route_mutations else engine_source
         count = source.count(needle)
@@ -463,7 +470,8 @@ def main() -> int:
 
         for name, (needle, replacement) in VARIANTS.items():
             target = route if name in {
-                "turn-axis-simplified", "elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter"
+                "turn-axis-simplified", "elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter",
+                "peak-prominence-ignored",
             } else engine
             target_original = route_original if target == route else original
             variant_engine = target_original.replace(needle, replacement, 1)

@@ -71,40 +71,39 @@ class EventPriorityTableTest {
     }
 
     private fun longSlopeRoute(): RouteModel {
-        val elevations = List(7) { 0 } + listOf(0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40)
+        val elevations = List(7) { 0 } + listOf(0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40) +
+            listOf(40, 40, 40, 30, 20, 10, 0)
         return RouteModel.fromGpx(
             "<gpx><trk><trkseg>" + elevations.mapIndexed { index, elevation ->
                 "<trkpt lat=\"${37.5665 + index * 0.0005}\" lon=\"126.9780\"><ele>$elevation</ele></trkpt>"
-            }.joinToString("") + "</trkseg></trk></gpx>",
-            GuideConfig(slopeLookaheadMeters = 800.0),
+            }.joinToString("") + "</trkseg></trk></gpx>"
         )
     }
 
     @Test
     fun sunriseConsumesSameFrameSlope() {
         val route = longSlopeRoute()
-        val segment = route.slopeSegments.firstOrNull() ?: error("fixture must contain a slope segment")
+        val peak = route.peaks.firstOrNull() ?: error("fixture must contain a confirmed peak")
         val config = GuideConfig(
             slopeEnabled = true,
-            slopeAnnounceLeadMeters = 100.0,
-            slopeLookaheadMeters = 800.0,
+            peakAnnounceLeadMeters = 100.0,
             sunriseEnabled = true,
             sunriseAnnounceMinutes = listOf(30, 10),
             sunsetEnabled = false,
             eventMinIntervalSeconds = 0.0,
         )
         val startTimestamp = ((sunrise() - 33.0 * 60.0) * 1000.0).roundToLong()
-        val startLat = 37.5665 + (segment.startS - 300.0) / 111_195.0
+        val startLat = 37.5665 + (peak.s - 300.0) / 111_195.0
         val first = guide(GuideState.initial(route), SensorFrame(startTimestamp, startLat, 126.9780, 5f, 1f, null), config)
         check(first.guidance !is Guidance.Slope)
-        val beforeCrossingLat = 37.5665 + (segment.startS - 150.0) / 111_195.0
+        val beforeCrossingLat = 37.5665 + (peak.s - 150.0) / 111_195.0
         val beforeCrossing = guide(
             first.nextState,
             SensorFrame(startTimestamp + 120_000L, beforeCrossingLat, 126.9780, 5f, 1f, null),
             config,
         )
         check(beforeCrossing.guidance !is Guidance.Slope)
-        val crossingLat = 37.5665 + (segment.startS - 50.0) / 111_195.0
+        val crossingLat = 37.5665 + (peak.s - 50.0) / 111_195.0
         val crossing = guide(
             beforeCrossing.nextState,
             SensorFrame(startTimestamp + 240_000L, crossingLat, 126.9780, 5f, 1f, null),

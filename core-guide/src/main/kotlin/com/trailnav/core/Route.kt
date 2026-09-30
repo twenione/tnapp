@@ -57,22 +57,12 @@ data class Waypoint(
 
 enum class SlopeKind { ASCENT, DESCENT }
 
-/** A deterministic, precomputed E4 elevation segment. */
-data class SlopeSegment(
-    val startS: Double,
-    val endS: Double,
-    val deltaMeters: Double,
-    val kind: SlopeKind,
-) {
-    val startMeters: Double
-        get() = startS
-
-    val endMeters: Double
-        get() = endS
-
-    val elevationDeltaMeters: Double
-        get() = deltaMeters
-}
+/** A confirmed E4 summit measured on the original route distance axis. */
+data class Peak(
+    val s: Double,
+    val elevationMeters: Double,
+    val climbMeters: Double,
+)
 
 /**
  * A read-only, preprocessed route.  [points] and [cumulativeMeters] are the
@@ -89,10 +79,10 @@ data class RouteModel(
     val warnings: List<RouteWarning>,
     /** Elevation values paired with [points]; null is retained for a missing value. */
     val elevationMeters: List<Double?> = emptyList(),
-    /** The deterministic profile used by both E4 slope extraction and E5 slots. */
+    /** The deterministic profile used by both E4 peak extraction and E5 slots. */
     val smoothedElevationMeters: List<Double> = emptyList(),
     val elevationUse: ElevationUse = ElevationUse(false, "absent"),
-    val slopeSegments: List<SlopeSegment> = emptyList(),
+    val peaks: List<Peak> = emptyList(),
     val waypoints: List<Waypoint> = emptyList(),
 ) {
     val totalLengthMeters: Double
@@ -115,12 +105,9 @@ data class RouteModel(
     val elevationSamples: List<Double?>
         get() = elevationMeters
 
-    /** Smoothed samples used for deterministic slope and slot calculations. */
+    /** Smoothed samples used for deterministic peak and slot calculations. */
     val smoothedElevationProfile: List<Double>
         get() = smoothedElevationMeters
-
-    val e4Segments: List<SlopeSegment>
-        get() = slopeSegments
 
     fun toEnu(point: GeoPoint): EnuPoint =
         if (sourcePoints.isEmpty()) EnuPoint(0.0, 0.0)
@@ -139,7 +126,7 @@ data class RouteModel(
             elevationMeters = emptyList(),
             smoothedElevationMeters = emptyList(),
             elevationUse = ElevationUse(false, "absent"),
-            slopeSegments = emptyList(),
+            peaks = emptyList(),
             waypoints = emptyList(),
         )
 
@@ -325,13 +312,21 @@ internal object GpxRouteParser {
         )
         val elevations = usable.map { it.elevationMeters }
         val elevation = classifyElevation(elevations, cumulative, config)
-        val slopes = if (elevation.used) extractSlopeSegments(cumulative, elevation.smoothed, config) else emptyList()
         val eligibleWaypoints = rawWaypoints.mapNotNull { waypoint ->
             val waypointEnu = RouteMath.toEnu(origin, waypoint.point)
             val projection = projectToRoute(waypointEnu, projected, cumulative)
             if (projection.distanceMeters <= config.waypointNearRouteMeters) {
                 Waypoint(waypoint.name, waypoint.point, projection.s, projection.distanceMeters)
             } else null
+        }
+        val peaks = if (elevation.used) {
+            extractPeaks(cumulative, elevation.smoothed, config).filterNot { peak ->
+                eligibleWaypoints.any { waypoint ->
+                    abs(peak.s - waypoint.s) <= config.peakWaypointDedupeMeters
+                }
+            }
+        } else {
+            emptyList()
         }
         return RouteModel(
             sourcePoints = sourcePoints,
@@ -345,7 +340,7 @@ internal object GpxRouteParser {
             elevationMeters = elevations,
             smoothedElevationMeters = elevation.smoothed,
             elevationUse = ElevationUse(elevation.used, elevation.reason),
-            slopeSegments = slopes,
+            peaks = peaks,
             waypoints = eligibleWaypoints,
         )
     }
@@ -415,55 +410,72 @@ internal object GpxRouteParser {
         return ElevationClassification(true, "ok", smoothed)
     }
 
-    private fun extractSlopeSegments(
+    private fun extractPeaks(
         cumulative: List<Double>,
         smoothed: List<Double>,
         config: GuideConfig,
-    ): List<SlopeSegment> {
-        if (smoothed.size < 2) return emptyList()
-        data class Active(var start: Int, var end: Int, var sign: Int)
-        val result = mutableListOf<SlopeSegment>()
-        var active: Active? = null
-        fun flush() {
-            val item = active ?: return
-            val delta = smoothed[item.end] - smoothed[item.start]
-            if (abs(delta) >= config.slopeMinDeltaMeters) {
-                result.add(
-                    SlopeSegment(
-                        startS = cumulative[item.start],
-                        endS = cumulative[item.end],
-                        deltaMeters = delta,
-                        kind = if (delta > 0.0) SlopeKind.ASCENT else SlopeKind.DESCENT,
-                    )
-                )
-            }
-            active = null
-        }
+    ): List<Peak> {
+        if (smoothed.size < 3 || cumulative.size != smoothed.size) return emptyList()
+
+        val peaks = mutableListOf<Peak>()
+        var valleyIndex = 0
+        var valleyElevation = smoothed.first()
+        var peakIndex = 0
+        var peakElevation = smoothed.first()
+        var trackingConfirmedAscent = false
+        var trackingDescent = false
+
         for (index in 1 until smoothed.size) {
-            val step = smoothed[index] - smoothed[index - 1]
-            val sign = when {
-                step > 0.0 -> 1
-                step < 0.0 -> -1
-                else -> 0
-            }
-            val current = active
-            if (sign == 0) {
-                if (current != null && abs(smoothed[index] - smoothed[current.start]) <= config.slopeHysteresisMeters) flush()
+            val elevation = smoothed[index]
+            if (!trackingConfirmedAscent) {
+                if (elevation < valleyElevation) {
+                    valleyIndex = index
+                    valleyElevation = elevation
+                }
+                if (elevation - valleyElevation >= config.peakProminenceMeters) {
+                    // A rise confirms the initial valley; the route start is not
+                    // treated as a summit on a monotonically descending profile.
+                    trackingConfirmedAscent = true
+                    peakIndex = index
+                    peakElevation = elevation
+                }
                 continue
             }
-            if (current == null) {
-                active = Active(index - 1, index, sign)
-            } else if (current.sign == sign &&
-                cumulative[index] - cumulative[current.start] <= config.slopeLookaheadMeters + config.minimumPointSpacingMeters
-            ) {
-                current.end = index
+
+            if (!trackingDescent) {
+                if (elevation > peakElevation) {
+                    peakIndex = index
+                    peakElevation = elevation
+                }
+                if (peakElevation - elevation >= config.peakProminenceMeters) {
+                    peaks += Peak(
+                        s = cumulative[peakIndex],
+                        elevationMeters = peakElevation,
+                        climbMeters = peakElevation - valleyElevation,
+                    )
+                    // The falling sample begins the search for the next valley.
+                    trackingDescent = true
+                    valleyIndex = peakIndex
+                    valleyElevation = peakElevation
+                    if (elevation < valleyElevation) {
+                        valleyIndex = index
+                        valleyElevation = elevation
+                    }
+                }
             } else {
-                flush()
-                active = Active(index - 1, index, sign)
+                if (elevation < valleyElevation) {
+                    valleyIndex = index
+                    valleyElevation = elevation
+                }
+                if (elevation - valleyElevation >= config.peakProminenceMeters) {
+                    // The rise confirms this valley and starts the next ascent.
+                    trackingDescent = false
+                    peakIndex = index
+                    peakElevation = elevation
+                }
             }
         }
-        flush()
-        return result
+        return peaks
     }
 
     private fun projectToRoute(point: EnuPoint, route: List<EnuPoint>, cumulative: List<Double>): RouteProjection {

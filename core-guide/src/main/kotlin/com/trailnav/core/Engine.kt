@@ -300,16 +300,28 @@ private fun evaluateDynamicGuidance(
         )
     }
 
-    // E4: the precomputed elevation segments are approached once.
-    state.route.slopeSegments.forEachIndexed { index, segment ->
-        val distance = segment.startS - match.projectedMeters
-        if (distance < 0.0) next = next.copy(consumedSlopeIndices = next.consumedSlopeIndices + index)
-        else if (distance <= config.slopeAnnounceLeadMeters) {
+    // E4: a confirmed summit is consumed when its arrival lead window opens.
+    state.route.peaks.forEachIndexed { index, peak ->
+        val distance = peak.s - match.projectedMeters
+        if (distance < 0.0) {
+            next = next.copy(consumedSlopeIndices = next.consumedSlopeIndices + index)
+        } else if (distance <= config.peakAnnounceLeadMeters) {
             next = next.copy(consumedSlopeIndices = next.consumedSlopeIndices + index)
             if (config.slopeEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedSlopeIndices) {
                 candidates += DynamicCandidate(
-                    EventPriority.SLOPE, "event.slope", Guidance.Slope(segment.kind, segment.deltaMeters),
-                    reason("event.slope", "E4", mapOf("segmentIndex" to index.toString(), "startS" to segment.startS.toString(), "deltaMeters" to segment.deltaMeters.toString()))
+                    EventPriority.SLOPE,
+                    "event.slope",
+                    Guidance.Slope(SlopeKind.ASCENT, peak.climbMeters),
+                    reason(
+                        "event.slope",
+                        "E4",
+                        mapOf(
+                            "peakIndex" to index.toString(),
+                            "peakS" to peak.s.toString(),
+                            "elevationMeters" to peak.elevationMeters.toString(),
+                            "climbMeters" to peak.climbMeters.toString(),
+                        ),
+                    ),
                 )
             }
         }
@@ -700,9 +712,13 @@ private fun evaluateTurnGuidance(
         .withIndex()
         .map { (index, turn) -> Triple(index, turn, turn.s - match.projectedMeters) }
         .filter { (_, _, remaining) -> remaining >= 0.0 && remaining <= config.turnAheadDistanceMeters }
-        .firstOrNull { (index, _, remaining) ->
+        .firstOrNull { (index, turn, remaining) ->
+            val suppressAhead = index > 0 &&
+                turn.s - state.route.turns[index - 1].s < config.turnMergeGapMeters
             remaining <= config.turnNowDistanceMeters && index !in next.completedTurnNowIndices ||
-                remaining > config.turnNowDistanceMeters && index !in next.completedTurnAheadIndices
+                remaining > config.turnNowDistanceMeters &&
+                index !in next.completedTurnAheadIndices &&
+                !suppressAhead
         }
         ?: return TurnEvaluation(next, null, Reason("turn.none-eligible"))
     val index = candidate.first
