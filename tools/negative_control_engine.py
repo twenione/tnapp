@@ -470,7 +470,8 @@ def main() -> int:
 
         for name, (needle, replacement) in VARIANTS.items():
             target = route if name in {
-                "turn-axis-simplified", "elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter"
+                "turn-axis-simplified", "elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter",
+                "peak-prominence-ignored",
             } else engine
             target_original = route_original if target == route else original
             variant_engine = target_original.replace(needle, replacement, 1)
