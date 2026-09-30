@@ -9,6 +9,8 @@ import kotlin.math.round
 /** Single source of truth for spoken guidance and on-demand status wording. */
 object GuidancePhrases {
     fun offRoute(distanceMeters: Double): String = "경로를 벗어났습니다. ${formatDistance(distanceMeters)}"
+    fun approach(distanceMeters: Double, bearingDegrees: Double): String =
+        "경로까지 ${formatDistance(distanceMeters)}, ${cardinal(bearingDegrees)}쪽입니다"
     fun arrived(): String = "목적지에 도착했습니다"
     fun milestone(distanceMeters: Double): String = "${formatDistance(distanceMeters)} 지점입니다"
     fun elapsed(hours: Int): String = "출발 ${hours}시간 경과"
@@ -63,4 +65,10 @@ object GuidancePhrases {
     }
 
     private fun sideLabel(side: Side): String = if (side == Side.LEFT) "왼쪽" else "오른쪽"
+
+    private fun cardinal(bearingDegrees: Double): String {
+        val labels = listOf("북", "북동", "동", "남동", "남", "남서", "서", "북서")
+        val index = ((bearingDegrees + 22.5) / 45.0).toInt() % labels.size
+        return labels[index]
+    }
 }

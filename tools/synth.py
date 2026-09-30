@@ -164,6 +164,74 @@ def make_session(root: Path, name: str, points: list[tuple[float, float]], varia
     (session / "events.ndjson").write_text("\n".join(json.dumps(item, sort_keys=True) for item in events) + "\n", encoding="utf-8")
 
 
+def make_turn_contract_session(root: Path) -> None:
+    """Create a small synthetic replay fixture with observable turn warnings."""
+    name = "turn_contract"
+    session = root / name
+    session.mkdir(parents=True, exist_ok=True)
+    origin_latitude = 10.0
+    origin_longitude = 20.0
+    enu_points: list[tuple[float, float]] = []
+
+    def wave(distance: int) -> float:
+        return 1.5 * math.sin(2.0 * math.pi * distance / 40.0)
+
+    for north in range(0, 301, 5):
+        enu_points.append((wave(north), float(north)))
+    for east in range(5, 301, 5):
+        enu_points.append((float(east), 300.0 + wave(east)))
+    latitude_degrees_per_meter = 180.0 / (math.pi * 6_371_008.8)
+    longitude_degrees_per_meter = latitude_degrees_per_meter / math.cos(math.radians(origin_latitude))
+    points = [
+        (origin_latitude + north * latitude_degrees_per_meter,
+         origin_longitude + east * longitude_degrees_per_meter)
+        for east, north in enu_points
+    ]
+    write_gpx(session / "route.gpx", points)
+    route_bytes = "\n".join(f"{lat:.8f},{lon:.8f}" for lat, lon in points).encode()
+    route_hash = "sha256:" + hashlib.sha256(route_bytes).hexdigest()
+    seed = 3048
+    event_config = {f"E{index}": False for index in range(1, 9)}
+    manifest = {
+        "session_id": str(uuid.uuid5(SYNTH_NAMESPACE, name)),
+        "schema_version": "0.1.0-draft",
+        "started_at_wall": "2000-01-01T00:00:00Z",
+        "app": {"version": "0.1.0", "build": 0, "code_hash": "sha256:synthetic"},
+        "engine": {"config": {"stub": False, "variant": name, "implementation": "core-guide", "events": event_config}, "rng_seed": seed},
+        "route": {"gpx_id": "synthetic-right-angle", "gpx_hash": route_hash, "point_count": len(points), "elevation_use": {"used": False, "reason": "absent"}, "waypoint_count": 0},
+        "clock": {"monotonic_source": "synthetic-sequence", "timestamp_unit": "seconds", "frame_intervals_seconds": [1.0, 24.0, 5.0, 10.0, 10.0, 1.0, 0.5, 0.5, 1.0]},
+        "privacy": {"upload_default": False},
+        "device": {"model": "synthetic", "os": "test", "sensors": ["gps"]},
+        "scenario": {"family": "route-turn-contract", "description": "Synthetic wavy right-angle route that distinguishes raw and simplified turn-distance axes"},
+    }
+    (session / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    cumulative = [0.0]
+    for first, second in zip(enu_points, enu_points[1:]):
+        cumulative.append(cumulative[-1] + math.hypot(second[0] - first[0], second[1] - first[1]))
+
+    def point_at_distance(distance: float) -> tuple[float, float]:
+        upper = next(index for index, value in enumerate(cumulative) if value >= distance)
+        lower = max(0, upper - 1)
+        span = cumulative[upper] - cumulative[lower]
+        fraction = 0.0 if span == 0.0 else (distance - cumulative[lower]) / span
+        east = enu_points[lower][0] + (enu_points[upper][0] - enu_points[lower][0]) * fraction
+        north = enu_points[lower][1] + (enu_points[upper][1] - enu_points[lower][1]) * fraction
+        return (
+            origin_latitude + north * latitude_degrees_per_meter,
+            origin_longitude + east * longitude_degrees_per_meter,
+        )
+
+    frames = [(index * 1_000, *point_at_distance(distance)) for index, distance in enumerate((0.0, 180.0, 220.0, 240.0, 285.0, 295.0, 305.0))]
+    events = []
+    for index, (timestamp_ms, latitude, longitude) in enumerate(frames):
+        timestamp = timestamp_ms / 1000.0
+        loc_seq = index * 2
+        events.append(event(loc_seq, timestamp, "loc", lat=round(latitude, 10), lon=round(longitude, 10), accuracy=5.0, provider="synthetic", speed_mps=1.0, bearing_deg=0.0))
+        events.append(event(loc_seq + 1, timestamp + 0.1, "guide", decision="CONTINUE", src_seq=loc_seq, inputs={"frame_count": index + 1, "rng_seed": seed}, reason={"rule": "synthetic.pending-engine-output", "details": {}}, state_hash="sha256:synthetic"))
+    (session / "events.ndjson").write_text("\n".join(json.dumps(item, sort_keys=True) for item in events) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", type=Path, default=Path("testdata/routes/base.gpx"))
@@ -182,6 +250,7 @@ def main() -> int:
     for path in (golden, synth):
         path.mkdir(parents=True, exist_ok=True)
     make_session(golden, "golden_engine", points, "golden", 100)
+    make_turn_contract_session(golden)
     variants = ["noise_5m", "noise_15m", "noise_30m", "offroute_15deg", "offroute_30deg", "offroute_90deg", "accuracy_80m", "stop_5m", "reverse"]
     for index, variant in enumerate(variants, 1):
         make_session(synth, f"{index:02d}_{variant}", points, variant, 1000 + index)

@@ -82,6 +82,12 @@ class VoiceAndGpsTest {
     }
 
     @Test
+    fun approachPhraseUsesTheBearingTowardTheRoute() {
+        assertEquals("경로까지 85미터, 북동쪽입니다", GuidancePhrases.approach(85.0, 45.0))
+        assertEquals("경로까지 85미터, 서쪽입니다", GuidancePhrases.approach(85.0, 270.0))
+    }
+
+    @Test
     fun onRouteSchedulerSpeaksOnceAtConfiguredInterval() {
         val scheduler = OnRouteVoiceScheduler(enabled = true, intervalSeconds = 60L)
         assertFalse(scheduler.onFrame(0L, onRoute = true))

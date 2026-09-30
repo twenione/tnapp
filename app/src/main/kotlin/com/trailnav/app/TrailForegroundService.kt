@@ -509,6 +509,7 @@ class TrailForegroundService : Service() {
     private fun updateNotification(guidance: Guidance?) {
         val message = when (guidance) {
             is Guidance.OffRoute -> "경로에서 ${"%.0f".format(guidance.distance)}m 이탈"
+            is Guidance.Approach -> "경로까지 ${"%.0f".format(guidance.distanceMeters)}m"
             Guidance.Arrived -> "목적지에 도착했습니다"
             is Guidance.Status -> if (guidance.isReverseStatus()) "경로를 안내하는 중" else guidance.message
             else -> "경로를 안내하는 중"
@@ -828,6 +829,7 @@ internal fun shouldFlushVoiceQueue(guidance: Guidance?): Boolean = guidance is G
 
 internal fun Guidance?.toSpeech(): String? = when (this) {
     is Guidance.OffRoute -> GuidancePhrases.offRoute(distance)
+    is Guidance.Approach -> GuidancePhrases.approach(distanceMeters, bearingDegrees)
     is Guidance.Status -> if (isReverseStatus()) null else message
     Guidance.Arrived -> GuidancePhrases.arrived()
     is Guidance.Milestone -> GuidancePhrases.milestone(distanceMeters)

@@ -22,6 +22,8 @@ from xml.etree import ElementTree as ET
 ENGINE = Path("core-guide/src/main/kotlin/com/trailnav/core/Engine.kt")
 VARIANTS = {'dwell-bypass': ('elapsedSeconds(timestamp, since) >= config.offRouteEnterDwellSeconds',
                   'true /* D-033 dwell bypass */'),
+ 'approach-gate-removed': ('if (!next.hasEnteredRoute) {',
+                           'if (false /* D-033 approach gate removed */) {'),
  'config-constant': ('match.distanceMeters > config.offRouteEnterDistMeters',
                      'match.distanceMeters > 25.0 /* D-033 config constant */'),
  'unit-heuristic': ('return (now - then) / 1_000.0',
@@ -253,6 +255,7 @@ VARIANTS = {'dwell-bypass': ('elapsedSeconds(timestamp, since) >= config.offRout
 CORE_TEST = frozenset({"core-guide-test"})
 OFF_ROUTE_CONSUMERS = frozenset({"core-guide-test", "replay", "phase1-accuracy", "config-sensitivity"})
 TURN_CONSUMERS = frozenset({"core-guide-test", "replay", "replay-turn-session"})
+TURN_OFF_ROUTE_GATE_CONSUMERS = frozenset({"core-guide-test", "replay"})
 TURN_AXIS_CONSUMERS = frozenset({"core-guide-test", "replay-turn-session"})
 TURN_OFFSET_CONSUMERS = frozenset({"core-guide-test", "config-sensitivity"})
 
@@ -261,12 +264,15 @@ TURN_OFFSET_CONSUMERS = frozenset({"core-guide-test", "config-sensitivity"})
 # whether the mutation is considered caught.
 MUTATION_REQUIRED_CONSUMERS = {
     "dwell-bypass": OFF_ROUTE_CONSUMERS,
+    "approach-gate-removed": CORE_TEST,
     "config-constant": OFF_ROUTE_CONSUMERS,
     "unit-heuristic": OFF_ROUTE_CONSUMERS,
     "turn-merge-gap-ignored": CORE_TEST,
     "turn-consumption": frozenset({"core-guide-test", "replay"}),
     "turn-direction-gate": TURN_CONSUMERS,
-    "turn-off-route-gate": TURN_CONSUMERS,
+    # The geometric turn session stays on-route; off-route suppression is
+    # covered by the core test and the replay contract probe instead.
+    "turn-off-route-gate": TURN_OFF_ROUTE_GATE_CONSUMERS,
     "turn-offset-gate": TURN_OFFSET_CONSUMERS,
     "peak-prominence-ignored": CORE_TEST,
     "elevation-waypoint-mix": CORE_TEST,
@@ -370,7 +376,7 @@ def consumer_commands(cli: Path) -> dict[str, list[str]]:
     return {
         "replay": ["python", "tools/replay.py", "--cli", str(cli), "--contract"],
         "replay-turn-session": [
-            "python", "tools/replay.py", "testdata/sessions/golden/log_shape_fixture",
+            "python", "tools/replay.py", "testdata/sessions/golden/turn_contract",
             "--cli", str(cli), "--strict",
         ],
         "config-sensitivity": ["python", "tools/config_sensitivity.py", "--cli", str(cli)],
@@ -519,7 +525,7 @@ def main() -> int:
             summary_rows.append((name, ", ".join(sorted(required)), ", ".join(rejected), "; ".join(failed_tests)))
             target.write_text(target_original, encoding="utf-8")
 
-        fixture = workspace / "testdata/sessions/golden/log_shape_fixture"
+        fixture = workspace / "testdata/sessions/golden/turn_contract"
         if fixture.is_dir():
             broken_fixture = workspace / "d033-replay-missing-loc"
             shutil.copytree(fixture, broken_fixture)

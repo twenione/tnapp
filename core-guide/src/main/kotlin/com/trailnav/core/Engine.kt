@@ -4,6 +4,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
@@ -113,6 +114,49 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         )
     }
 
+    if (!next.hasEnteredRoute) {
+        if (directedMatch.distanceMeters < config.offRouteExitDistMeters) {
+            next = next.copy(hasEnteredRoute = true)
+            // First entry is one-way; after this point the existing off-route hysteresis applies.
+        } else {
+            val shouldAnnounce = next.lastAnnouncementAt == null ||
+                elapsedSeconds(frame.timestamp, next.lastAnnouncementAt) >= config.reannounceIntervalSeconds
+            if (shouldAnnounce) {
+                val userPoint = state.route.toEnu(GeoPoint(frame.lat, frame.lon))
+                val bearing = bearingDegrees(userPoint, directedMatch.projectedPoint)
+                val sunset = evaluateSunsetStandalone(initializedState, next, frame, config, higherPriority = true)
+                next = sunset.state.copy(
+                    lastAnnouncementAt = frame.timestamp,
+                    lastAnnouncementDistance = directedMatch.distanceMeters
+                )
+                if (sunset.guidance != null) {
+                    return GuideResult(sunset.guidance, next, sunset.reason)
+                }
+                return GuideResult(
+                    Guidance.Approach(directedMatch.distanceMeters, bearing),
+                    next,
+                    Reason(
+                        rule = "approach.pre-entry",
+                        thresholds = mapOf(
+                            "entryDistMeters" to config.offRouteExitDistMeters,
+                            "reannounceIntervalSeconds" to config.reannounceIntervalSeconds
+                        ),
+                        details = mapOf(
+                            "distanceMeters" to directedMatch.distanceMeters.toString(),
+                            "bearingDegrees" to bearing.toString()
+                        )
+                    )
+                )
+            }
+            val sunset = evaluateSunsetStandalone(initializedState, next, frame, config, higherPriority = false)
+            if (sunset.guidance != null) return sunset.toResult("approach.holding")
+            return GuideResult(
+                null,
+                sunset.state,
+                Reason("approach.holding", details = mapOf("distanceMeters" to directedMatch.distanceMeters.toString()))
+            )
+        }
+    }
     next = updateOffRouteState(next, directedMatch, frame.timestamp, config)
     if (next.offRoute) {
         // Advance and consume ordinary event thresholds while off-route, but
@@ -561,11 +605,19 @@ private fun evaluateSunsetStandalone(
     frame: SensorFrame,
     config: GuideConfig,
     higherPriority: Boolean,
+): StandaloneSunsetEvaluation = evaluateSunsetStandalone(state, state, frame, config, higherPriority)
+
+private fun evaluateSunsetStandalone(
+    previous: GuideState,
+    state: GuideState,
+    frame: SensorFrame,
+    config: GuideConfig,
+    higherPriority: Boolean,
 ): StandaloneSunsetEvaluation {
     if (!config.sunsetEnabled) return StandaloneSunsetEvaluation(state, null, Reason("event.none"))
     val intervalOpen = state.lastPeriodicEventAt == null ||
         elapsedSeconds(frame.timestamp, state.lastPeriodicEventAt) >= config.eventMinIntervalSeconds
-    val evaluation = evaluateSunset(state, state, frame, config, intervalOpen, higherPriority)
+    val evaluation = evaluateSunset(previous, state, frame, config, intervalOpen, higherPriority)
     val candidate = evaluation.candidate
     if (candidate == null) return StandaloneSunsetEvaluation(evaluation.state, null, Reason("event.none", details = mapOf("event" to "none")))
     val next = evaluation.state.copy(
@@ -827,4 +879,11 @@ private fun updateOffRouteState(
 private fun elapsedSeconds(now: Long, then: Long?): Double {
     if (then == null || now < then) return 0.0
     return (now - then) / 1_000.0
+}
+
+private fun bearingDegrees(from: EnuPoint, to: EnuPoint): Double {
+    val dEast = to.east - from.east
+    val dNorth = to.north - from.north
+    val degrees = Math.toDegrees(atan2(dEast, dNorth))
+    return (degrees + 360.0) % 360.0
 }
