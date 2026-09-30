@@ -84,6 +84,27 @@ class GuidanceTest {
     }
 
     @Test
+    fun customOffRouteEnterDistanceIsRespected() {
+        val route = RouteModel.fromGpx("""<gpx><trk><trkseg><trkpt lat="10.0" lon="20.0"/><trkpt lat="10.002" lon="20.0"/></trkseg></trk></gpx>""")
+        val config = GuideConfig(
+            offRouteEnterDistMeters = 40.0,
+            offRouteEnterDwellSeconds = 0.0,
+            sunsetEnabled = false,
+        )
+        val metersPerDegreeLon = 6_371_008.8 * cos(Math.toRadians(10.0)) * Math.PI / 180.0
+        val result = guide(
+            GuideState.initial(route).copy(hasEnteredRoute = true),
+            SensorFrame(0L, 10.001, 20.0 + 30.0 / metersPerDegreeLon, 5f, 1f, null),
+            config,
+        )
+
+        check(!result.nextState.offRoute) {
+            "30 m is inside the configured 40 m entry threshold even though it exceeds the default"
+        }
+        check(result.nextState.candidateOffRouteSince == null)
+    }
+
+    @Test
     fun approachGuidanceFiresBeforeFirstRouteEntryInsteadOfOffRoute() {
         val route = RouteModel.fromGpx("""<gpx><trk><trkseg><trkpt lat="10.0" lon="20.0"/><trkpt lat="10.0" lon="20.004"/></trkseg></trk></gpx>""")
         val config = GuideConfig(sunsetEnabled = false)
