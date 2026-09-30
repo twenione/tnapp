@@ -118,7 +118,7 @@ def evaluate_session(
     session: Path,
     cli: Path,
     overrides: list[str] | None = None,
-) -> tuple[int, int, int, float, float, float, bool]:
+) -> tuple[int, int, int, float, float, float, float, bool]:
     events = load_events(session)
     locs = [event for event in events if event.get("stream") == "loc"]
     route_ll = route_points(session)
@@ -166,9 +166,12 @@ def evaluate_session(
     misses = 0
     for crossing in crossings:
         start_time = float(locs[crossing]["t"])
+        # Before the first confirmed entry, Approach is the intentional return-to-route
+        # guidance in place of OFF_ROUTE; either actionable cue detects this departure.
         detected = any(
-            decisions[index] == "OFF_ROUTE" and float(locs[index]["t"]) <= start_time + OFF_ROUTE_WINDOW_SECONDS
-            for index in range(crossing, len(locs))
+            decisions[index] in {"OFF_ROUTE", "APPROACH"}
+            and abs(float(locs[index]["t"]) - start_time) <= OFF_ROUTE_WINDOW_SECONDS
+            for index in range(len(locs))
         )
         if not detected:
             misses += 1
@@ -179,6 +182,7 @@ def evaluate_session(
         len(locs),
         max(distances),
         sum(1 for decision in decisions if decision == "OFF_ROUTE"),
+        sum(1 for decision in decisions if decision == "APPROACH"),
         departure_length,
         miss_eligible,
     )
@@ -200,15 +204,19 @@ def contract_probe(cli: Path) -> None:
         meters_per_degree_lon = EARTH_RADIUS_M * math.cos(math.radians(10.0)) * math.pi / 180.0
         east30 = 30.0 / meters_per_degree_lon
         locations = [
+            # Start on-route so this probe isolates the post-entry dwell contract;
+            # the separate approach tests cover a route that has not been entered.
+            {"seq": 0, "t": 0, "stream": "loc", "lat": 10.0005, "lon": 20.0, "accuracy": 5.0, "speed_mps": 1.0, "bearing_deg": 0.0, "provider": "fixture"},
+        ] + [
             {"seq": index, "t": timestamp, "stream": "loc", "lat": 10.0005, "lon": 20.0 + east30, "accuracy": 5.0, "speed_mps": 1.0, "bearing_deg": 0.0, "provider": "fixture"}
             # Session event timestamps are seconds; EngineCli converts them to epoch milliseconds.
-            for index, timestamp in enumerate((0, 10, 21))
+            for index, timestamp in enumerate((1, 11, 22), start=1)
         ]
         (root / "events.ndjson").write_text("\n".join(json.dumps(item) for item in locations) + "\n", encoding="utf-8")
 
         dwell_trace = invoke(cli, root, every_frame=True, overrides=["offRouteEnterDwellSeconds=20"])
         dwell_decisions = [item.get("decision") for item in dwell_trace]
-        if dwell_decisions[:2] != ["CONTINUE", "CONTINUE"] or dwell_decisions[2:] != ["OFF_ROUTE"]:
+        if dwell_decisions != ["CONTINUE", "CONTINUE", "CONTINUE", "OFF_ROUTE"]:
             raise AssertionError(f"dwell contract failed: {dwell_decisions}")
 
         config_trace = invoke(
@@ -244,16 +252,16 @@ def main() -> int:
         return 1
     sha = args.commit_sha or git_sha()
     print(f"evidence run_id={args.run_id} commit_sha={sha} engine_cli={cli}")
-    print("session | false_positives | misses | samples | departure_length_m | max_cross_track_m | miss_eligible | engine_off_route | verdict")
+    print("session | false_positives | misses | samples | departure_length_m | max_cross_track_m | miss_eligible | engine_off_route | engine_approach | verdict")
     total_false = total_missed = 0
     for name in SESSIONS:
         result = evaluate_session(args.root / name, cli, args.config)
-        false, missed, samples, maximum, offroute_count, departure_length, miss_eligible = result
+        false, missed, samples, maximum, offroute_count, approach_count, departure_length, miss_eligible = result
         total_false += false
         total_missed += missed
         verdict = "PASS" if false == 0 and missed == 0 else "FAIL"
         eligibility = "미탐 판정 대상" if miss_eligible else "미탐 판정 대상 아님"
-        print(f"{name} | {false} | {missed} | {samples} | {departure_length:.1f} | {maximum:.1f} | {eligibility} | {offroute_count} | {verdict}")
+        print(f"{name} | {false} | {missed} | {samples} | {departure_length:.1f} | {maximum:.1f} | {eligibility} | {offroute_count} | {approach_count} | {verdict}")
     status = "PASS" if total_false == 0 and total_missed == 0 else "FAIL"
     print(f"RESULT sessions={len(SESSIONS)} false_positives={total_false} misses={total_missed} status={status}")
     return 0 if status == "PASS" else 1

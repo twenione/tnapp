@@ -158,6 +158,7 @@ private data class Output(
 private fun decision(guidance: Guidance?): String = when (guidance) {
     null -> "CONTINUE"
     is Guidance.OffRoute -> "OFF_ROUTE"
+    is Guidance.Approach -> "APPROACH"
     is Guidance.TurnAhead -> "TURN_AHEAD"
     is Guidance.TurnNow -> "TURN_NOW"
     is Guidance.Milestone -> "MILESTONE"
@@ -174,6 +175,7 @@ private fun decision(guidance: Guidance?): String = when (guidance) {
 
 private fun com.trailnav.core.GuideResult.guidanceDistance(): Double? = when (val item = guidance) {
     is Guidance.OffRoute -> item.distance
+    is Guidance.Approach -> item.distanceMeters
     is Guidance.Status -> item.distance
     is Guidance.Milestone -> item.distanceMeters
     is Guidance.Remaining -> item.thresholdMeters
@@ -243,7 +245,7 @@ private fun runSubsecondProbe(config: GuideConfig) {
     val route = RouteModel.fromGpx("<gpx><trk><trkseg><trkpt lat=\"10.0\" lon=\"20.0\"/><trkpt lat=\"10.002\" lon=\"20.0\"/></trkseg></trk></gpx>", config)
     val metersPerDegreeLon = 6_371_008.8 * cos(Math.toRadians(10.0)) * Math.PI / 180.0
     val east30 = 30.0 / metersPerDegreeLon
-    var state = GuideState.initial(route)
+    var state = GuideState.initial(route).copy(hasEnteredRoute = true)
     listOf(0L, 944L, 1_941L).forEachIndexed { index, timestamp ->
         val result = guide(state, SensorFrame(timestamp, 10.0005, 20.0 + east30, 5f, 1f, null), config)
         state = result.nextState

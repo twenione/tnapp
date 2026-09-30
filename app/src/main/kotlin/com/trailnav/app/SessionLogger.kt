@@ -170,6 +170,7 @@ class JsonlSessionLogger(
         private fun guidanceName(result: GuideResult): String = when (result.guidance) {
             null -> "CONTINUE"
             is com.trailnav.core.Guidance.OffRoute -> "OFF_ROUTE"
+            is com.trailnav.core.Guidance.Approach -> "APPROACH"
             is com.trailnav.core.Guidance.TurnAhead -> "TURN_AHEAD"
             is com.trailnav.core.Guidance.TurnNow -> "TURN_NOW"
             is com.trailnav.core.Guidance.Milestone -> "MILESTONE"

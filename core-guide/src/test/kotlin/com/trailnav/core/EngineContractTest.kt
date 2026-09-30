@@ -18,7 +18,7 @@ class EngineContractTest {
         val metersPerDegreeLon = 6_371_008.8 * cos(Math.toRadians(10.0)) * Math.PI / 180.0
         val east30 = 30.0 / metersPerDegreeLon
         val frame = { timestamp: Long -> SensorFrame(timestamp, 10.0005, 20.0 + east30, 5f, 1f, null) }
-        var state = GuideState.initial(route)
+        var state = GuideState.initial(route).copy(hasEnteredRoute = true)
         state = guide(state, frame(0L), config).nextState
         state = guide(state, frame(10_000L), config).nextState
         check(!state.offRoute) { "off-route entered before the configured dwell elapsed" }

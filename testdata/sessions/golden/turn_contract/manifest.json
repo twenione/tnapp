@@ -1,0 +1,67 @@
+{
+  "session_id": "fe846359-818f-589b-9def-7ccd993a58f0",
+  "schema_version": "0.1.0-draft",
+  "started_at_wall": "2000-01-01T00:00:00Z",
+  "app": {
+    "version": "0.1.0",
+    "build": 0,
+    "code_hash": "sha256:synthetic"
+  },
+  "engine": {
+    "config": {
+      "stub": false,
+      "variant": "turn_contract",
+      "implementation": "core-guide",
+      "events": {
+        "E1": false,
+        "E2": false,
+        "E3": false,
+        "E4": false,
+        "E5": false,
+        "E6": false,
+        "E7": false,
+        "E8": false
+      }
+    },
+    "rng_seed": 3048
+  },
+  "route": {
+    "gpx_id": "synthetic-right-angle",
+    "gpx_hash": "sha256:2f1f5df99b7a63aedff6a7189481b6ff4d8d629161c6b2fbc7a0038cd82b7228",
+    "point_count": 121,
+    "elevation_use": {
+      "used": false,
+      "reason": "absent"
+    },
+    "waypoint_count": 0
+  },
+  "clock": {
+    "monotonic_source": "synthetic-sequence",
+    "timestamp_unit": "seconds",
+    "frame_intervals_seconds": [
+      1.0,
+      24.0,
+      5.0,
+      10.0,
+      10.0,
+      1.0,
+      0.5,
+      0.5,
+      1.0
+    ]
+  },
+  "privacy": {
+    "upload_default": false
+  },
+  "device": {
+    "model": "synthetic",
+    "os": "test",
+    "sensors": [
+      "gps"
+    ]
+  },
+  "scenario": {
+    "family": "route-turn-contract",
+    "description": "Synthetic wavy right-angle route that distinguishes raw and simplified turn-distance axes"
+  }
+}

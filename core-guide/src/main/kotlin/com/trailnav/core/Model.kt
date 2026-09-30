@@ -25,6 +25,7 @@ data class Reason(
 
 sealed class Guidance {
     data class OffRoute(val distance: Double, val direction: String) : Guidance()
+    data class Approach(val distanceMeters: Double, val bearingDegrees: Double) : Guidance()
     data class TurnAhead(val distance: Double, val side: Side) : Guidance()
     data class TurnNow(val side: Side) : Guidance()
     data class Milestone(val distanceMeters: Double) : Guidance()
@@ -220,6 +221,7 @@ data class MatchResult(
 /** Immutable state carried from one frame to the next. */
 data class GuideState(
     val route: RouteModel,
+    val hasEnteredRoute: Boolean = false,
     val lastMatch: MatchResult? = null,
     val lastTimestamp: Long? = null,
     val sessionStartTimestamp: Long? = null,
