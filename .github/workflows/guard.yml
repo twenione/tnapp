@@ -146,7 +146,8 @@ jobs:
           for fixture in \
             testdata/violations/session_seq_regress \
             testdata/violations/session_stream_time_regress \
-            testdata/violations/session_missing_manifest; do
+            testdata/violations/session_missing_manifest \
+            testdata/violations/session_bad_schema_version; do
             set +e
             python tools/validate_session.py "$fixture"
             code=$?
