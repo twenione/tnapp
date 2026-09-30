@@ -37,4 +37,524 @@ VARIANTS = {'dwell-bypass': ('elapsedSeconds(timestamp, since) >= config.offRout
                       'next.copy(completedTurnAheadIndices = next.completedTurnAheadIndices) /* D-033 turn '
                       'consumption removed */'),
  'turn-direction-gate': ('if (direction != ProgressDirection.FORWARD || match.distanceMeters >= '
-                         'config.turnOnuÛní¢G§²ÚîÆ­yÒpÐ¢ræW‡BÒWfÇVFTG–æÖ–4wV–Fæ6R†–æ—F–Æ—¦VE7FFRÂæW‡BÂF—&V7FVDÖF6‚ÂpÐ¢vg&ÖRÂ6öæf–rÂ7W&W74ææ÷Væ6VÖVçG2ÒG'VR’ç7FFRrÀÐ¢v–b†æW‡Bæöfe&÷WFR’µÆâpÐ¢ròòGfæ6RæB6öç7VÖR÷&F–æ'’WfVçBF‡&W6†öÆG2v†–ÆRöfb×&÷WFRÂ'WEÆâpÐ¢ròò¶VWSrVæF–ærf÷"ÆFW"6fWG’ææ÷Væ6VÖVçBåÆâpÐ¢ræW‡BÒWfÇVFTG–æÖ–4wV–Fæ6R†–æ—F–Æ—¦VE7FFRÂæW‡Bæ6÷’†öfe&÷WFRÒpÐ¢vfÇ6R’ÂF—&V7FVDÖF6‚Âg&ÖRÂ6öæf–rÂ7W&W74ææ÷Væ6VÖVçG2ÒfÇ6R’ç7FFRò¢pÐ¢tBÓ32öfb×&÷WFRWfVçBvFR&VÖ÷fVB¢òr’ÀÐ¢vWfVçB×&WfW'6RÖvFRs¢‚v6öæf–rç6Æ÷TVæ&ÆVBbböå&÷WFRbbf÷'v&BbbWfVçD–çFW'fÄ÷Vâbb–æFW‚–âpÐ¢w&Wf–÷W2æ6öç7VÖVE6Æ÷T–æF–6W2rÀÐ¢v6öæf–rç6Æ÷TVæ&ÆVBbböå&÷WFRbbWfVçD–çFW'fÄ÷Vâbb–æFW‚–âpÐ¢w&Wf–÷W2æ6öç7VÖVE6Æ÷T–æF–6W2ò¢BÓ32&WfW'6RWfVçBvFR&VÖ÷fVB¢òr’ÀÐ¢vWfVçBÖÖ–âÖ–çFW'fÂs¢‚v6öæf–ræÖ–ÆW7FöæTVæ&ÆVBbböå&÷WFRbbf÷'v&BbbWfVçD–çFW'fÄ÷VâbbpÐ¢vg&W6„7&÷76VBæ—4æ÷DV×G’‚’rÀÐ¢v6öæf–ræÖ–ÆW7FöæTVæ&ÆVBbböå&÷WFRbbf÷'v&Bbbg&W6„7&÷76VBæ—4æ÷DV×G’‚’ò¢BÓ32pÐ¢vWfVçB–çFW'fÂ&VÖ÷fVB¢òr’ÀÐ¢vWfVçBÖ6öç7V×F–öâ×VWVRs¢‚væW‡BÒæW‡Bæ6÷’†6öç7VÖVDÖ–ÆW7FöæT–æF–6W2ÒæW‡Bæ6öç7VÖVDÖ–ÆW7FöæT–æF–6W2²pÐ¢v7&÷76VB’rÀÐ¢væW‡BÒæW‡Bæ6÷’†6öç7VÖVDÖ–ÆW7FöæT–æF–6W2ÒæW‡Bæ6öç7VÖVDÖ–ÆW7FöæT–æF–6W2’ò¢pÐ¢tBÓ32S6öç7V×F–öâ&VÖ÷fVB¢òr’ÀÐ¢vWfVçB×F‡&W6†öÆB×&Vf—&Rs¢‚v–æFW‚–â&Wf–÷W2æ6öç7VÖVE6Æ÷T–æF–6W2rÀÐ¢wG'VRò¢BÓ326öç7VÖVBSBF‡&W6†öÆB&Vf—&W2¢òr’ÀÐ¢w&WfW'6R×7Vç6WBÖG&÷s¢‚v–b‡&WfW'6Uv&æ–ær’µÆâpÐ¢rfÂG–æÖ–2ÒWfÇVFTG–æÖ–4wV–Fæ6R†–æ—F–Æ—¦VE7FFRÂæW‡BÂpÐ¢vF—&V7FVDÖF6‚Âg&ÖRÂ6öæf–r•ÆâpÐ¢r–b†G–æÖ–2æwV–Fæ6RÒçVÆÂ’²rÀÐ¢v–b‡&WfW'6Uv&æ–ær’µÆâpÐ¢rfÂG–æÖ–2ÒWfÇVFTG–æÖ–4wV–Fæ6R†–æ—F–Æ—¦VE7FFRÂæW‡BÂpÐ¢vF—&V7FVDÖF6‚Âg&ÖRÂ6öæf–r•ÆâpÐ¢r–b†fÇ6Rò¢BÓ32&WfW'6RSr&W7VÇBG&÷VB¢ò’²r’ÀÐ¢w&WfW'6RÖWfVçG2×7W&W76VBs¢‚wfÂG–æÖ–2ÒWfÇVFTG–æÖ–4wV–Fæ6R†–æ—F–Æ—¦VE7FFRÂæW‡BÂF—&V7FVDÖF6‚ÂpÐ¢vg&ÖRÂ6öæf–r•ÆâpÐ¢r–b†G–æÖ–2æwV–Fæ6RÒçVÆÂ’rÀÐ¢wfÂG–æÖ–2ÒWfÇVFTG–æÖ–4wV–Fæ6R†–æ—F–Æ—¦VE7FFRÂæW‡BÂF—&V7FVDÖF6‚ÂpÐ¢vg&ÖRÂ6öæf–rÂ7W&W74ææ÷Væ6VÖVçG2ÒG'VR•ÆâpÐ¢r–b†G–æÖ–2æwV–Fæ6RÒçVÆÂ’ò¢BÓ32&WfW'6RWfVçG27W&W76VB¢òr’ÀÐ¢w&WfW'6R×7FGW2×&WVBs¢‚v–b‚G–æÖ–2ç7FFRç&WfW'6U7FGW4—77VVB’²rÀÐ¢v–b‡G'VRò¢BÓ32&WfW'6R7FGW2&WVG2¢ò’²r’ÀÐ¢vVÆWfF–öâÖfÆÆ&6²s¢‚v–b‚&÷WFRæVÆWfF–öåW6RçW6VBÇÂ&÷WFRç6Öö÷F†VDVÆWfF–öäÖWFW'2æ—4V×G’‚’’rÀÐ¢v–b‡&÷WFRç6Öö÷F†VDVÆWfF–öäÖWFW'2æ—4V×G’‚’’ò¢BÓ32SRfÆÆ&6²–væ÷&VB¢òr’ÀÐ¢w&–÷&—G’ÖöÆBÖ÷&FW"s¢‚v6öç7BfÂ$TÔ”ä”ärÒSrÀÐ¢v6öç7BfÂ$TÔ”ä”ärÒ3ò¢BÓ32öÆB&–÷&—G’÷&FW"¢òr’ÀÐ¢vVÆWfF–öâÖ‡—7FW&W6—2Ö–væ÷&Rs¢‚wv†–ÆR†VÆWfF–öâãÒ†&æB²’¢6öæf–ræVÆWfF–öä&÷VæF'”ÖWFW'2²pÐ¢v6öæf–ræVÆWfF–öä‡—7FW&W6—4ÖWFW'2’rÀÐ¢wv†–ÆR†VÆWfF–öâãÒ†&æB²’¢6öæf–ræVÆWfF–öä&÷VæF'”ÖWFW'2’ò¢pÐ¢uD4²Ó3‚‡—7FW&W6—2–væ÷&VB¢òr’ÀÐ¢vVÆWfF–öâÖFW66VæF–ærÖG&÷s¢‚wv†–ÆR†VÆWfF–öâÂ&æB¢6öæf–ræVÆWfF–öä&÷VæF'”ÖWFW'2ÒpÐ¢v6öæf–ræVÆWfF–öä‡—7FW&W6—4ÖWFW'2’rÀÐ¢wv†–ÆR†fÇ6Rò¢D4²Ó3‚FW66VæF–ær&÷VæF'’G&÷VB¢ò’r’ÀÐ¢vVÆWfF–öâ×7F'BÖ&÷VæF'’s¢‚w7FFRæ6÷’†VÆWfF–öä&æBÒfÆö÷"†VÆWfF–öâòpÐ¢v6öæf–ræVÆWfF–öä&÷VæF'”ÖWFW'2’çFô–çB‚’’rÀÐ¢w7FFRæ6÷’†VÆWfF–öä&æBÒfÆö÷"†VÆWfF–öâòpÐ¢v6öæf–ræVÆWfF–öä&÷VæF'”ÖWFW'2’çFô–çB‚’²’ò¢D4²Ó3‚7F'B&÷VæF'’pÐ¢vöfbÖ'’ÖöæR¢òr’ÀÐ¢w7Vç&—6RÖgFW"×7F'Bs¢‚vÖ–çWFW2ÃÒãÓâ6öæf–rç7Vç&—6Tææ÷Væ6TÖ–çWFW2æf–ÇFW"²—B–â6öç7VÖVBÒçFõ6WB‚’rÀÐ¢vÖ–çWFW2ÂÓãÓâ6öæf–rç7Vç&—6Tææ÷Væ6TÖ–çWFW2æf–ÇFW"²—B–â6öç7VÖVBÒçFõ6WB‚’pÐ¢rò¢D4²Ó3‚S‚gFW"×7F'B¢òr’ÀÐ¢w7Vç&—6R×¦W&òÖÖ–çWFRs¢‚vÖ–çWFW2ÃÒãÇÂæWvÇ”7&÷76VBæ—4V×G’‚’ÇÂ6öæf–rç7Vç&—6TVæ&ÆVBÇÂrÀÐ¢vÖ–çWFW2ÂÓãÇÂæWvÇ”7&÷76VBæ—4V×G’‚’ÇÂ6öæf–rç7Vç&—6TVæ&ÆVBÇÂò¢D4²Ó3‚pÐ¢tS‚¦W&òÖÖ–çWFR¢òr’ÀÐ¢w7Vç&—6RÖ6öç7V×F–öâ×&Vf—&Rs¢‚v6öç7VÖVE7Vç&—6UF‡&W6†öÆG2Ò6öç7VÖVB²æWvÇ”7&÷76VBrÀÐ¢v6öç7VÖVE7Vç&—6UF‡&W6†öÆG2Ò6öç7VÖVBò¢D4²Ó3‚S‚6öç7V×F–öâ&VÖ÷fVB¢òr’ÀÐ¢w7Vç&—6RÖF’×&W6WBs¢‚wfÂF”6†ævVBÒ7FFRç7Vç&—6TÆö6ÄF’ÒÆö6ÄF’rÀÐ¢wfÂF”6†ævVBÒfÇ6Rò¢D4²Ó3‚S‚Æö6ÂÖF’&W6WB&VÖ÷fVB¢òr’ÀÐ¢w7Vç&—6RÖWö6‚ÖF’s¢‚v–çFW&æÂgVâ7Vç&—6TWö6…6V6öæG2‡F–ÖW7F×¢ÆöærÂÆF—GVFS¢F÷V&ÆRÂÆöæv—GVFS¢pÐ¢tF÷V&ÆR“¢F÷V&ÆSòµÆâpÐ¢rfÂÆö6ÄFFRÒ7Vç&—6TÆö6ÄFFR‡F–ÖW7F×ÂÆöæv—GVFR•ÆâpÐ¢rfÂF”öe–V"ÒÆö6ÄFFRæF”öe–V"rÀÐ¢v–çFW&æÂgVâ7Vç&—6TWö6…6V6öæG2‡F–ÖW7F×¢ÆöærÂÆF—GVFS¢F÷V&ÆRÂÆöæv—GVFS¢pÐ¢tF÷V&ÆR“¢F÷V&ÆSòµÆâpÐ¢rfÂÆö6ÄFFRÒ7Vç&—6TÆö6ÄFFR‡F–ÖW7F×ÂÆöæv—GVFR•ÆâpÐ¢rfÂF”öe–V"ÒÆö6ÄFFRçFôWö6„F’‚’çFô–çB‚’ò¢D4²Ó3‚S‚Wö6‚ÖF’G&–gBpÐ¢r¢òr’ÀÐ¢w7Vç&—6RÖÖ–âÖ–çFW'fÂs¢‚r6öæf–rç7Vç&—6TVæ&ÆVBÇÅÆâöå&÷WFRÇÂWfVçD–çFW'fÄ÷VârÀÐ¢r6öæf–rç7Vç&—6TVæ&ÆVBÇÅÆâpÐ¢röå&÷WFRò¢D4²Ó3‚S‚Ö–â–çFW'fÂ–væ÷&VB¢òr’ÀÐ¢vVÆWfF–öâÖ&÷VæF'’Ö6öæf–rÖ–væ÷&Rs¢‚wv†–ÆR†VÆWfF–öâãÒ†&æB²’¢6öæf–ræVÆWfF–öä&÷VæF'”ÖWFW'2²pÐ¢v6öæf–ræVÆWfF–öä‡—7FW&W6—4ÖWFW'2’²rÀÐ¢wv†–ÆR†VÆWfF–öâãÒ†&æB²’¢ã²pÐ¢v6öæf–ræVÆWfF–öä‡—7FW&W6—4ÖWFW'2’²ò¢D4²ÓCSR&÷VæF'’6öæf–rpÐ¢v–væ÷&VB¢òr’ÀÐ¢w7Vç&—6RÖææ÷Væ6RÖ6öæf–rÖ–væ÷&Rs¢‚rVÇ6RÓâ6öæf–rç7Vç&—6Tææ÷Væ6TÖ–çWFW2æf–ÇFW"µÆâpÐ¢röÆDÖ–çWFW2â—BbbÖ–çWFW2ÃÒ—Bbb—B–â6öç7VÖVEÆâpÐ¢rÒçFõ6WB‚’rÀÐ¢rVÇ6RÓâÆ—7Döbƒ3Â’æf–ÇFW"µÆâpÐ¢röÆDÖ–çWFW2â—BbbÖ–çWFW2ÃÒ—Bbb—B–â6öç7VÖVEÆâpÐ¢rÒçFõ6WB‚’ò¢D4²ÓCS‚ææ÷Væ6R6öæf–r–væ÷&VB¢òr’ÀÐ¢w&VÖ–æ–ær×FövvÆRÖ–væ÷&VBs¢‚v–b†6öæf–rç&VÖ–æ–ætVæ&ÆVBbböå&÷WFRbbf÷'v&BbbWfVçD–çFW'fÄ÷VâbbpÐ¢v7&÷76VE&VÖ–æ–æræ—4æ÷DV×G’‚’’²rÀÐ¢v–b†öå&÷WFRbbf÷'v&BbbWfVçD–çFW'fÄ÷Vâbb7&÷76VE&VÖ–æ–æræ—4æ÷DV×G’‚’’pÐ¢w²ò¢D4²ÓCS2FövvÆR–væ÷&VB¢òr’ÀÐ¢w6Æ÷R×FövvÆRÖ–væ÷&VBs¢‚v–b†6öæf–rç6Æ÷TVæ&ÆVBbböå&÷WFRbbf÷'v&BbbWfVçD–çFW'fÄ÷Vâbb–æFW‚–âpÐ¢w&Wf–÷W2æ6öç7VÖVE6Æ÷T–æF–6W2’²rÀÐ¢v–b†öå&÷WFRbbf÷'v&BbbWfVçD–çFW'fÄ÷Vâbb–æFW‚–âpÐ¢w&Wf–÷W2æ6öç7VÖVE6Æ÷T–æF–6W2’²ò¢D4²ÓCSBFövvÆR–væ÷&VB¢òr’ÀÐ¢wv—ö–çB×FövvÆRÖ–væ÷&VBs¢‚v–b†6öæf–rçv—ö–çDVæ&ÆVBbböå&÷WFRbbf÷'v&BbbWfVçD–çFW'fÄ÷Vâbb–æFW‚pÐ¢r–â&Wf–÷W2æ6öç7VÖVEv—ö–çD–æF–6W2’²rÀÐ¢v–b†öå&÷WFRbbf÷'v&BbbWfVçD–çFW'fÄ÷Vâbb–æFW‚–âpÐ¢w&Wf–÷W2æ6öç7VÖVEv—ö–çD–æF–6W2’²ò¢D4²ÓCSbFövvÆR–væ÷&VB¢òr’ÀÐ¢w7Vç6WB×FövvÆRÖ–væ÷&VBs¢‚v–b‚6öæf–rç7Vç6WDVæ&ÆVB’&WGW&â7Vç6WDWfÇVF–öâ‡7FFRÂçVÆÂ’rÀÐ¢v–b†fÇ6R’&WGW&â7Vç6WDWfÇVF–öâ‡7FFRÂçVÆÂ’ò¢D4²ÓCSrFövvÆR–væ÷&VBpÐ¢r¢òr’ÀÐ¢w7Vç&—6R×FövvÆRÖ–væ÷&VBs¢‚vÖ–çWFW2ÃÒãÇÂæWvÇ”7&÷76VBæ—4V×G’‚’ÇÂ6öæf–rç7Vç&—6TVæ&ÆVBÇÂrÀÐ¢vÖ–çWFW2ÃÒãÇÂæWvÇ”7&÷76VBæ—4V×G’‚’ÇÂfÇ6Rò¢D4²ÓCS‚FövvÆR–væ÷&VBpÐ¢r¢òÇÂr’ÀÐ¢w7Vç&—6R×&WfW'6R×7W&W76VBs¢‚vÖ–çWFW2ÃÒãÇÂæWvÇ”7&÷76VBæ—4V×G’‚’ÇÂ6öæf–rç7Vç&—6TVæ&ÆVBÇÅÆâpÐ¢röå&÷WFRÇÂWfVçD–çFW'fÄ÷VârÀÐ¢vÖ–çWFW2ÃÒãÇÂæWvÇ”7&÷76VBæ—4V×G’‚’ÇÂ6öæf–rç7Vç&—6TVæ&ÆVBÇÅÆâpÐ¢röå&÷WFRÇÂWfVçD–çFW'fÄ÷VâÇÂ7FFRæF—&V7F–öâÓÒpÐ¢u&öw&W74F—&V7F–öâå$UdU%4Rò¢D4²ÓCS‚&WfW'6R×WFVB¢òr’ÀÐ¢w&–÷&—G’ÖVÆWfF–öâ×v—ö–çB×&WfW'6VBs¢‚v6öç7BfÂTÄUdD”ôâÒ#SÆâ6öç7BfÂt•ô”åBÒ3rÀÐ¢v6öç7BfÂTÄUdD”ôâÒ3ò¢D4²ÓCSR&—6VB¢õÆâpÐ¢r6öç7BfÂt•ô”åBÒ#ò¢D4²ÓCSbÆ÷vW&VB¢òr’ÀÐ¢w7Vç&—6R×&÷VæF–ærÖfÆö÷"s¢‚wfÂÖ–çWFW5&VÖ–æ–ærÒÖ–çWFW2ç&÷VæEFô–çB‚’æ6öW&6TDÆV7Bƒ’rÀÐ¢wfÂÖ–çWFW5&VÖ–æ–ærÒÖ–çWFW2çFô–çB‚’æ6öW&6TDÆV7Bƒ’ò¢D4²ÓCS‚&÷VæG2pÐ¢vF÷vâ¢òr’ÀÐ¢w7Vç6WBÖFVÆ–VBÖ'’ÖSRÖS‚s¢‚wfÂ7Vç6WDWfÇVF–öâÒWfÇVFU7Vç6WB‡&Wf–÷W2ÂæW‡BÂg&ÖRÂ6öæf–rÂpÐ¢vWfVçD–çFW'fÄ÷VâÂ6æF–FFW2æ—4æ÷DV×G’‚’’rÀÐ¢wfÂ7Vç6WDWfÇVF–öâÒWfÇVFU7Vç6WB‡&Wf–÷W2ÂæW‡BÂg&ÖRÂ6öæf–rÂpÐ¢vWfVçD–çFW'fÄ÷VâÂ6æF–FFW2æ—4æ÷DV×G’‚’ÇÂ6öæf–ræVÆWfF–öäVæ&ÆVBÇÂpÐ¢v6öæf–rç7Vç&—6TVæ&ÆVB’ò¢D4²ÓCSRôS‚–æ6÷'&V7FÇ’FVÆ’Sr¢òr’ÀÐ¢w7Vç&—6RÖ6öç7VÖW2×&V¦V7FVBÖ67W&7’s¢‚r–b†g&ÖRæ67W&7’çFôF÷V&ÆR‚’â6öæf–ræ67W&7•&V¦V7DÖWFW'2’µÆâpÐ¢rfÂ7Vç6WBÒWfÇVFU7Vç6WE7FæFÆöæR†–æ—F–Æ—¦VE7FFRÂpÐ¢vg&ÖRÂ6öæf–rÂ†–v†W%&–÷&—G’ÒfÇ6R•ÆâpÐ¢r–b‡7Vç6WBæwV–Fæ6RÒçVÆÂ’µÆâpÐ¢r&WGW&âwV–FU&W7VÇB‡7Vç6WBæwV–Fæ6RÂ7Vç6WBç7FFRÂpÐ¢w7Vç6WBç&V6öâæ6÷’‡'VÆRÒ&–çWBæ67W&7’Öf–ÇFW""’•ÆâpÐ¢rÕÆâpÐ¢r&WGW&âwV–FU&W7VÇB…ÆâpÐ¢rçVÆÂÅÆâpÐ¢r7Vç6WBç7FFRÅÆâpÐ¢r&V6öâ…ÆâpÐ¢r'VÆRÒ&–çWBæ67W&7’Öf–ÇFW""ÅÆâpÐ¢rF‡&W6†öÆG2ÒÖöb‚&67W&7•&V¦V7DÖWFW'2"FòpÐ¢v6öæf–ræ67W&7•&V¦V7DÖWFW'2’ÅÆâpÐ¢rFWF–Ç2ÒÖöb‚&67W&7’"FòpÐ¢vg&ÖRæ67W&7’çFõ7G&–ær‚’•ÆâpÐ¢r•ÆâpÐ¢r•ÆâpÐ¢rÒrÀÐ¢r–b†g&ÖRæ67W&7’çFôF÷V&ÆR‚’â6öæf–ræ67W&7•&V¦V7DÖWFW'2’µÆâpÐ¢rfÂ7Vç6WBÒWfÇVFU7Vç6WE7FæFÆöæR†–æ—F–Æ—¦VE7FFRÂpÐ¢vg&ÖRÂ6öæf–rÂ†–v†W%&–÷&—G’ÒfÇ6R•ÆâpÐ¢rfÂ7Vç&—6U7FFRÒWfÇVFU7Vç&—6U7FæFÆöæR‡7Vç6WBç7FFRÂpÐ¢vg&ÖRÂ6öæf–r’ò¢D4²ÓCS‚&V¦V7FVBg&ÖR6öç7VÖVB¢õÆâpÐ¢r–b‡7Vç6WBæwV–Fæ6RÒçVÆÂ’µÆâpÐ¢r&WGW&âwV–FU&W7VÇB‡7Vç6WBæwV–Fæ6RÂ7Vç&—6U7FFRÂpÐ¢w7Vç6WBç&V6öâæ6÷’‡'VÆRÒ&–çWBæ67W&7’Öf–ÇFW""’•ÆâpÐ¢rÕÆâpÐ¢r&WGW&âwV–FU&W7VÇB…ÆâpÐ¢rçVÆÂÅÆâpÐ¢r7Vç&—6U7FFRÅÆâpÐ¢r&V6öâ…ÆâpÐ¢r'VÆRÒ&–çWBæ67W&7’Öf–ÇFW""ÅÆâpÐ¢rF‡&W6†öÆG2ÒÖöb‚&67W&7•&V¦V7DÖWFW'2"FòpÐ¢v6öæf–ræ67W&7•&V¦V7DÖWFW'2’ÅÆâpÐ¢rFWF–Ç2ÒÖöb‚&67W&7’"FòpÐ¢vg&ÖRæ67W&7’çFõ7G&–ær‚’•ÆâpÐ¢r•ÆâpÐ¢r•ÆâpÐ¢rÒr’ÀÐ¢vVÆWfF–öâ×&WfW'6RÖGvVÆÂÖG&÷s¢‚r–b†G–æÖ–2æwV–Fæ6RÒçVÆÂ’µÆâpÐ¢r&WGW&âwV–FU&W7VÇB†G–æÖ–2æwV–Fæ6RÂG–æÖ–2ç7FFRÂpÐ¢vG–æÖ–2ç&V6öâ•ÆâpÐ¢rÕÆâpÐ¢r–b‚G–æÖ–2ç7FFRç&WfW'6U7FGW4—77VVB’²rÀÐ¢r–b†G–æÖ–2æwV–Fæ6RÒçVÆÂbbG–æÖ–2æwV–Fæ6R—2pÐ¢twV–Fæ6RäVÆWfF–öâ’µÆâpÐ¢r&WGW&âwV–FU&W7VÇB†G–æÖ–2æwV–Fæ6RÂG–æÖ–2ç7FFRÂpÐ¢vG–æÖ–2ç&V6öâ•ÆâpÐ¢rÕÆâpÐ¢r–b‚G–æÖ–2ç7FFRç&WfW'6U7FGW4—77VVB’²r—ÐÐ Ð¤4õ$UõDU5BÒg&÷¦Vç6WB‡²&6÷&RÖwV–FR×FW7B'ÒÐ¤ôdeõ$õUDUô4ôå5TÔU%2Òg&÷¦Vç6WB‡²&6÷&RÖwV–FR×FW7B"Â'&WÆ’"Â'†6SÖ67W&7’"Â&6öæf–r×6Vç6—F—f—G’'ÒÐ¥EU$åô4ôå5TÔU%2Òg&÷¦Vç6WB‡²&6÷&RÖwV–FR×FW7B"Â'&WÆ’"Â'&WÆ’×GW&â×6W76–öâ'Ò¥EU$åôôdeõ$õUDUôtDUô4ôå5TÔU%2Òg&÷¦Vç6WB‡²&6÷&RÖwV–FR×FW7B"Â'&WÆ’'Ò¥EU$åô„•5ô4ôå5TÔU%2Òg&÷¦Vç6WB‡²&6÷&RÖwV–FR×FW7B"Â'&WÆ’×GW&â×6W76–öâ'Ò¥EU$åôôde4UEô4ôå5TÔU%2Òg&÷¦Vç6WB‡²&6÷&RÖwV–FR×FW7B"Â&6öæf–r×6Vç6—F—f—G’'ÒÐ Ð¢2V6‚&÷r6—2v†–6‚–æFWVæFVçB6öç7VÖW"×W7B&V¦V7BF†B7V6–f–2×WFF–öâàÐ¢2÷F†W"6öç7VÖW'27F–ÆÂ'VâæBF†V—"÷WF6öÖW2&RÆövvVBÂ'WBFòæ÷BFV6–FPÐ¢2v†WF†W"F†R×WFF–öâ—26öç6–FW&VB6Vv‡BàÐ¤ÕUDD”ôåõ$UT•$TEô4ôå5TÔU%2Ò°¢&GvVÆÂÖ'—72#¢ôdeõ$õUDUô4ôå5TÔU%2À¢&&ö6‚ÖvFR×&VÖ÷fVB#¢4õ$UõDU5BÀ¢&6öæf–rÖ6öç7FçB#¢ôdeõ$õUDUô4ôå5TÔU%2ÀÐ¢'Væ—BÖ†WW&—7F–2#¢ôdeõ$õUDUô4ôå5TÔU%2ÀÐ¢'GW&âÖÖW&vRÖvÖ–væ÷&VB#¢4õ$UõDU5BÀÐ¢'GW&âÖ6öç7V×F–öâ#¢g&÷¦Vç6WB‡²&6÷&RÖwV–FR×FW7B"Â'&WÆ’'Ò’ÀÐ¢'GW&âÖF—&V7F–öâÖvFR#¢EU$åô4ôå5TÔU%2ÀÐ¢2F†RvVöÖWG&–2GW&â6W76–öâ7F—2öâ×&÷WFS²öfb×&÷WFR7W&W76–öâ—0¢26÷fW&VB'’F†R6÷&RFW7BæBF†R&WÆ’6öçG&7B&ö&R–ç7FVBà¢'GW&âÖöfb×&÷WFRÖvFR#¢EU$åôôdeõ$õUDUôtDUô4ôå5TÔU%2À¢'GW&âÖöfg6WBÖvFR#¢EU$åôôde4UEô4ôå5TÔU%2ÀÐ¢'V²×&öÖ–æVæ6RÖ–væ÷&VB#¢4õ$UõDU5BÀÐ¢&VÆWfF–öâ×v—ö–çBÖÖ—‚#¢4õ$UõDU5BÀÐ¢&VÆWfF–öâÖÇv—2Öö²#¢4õ$UõDU5BÀÐ¢'GW&âÖ†—2×6–×Æ–f–VB#¢EU$åô„•5ô4ôå5TÔU%2ÀÐ¢'v—ö–çBÖæV"Öf–ÇFW"#¢4õ$UõDU5BÀÐ¢'7Vç6WBÖG&÷×VæF–ær#¢4õ$UõDU5BÀÐ¢'7Vç6WB×W&–öF–2ÖvFR#¢4õ$UõDU5BÀÐ¢'7Vç6WBÖæò×7F'B#¢4õ$UõDU5BÀÐ¢'7Vç6WBÖWö6‚ÖF’#¢4õ$UõDU5BÀÐ¢'7Vç6WB×6¶—Ö67W&7’#¢4õ$UõDU5BÀÐ¢&WfVçBÖöfg&÷WFRÖvFR#¢4õ$UõDU5BÀÐ¢&WfVçB×&WfW'6RÖvFR#¢4õ$UõDU5BÀÐ¢&WfVçBÖÖ–âÖ–çFW'fÂ#¢4õ$UõDU5BÀÐ¢&WfVçBÖ6öç7V×F–öâ×VWVR#¢4õ$UõDU5BÀÐ¢&WfVçB×F‡&W6†öÆB×&Vf—&R#¢4õ$UõDU5BÀÐ¢'&WfW'6R×7Vç6WBÖG&÷#¢4õ$UõDU5BÀÐ¢'&WfW'6RÖWfVçG2×7W&W76VB#¢4õ$UõDU5BÀÐ¢'&WfW'6R×7FGW2×&WVB#¢4õ$UõDU5BÀÐ¢&VÆWfF–öâÖfÆÆ&6²#¢4õ$UõDU5BÀÐ¢'&–÷&—G’ÖöÆBÖ÷&FW"#¢4õ$UõDU5BÀÐ¢&VÆWfF–öâÖ‡—7FW&W6—2Ö–væ÷&R#¢4õ$UõDU5BÀÐ¢&VÆWfF–öâÖFW66VæF–ærÖG&÷#¢4õ$UõDU5BÀÐ¢&VÆWfF–öâ×7F'BÖ&÷VæF'’#¢4õ$UõDU5BÀÐ¢'7Vç&—6RÖgFW"×7F'B#¢4õ$UõDU5BÀÐ¢'7Vç&—6R×¦W&òÖÖ–çWFR#¢4õ$UõDU5BÀÐ¢'7Vç&—6RÖ6öç7V×F–öâ×&Vf—&R#¢4õ$UõDU5BÀÐ¢'7Vç&—6RÖF’×&W6WB#¢4õ$UõDU5BÀÐ¢'7Vç&—6RÖWö6‚ÖF’#¢4õ$UõDU5BÀÐ¢'7Vç&—6RÖÖ–âÖ–çFW'fÂ#¢4õ$UõDU5BÀÐ¢&VÆWfF–öâÖ&÷VæF'’Ö6öæf–rÖ–væ÷&R#¢4õ$UõDU5BÀÐ¢'7Vç&—6RÖææ÷Væ6RÖ6öæf–rÖ–væ÷&R#¢4õ$UõDU5BÀÐ¢'&VÖ–æ–ær×FövvÆRÖ–væ÷&VB#¢4õ$UõDU5BÀÐ¢'6Æ÷R×FövvÆRÖ–væ÷&VB#¢4õ$UõDU5BÀÐ¢'v—ö–çB×FövvÆRÖ–væ÷&VB#¢4õ$UõDU5BÀÐ¢'7Vç6WB×FövvÆRÖ–væ÷&VB#¢4õ$UõDU5BÀÐ¢'7Vç&—6R×FövvÆRÖ–væ÷&VB#¢4õ$UõDU5BÀÐ¢'7Vç&—6R×&WfW'6R×7W&W76VB#¢4õ$UõDU5BÀÐ¢'&–÷&—G’ÖVÆWfF–öâ×v—ö–çB×&WfW'6VB#¢4õ$UõDU5BÀÐ¢'7Vç&—6R×&÷VæF–ærÖfÆö÷"#¢4õ$UõDU5BÀÐ¢'7Vç6WBÖFVÆ–VBÖ'’ÖSRÖS‚#¢4õ$UõDU5BÀÐ¢'7Vç&—6RÖ6öç7VÖW2×&V¦V7FVBÖ67W&7’#¢4õ$UõDU5BÀÐ¢&VÆWfF–öâ×&WfW'6RÖGvVÆÂÖG&÷#¢4õ$UõDU5BÀÐ§ÐÐ Ð¤4ôå5TÔU%ôäÔU2Ò‚'&WÆ’"Â'&WÆ’×GW&â×6W76–öâ"Â&6öæf–r×6Vç6—F—f—G’"Â'†6SÖ67W&7’"Ð Ð Ð¦FVbVæ×WFFVEö6öç7VÖW%öf–ÇW&W2‡&W7VÇG3¢F–7E·7G"Â–çEÒ’ÓâÆ—7E·7G%Ó Ð¢""$f–Â6Æ÷6VBv†Vâç’F÷vç7G&VÒ6öç7VÖW"&V¦V7G2F†R6ÆVâVæv–æRâ"" Ð¢f–ÇW&W3¢Æ—7E·7G%ÒÒµÐÐ¢f÷"æÖR–â‚&6÷&RÖwV–FR×FW7B"Â¤4ôå5TÔU%ôäÔU2“ Ð¢–bæÖRæ÷B–â&W7VÇG3 Ð¢f–ÇW&W2æVæB†b$d”Ã¢6öç7VÖW"¶æÖWÒv2æ÷B'VâöâF†RVæ×WFFVBVæv–æR"Ð¢VÆ–b&W7VÇG5¶æÖUÒÒ Ð¢f–ÇW&W2æVæB†b$d”Ã¢6öç7VÖW"¶æÖWÒf–Ç2öâF†RVæ×WFFVBVæv–æR"Ð¢&WGW&âf–ÇW&W0Ð Ð Ð¦FVb×WFF–öåö6öç7VÖW%öf–ÇW&W2†×WFF–öã¢7G"Â&W7VÇG3¢F–7E·7G"Â–çEÒ’ÓâÆ—7E·7G%Ó Ð¢""$öæÇ’6öç7VÖW'2æÖVB–âF†R×WFF–öâF&ÆR&R&WV—&VBFò&V¦V7B—Bâ"" Ð¢&WV—&VBÒÕUDD”ôåõ$UT•$TEô4ôå5TÔU%2ævWB†×WFF–öâÐ¢–b&WV—&VB—2æöæS Ð¢&WGW&â¶b'¶×WFF–öçÓ¢Ö—76–ær&WV—&VBÖ6öç7VÖW"F&ÆR&÷r%ÐÐ¢f–ÇW&W3¢Æ—7E·7G%ÒÒµÐÐ¢f÷"æÖR–â6÷'FVB‡&WV—&VB“ Ð¢–bæÖRæ÷B–â&W7VÇG3 Ð¢f–ÇW&W2æVæB†b'¶×WFF–öçÓ¢&WV—&VB6öç7VÖW"¶æÖWÒv2æ÷B'Vâ"Ð¢VÆ–b&W7VÇG5¶æÖUÒÓÒ Ð¢f–ÇW&W2æVæB†b'¶×WFF–öçÓ¢&WV—&VB6öç7VÖW"¶æÖWÒVæW‡V7FVFÇ’76VB"Ð¢&WGW&âf–ÇW&W0Ð Ð Ð¦FVbf–ÆVE÷FW7EöæÖW2‡v÷&·76S¢F‚’ÓâÆ—7E·7G%Ó Ð¢""%&VBf–ÇW&RöW'&÷"æÖW2g&öÒw&FÆRw2„ÔÂFW7B&W7VÇG2â"" Ð¢æÖW3¢6WE·7G%ÒÒ6WB‚Ð¢f÷"&W7VÇEöf–ÆR–â‡v÷&·76Rò&6÷&RÖwV–FRö'V–ÆB÷FW7B×&W7VÇG2÷FW7B"’ævÆö"‚%DU5BÒ¢ç†ÖÂ"“ Ð¢G'“ Ð¢&ö÷BÒUBç'6R‡&W7VÇEöf–ÆR’ævWG&ö÷B‚Ð¢W†6WBUBå'6TW'&÷# Ð¢6öçF–çVPÐ¢f÷"66R–â&ö÷Bæf–æFÆÂ‚"âò÷FW7F66R"“ Ð¢–b66Ræf–æB‚&f–ÇW&R"’—2æ÷BæöæR÷"66Ræf–æB‚&W'&÷""’—2æ÷BæöæS Ð¢æÖW2æFB†b'¶66RævWB‚v6Æ76æÖRrÂ&W7VÇEöf–ÆRç7FVÒ—Òç¶66RævWB‚væÖRrÂwVæ¶æ÷vâr—Ò"Ð¢&WGW&â6÷'FVB†æÖW2Ð Ð Ð¦FVb×WFF–öåöæVVFÆUöf–ÇW&W2†Væv–æU÷6÷W&6S¢7G"Â&÷WFU÷6÷W&6S¢7G"’ÓâÆ—7E·7G%Ó Ð¢""%&WV—&RWfW'’×WFF–öâæVVFÆRFò–FVçF–g’W†7FÇ’öæR6÷W&6R6—FRâ"" Ð¢f–ÇW&W3¢Æ—7E·7G%ÒÒµÐÐ¢&÷WFUö×WFF–öç2Ò²'GW&âÖ†—2×6–×Æ–f–VB"Â&VÆWfF–öâ×v—ö–çBÖÖ—‚"Â&VÆWfF–öâÖÇv—2Öö²"Â'v—ö–çBÖæV"Öf–ÇFW""Â'V²×&öÖ–æVæ6RÖ–væ÷&VB'ÐÐ¢f÷"æÖRÂ†æVVFÆRÂò’–âd$”åE2æ—FV×2‚“ Ð¢6÷W&6RÒ&÷WFU÷6÷W&6R–bæÖR–â&÷WFUö×WFF–öç2VÇ6RVæv–æU÷6÷W&6PÐ¢6÷VçBÒ6÷W&6Ræ6÷VçB†æVVFÆRÐ¢–b6÷VçBÒ Ð¢f–ÇW&W2æVæB†b'¶æÖWÓ¢×WFF–öâæVVFÆRö67W'&Væ6R6÷VçC×¶6÷VçGÒÂW‡V7FVCÓ"Ð¢&WGW&âf–ÇW&W0Ð Ð Ð¦FVb6öç7VÖW%ö6öÖÖæG2†6Æ“¢F‚’ÓâF–7E·7G"ÂÆ—7E·7G%ÕÓ Ð¢&WGW&â°Ð¢'&WÆ’#¢²'—F†öâ"Â'FööÇ2÷&WÆ’ç’"Â"ÒÖ6Æ’"Â7G"†6Æ’’Â"ÒÖ6öçG&7B%ÒÀÐ¢'&WÆ’×GW&â×6W76–öâ#¢°¢'—F†öâ"Â'FööÇ2÷&WÆ’ç’"Â'FW7FFF÷6W76–öç2övöÆFVâ÷GW&åö6öçG&7B"À¢"ÒÖ6Æ’"Â7G"†6Æ’’Â"Ò×7G&–7B"ÀÐ¢ÒÀÐ¢&6öæf–r×6Vç6—F—f—G’#¢²'—F†öâ"Â'FööÇ2ö6öæf–u÷6Vç6—F—f—G’ç’"Â"ÒÖ6Æ’"Â7G"†6Æ’•ÒÀÐ¢'†6SÖ67W&7’#¢°Ð¢'—F†öâ"Â'FööÇ2÷†6Sö67W&7’ç’"Â"ÒÖ6Æ’"Â7G"†6Æ’’Â"ÒÖ6öçG&7B"ÀÐ¢"Ò×'VâÖ–B"Â&C32"Â"ÒÖ6öÖÖ—B×6†"Â&f—‡GW&R"ÀÐ¢ÒÀÐ¢ÐÐ Ð Ð¦FVb–ç7FÆÆVEö6Æ’‡v÷&·76S¢F‚Â¢Âv–æF÷w3¢&ööÂÂæöæRÒæöæR’ÓâFƒ Ð¢""%6VÆV7BF†RÆVæ6†W"W†V7WF&ÆRf÷"F†R†÷7B'Vææ–ærF†R6öç7VÖW"â"" Ð¢–bv–æF÷w2—2æöæS Ð¢v–æF÷w2Ò÷2ææÖRÓÒ&çB Ð¢v–æF÷w5ö6Æ’Òv÷&·76Rò'&WÆ’ö'V–ÆBö–ç7FÆÂ÷&WÆ’ö&–â÷&WÆ’æ&B Ð¢Væ—…ö6Æ’Òv÷&·76Rò'&WÆ’ö'V–ÆBö–ç7FÆÂ÷&WÆ’ö&–â÷&WÆ’ Ð¢6æF–FFW2Ò‡v–æF÷w5ö6Æ’ÂVæ—…ö6Æ’’–bv–æF÷w2VÇ6R‡Væ—…ö6Æ’Âv–æF÷w5ö6Æ’Ð¢&WGW&âæW‡B‚†6æF–FFRf÷"6æF–FFR–â6æF–FFW2–b6æF–FFRæ—5öf–ÆR‚’’Â6æF–FFW5³ÒÐ Ð Ð¦FVb'Vâ†6öÖÖæC¢Æ—7E·7G%ÒÂ7vC¢F‚’ÓâGWÆU¶–çBÂ7G%Ó Ð¢–b6öÖÖæBæBF‚†6öÖÖæE³Ò’ç7Vff—‚æÆ÷vW"‚’–â²"æ&B"Â"æ6ÖB'Ó Ð¢6öÖÖæBÒ²&6ÖB"Â"ö2"Â¦6öÖÖæEÐÐ¢&W7VÇBÒ7V'&ö6W72ç'Vâ†6öÖÖæBÂ7vCÖ7vBÂFW‡CÕG'VRÂVæ6öF–æsÒ'WFbÓ‚"ÂW'&÷'3Ò'&WÆ6R"Â6GW&Uö÷WGWCÕG'VRÐ¢&WGW&â&W7VÇBç&WGW&æ6öFRÂ‡&W7VÇBç7FF÷WB²%Æâ"²&W7VÇBç7FFW'"’ç7G&—‚Ð Ð Ð¦FVb6÷•÷&Wò‡6÷W&6S¢F‚ÂFW7F–æF–öã¢F‚’ÓâæöæS Ð¢–væ÷&VBÒ6‡WF–Âæ–væ÷&U÷GFW&ç2‚"æv—B"Â"æw&FÆR"Â&'V–ÆB"Â"¢æ¦""Â"¢æÆör"Â"çF6³RÖWf–FVæ6R"Ð¢6‡WF–Âæ6÷—G&VR‡6÷W&6RÂFW7F–æF–öâÂ–væ÷&SÖ–væ÷&VBÐ Ð Ð¦FVbÖ–â‚’Óâ–çC Ð¢'6W"Ò&w'6Rä&wVÖVçE'6W"‚Ð¢'6W"æFEö&wVÖVçB‚"Ò×&Wò×&ö÷B"ÂG—SÕF‚ÂFVfVÇCÕF‚‚"â"’Ð¢'6W"æFEö&wVÖVçB‚"ÒÖw&FÆR"ÂFVfVÇCÒ&w&FÆR"Ð¢'6W"æFEö&wVÖVçB‚"ÒÖ÷WB"ÂG—SÕF‚ÂFVfVÇCÕF‚‚&C32ÖæVvF—fRÖ6öçG&öÂæÆör"’Ð¢&w2Ò'6W"ç'6Uö&w2‚Ð¢6÷W&6RÒ&w2ç&Wõ÷&ö÷Bç&W6öÇfR‚Ð¢Wf–FVæ6S¢Æ—7E·7G%ÒÒµÐÐ¢f–ÇW&W3¢Æ—7E·7G%ÒÒµÐÐ¢7VÖÖ'•÷&÷w3¢Æ—7E·GWÆU·7G"Â7G"Â7G"Â7G%ÕÒÒµÐÐ¢–b6WB„ÕUDD”ôåõ$UT•$TEô4ôå5TÔU%2’Ò6WB…d$”åE2“ Ð¢Ö—76–ærÒ6÷'FVB‡6WB…d$”åE2’Ò6WB„ÕUDD”ôåõ$UT•$TEô4ôå5TÔU%2’Ð¢W‡G&Ò6÷'FVB‡6WB„ÕUDD”ôåõ$UT•$TEô4ôå5TÔU%2’Ò6WB…d$”åE2’Ð¢f–ÇW&W2æVæB†b&×WFF–öâ6öç7VÖW"F&ÆRÖ—6ÖF6‚Ö—76–æs×¶Ö—76–æwÒW‡G&×¶W‡G&Ò"Ð Ð¢FVb6fUöWf–FVæ6R‚’ÓâæöæS Ð¢&w2æ÷WBç&VçBæÖ¶F—"‡&VçG3ÕG'VRÂW†—7Eöö³ÕG'VRÐ¢F&ÆRÒ°Ð¢$BÓ32×WFF–öâ&V¦V7F–öâ7VÖÖ'’"ÀÐ¢&×WFF–öâÂ&WV—&VB6öç7VÖW'2Â&V¦V7FVB'’Âf–ÆVBFW7Bö6öçG&7B"ÀÐ¢"ÒÒÒÂÒÒÒÂÒÒÒÂÒÒÒ"ÀÐ¢ÐÐ¢F&ÆRæW‡FVæB‚"Â"æ¦ö–â‡&÷r’f÷"&÷r–â7VÖÖ'•÷&÷w2Ð¢&w2æ÷WBçw&—FU÷FW‡B‚%ÆåÆâ"æ¦ö–â†Wf–FVæ6R²²%Æâ"æ¦ö–â‡F&ÆR•Ò’²%Æâ"ÂVæ6öF–æsÒ'WFbÓ‚"Ð Ð¢v—F‚FV×f–ÆRåFV×÷&'”F—&V7F÷'’‡&Vf—ƒÒ'FæÖC32Ò"’2FV×÷&'“ Ð¢v÷&·76RÒF‚‡FV×÷&'’’ò'&Wò Ð¢6÷•÷&Wò‡6÷W&6RÂv÷&·76RÐ¢Væv–æRÒv÷&·76RòTät”äPÐ¢÷&–v–æÂÒVæv–æRç&VE÷FW‡B†Væ6öF–æsÒ'WFbÓ‚"Ð¢&÷WFRÒv÷&·76Rò&6÷&RÖwV–FR÷7&2öÖ–âö¶÷FÆ–âö6öÒ÷G&–Ææbö6÷&Rõ&÷WFRæ·B Ð¢&÷WFUö÷&–v–æÂÒ&÷WFRç&VE÷FW‡B†Væ6öF–æsÒ'WFbÓ‚"Ð¢æVVFÆUöW'&÷'2Ò×WFF–öåöæVVFÆUöf–ÇW&W2†÷&–v–æÂÂ&÷WFUö÷&–v–æÂÐ¢–bæVVFÆUöW'&÷'3 Ð¢f–ÇW&W2æW‡FVæB†æVVFÆUöW'&÷'2Ð¢Wf–FVæ6RæVæB‚$d”Ã¢×WFF–öâæVVFÆW2×W7B&RVæ—VUÆâ"²%Æâ"æ¦ö–â†æVVFÆUöW'&÷'2’Ð¢6fUöWf–FVæ6R‚Ð¢&–çB‚$d”Ã¢BÓ32×WFF–öâæVVFÆRVæ—VVæW72"Ð¢&–çB‚%Æâ"æ¦ö–â†æVVFÆUöW'&÷'2’Ð¢&WGW&âÐ Ð¢2÷6—F—fR6öçG&öÂ'Vç2f—'7C¢6öç7VÖW"F†BÇ&VG’f–Ç2v–ç7@Ð¢2F†R6ÆVâVæv–æR6ææ÷B6÷VçB2Wf–FVæ6RF†B—B&V¦V7FVB×WFçBàÐ¢&6VÆ–æUö6÷&Uö6öFRÂ&6VÆ–æUö6÷&Uö÷WGWBÒ'Vâ…¶&w2æw&FÆRÂ#¦6÷&RÖwV–FS§FW7B"Â"ÒÖæòÖFVÖöâ%ÒÂv÷&·76RÐ¢Wf–FVæ6RæVæB†b%TäÕUDDTB6öç7VÖW#Ö6÷&RÖwV–FR×FW7BW†—C×¶&6VÆ–æUö6÷&Uö6öFWÕÆç¶&6VÆ–æUö6÷&Uö÷WGWGÒ"Ð¢&6VÆ–æUö'V–ÆEö6öFRÂ&6VÆ–æUö'V–ÆEö÷WGWBÒ'Vâ…¶&w2æw&FÆRÂ#§&WÆ“¦–ç7FÆÄF—7B"Â"ÒÖæòÖFVÖöâ%ÒÂv÷&·76RÐ¢Wf–FVæ6RæVæB†b%TäÕUDDTB6öç7VÖW#×&WÆ’Ö'V–ÆBW†—C×¶&6VÆ–æUö'V–ÆEö6öFWÕÆç¶&6VÆ–æUö'V–ÆEö÷WGWGÒ"Ð¢&6VÆ–æUö6Æ’Ò–ç7FÆÆVEö6Æ’‡v÷&·76RÐ¢&6VÆ–æU÷&W7VÇG2Ò²&6÷&RÖwV–FR×FW7B#¢&6VÆ–æUö6÷&Uö6öFWÐÐ¢–b&6VÆ–æUö'V–ÆEö6öFRÒ÷"æ÷B&6VÆ–æUö6Æ’æ—5öf–ÆR‚“ Ð¢f–ÇW&W2æVæB‚$d”Ã¢6öç7VÖW"&WÆ’4Ä’'V–ÆBf–Ç2öâF†RVæ×WFFVBVæv–æR"Ð¢f÷"æÖR–â4ôå5TÔU%ôäÔU3 Ð¢&6VÆ–æU÷&W7VÇG5¶æÖUÒÒÓÐ¢VÇ6S Ð¢f÷"6öç7VÖW"Â6öÖÖæB–â6öç7VÖW%ö6öÖÖæG2†&6VÆ–æUö6Æ’’æ—FV×2‚“ Ð¢6öFRÂ÷WGWBÒ'Vâ†6öÖÖæBÂv÷&·76RÐ¢&6VÆ–æU÷&W7VÇG5¶6öç7VÖW%ÒÒ6öFPÐ¢Wf–FVæ6RæVæB†b%TäÕUDDTB6öç7VÖW#×¶6öç7VÖW'ÒW†—C×¶6öFWÕÆç¶÷WGWGÒ"Ð¢f–ÇW&W2æW‡FVæB‡Væ×WFFVEö6öç7VÖW%öf–ÇW&W2†&6VÆ–æU÷&W7VÇG2’Ð¢–bf–ÇW&W3 Ð¢6fUöWf–FVæ6R‚Ð¢&–çB‚$d”Ã¢BÓ32Væ×WFFVBÖVæv–æR÷6—F—fR6öçG&öÂ"Ð¢&–çB‚%Æâ"æ¦ö–â†f–ÇW&W2’Ð¢&WGW&âÐ Ð¢f÷"æÖRÂ†æVVFÆRÂ&WÆ6VÖVçB’–âd$”åE2æ—FV×2‚“ Ð¢F&vWBÒ&÷WFR–bæÖR–â°Ð¢'GW&âÖ†—2×6–×Æ–f–VB"Â&VÆWfF–öâ×v—ö–çBÖÖ—‚"Â&VÆWfF–öâÖÇv—2Öö²"Â'v—ö–çBÖæV"Öf–ÇFW""ÀÐ¢'V²×&öÖ–æVæ6RÖ–væ÷&VB"ÀÐ¢ÒVÇ6RVæv–æPÐ¢F&vWEö÷&–v–æÂÒ&÷WFUö÷&–v–æÂ–bF&vWBÓÒ&÷WFRVÇ6R÷&–v–æÀÐ¢f&–çEöVæv–æRÒF&vWEö÷&–v–æÂç&WÆ6R†æVVFÆRÂ&WÆ6VÖVçBÂÐ¢76W'Bf&–çEöVæv–æRÒF&vWEö÷&–v–æÀÐ¢F&vWBçw&—FU÷FW‡B‡f&–çEöVæv–æRÂVæ6öF–æsÒ'WFbÓ‚"Ð¢6‡WF–Âç&×G&VR‡v÷&·76Rò&6÷&RÖwV–FRö'V–ÆB÷FW7B×&W7VÇG2÷FW7B"Â–væ÷&UöW'&÷'3ÕG'VRÐ¢FW7Eö6öFRÂFW7Eö÷WGWBÒ'Vâ…¶&w2æw&FÆRÂ#¦6÷&RÖwV–FS§FW7B"Â"ÒÖæòÖFVÖöâ%ÒÂv÷&·76RÐ¢FW7EöæÖW2Òf–ÆVE÷FW7EöæÖW2‡v÷&·76RÐ¢Wf–FVæ6RæVæB€Ð¢b%d$”åB¶æÖWÒ6öç7VÖW#Ö6÷&RÖwV–FR×FW7BW†—C×·FW7Eö6öFWÒ Ð¢b&f–ÆVE÷FW7G3×²rÂræ¦ö–â‡FW7EöæÖW2’–bFW7EöæÖW2VÇ6RvæöæRwÕÆç·FW7Eö÷WGWGÒ Ð¢Ð¢6öç7VÖW%÷&W7VÇG2Ò²&6÷&RÖwV–FR×FW7B#¢FW7Eö6öFWÐÐ Ð¢2f–Æ–ærFW7BF6²&WfVçG2w&FÆRg&öÒ&V6†–ær–ç7FÆÄF—7B–àÐ¢2F†R6ÖR–çfö6F–öââ'V–ÆBF†R&VÂ4Ä’6W&FVÇ’6òV6€Ð¢2F÷vç7G&VÒ6öç7VÖW"—2W†W&6—6VBv–ç7BF†R×WFFVBVæv–æRàÐ¢6Æ•ö6öFRÂ6Æ•ö÷WGWBÒ'Vâ…¶&w2æw&FÆRÂ#§&WÆ“¦–ç7FÆÄF—7B"Â"ÒÖæòÖFVÖöâ%ÒÂv÷&·76RÐ¢Wf–FVæ6RæVæB†b%d$”åB¶æÖWÒ6öç7VÖW#×&WÆ’Ö'V–ÆBW†—C×¶6Æ•ö6öFWÕÆç¶6Æ•ö÷WGWGÒ"Ð¢–b6Æ•ö6öFRÒ Ð¢f–ÇW&W2æVæB†b'¶æÖWÓ¢&WÆ’4Ä’'V–ÆBf–ÆVB"Ð¢6Æ’Ò–ç7FÆÆVEö6Æ’‡v÷&·76RÐ¢–b6Æ•ö6öFRÒ÷"æ÷B6Æ’æ—5öf–ÆR‚“ Ð¢f÷"6öç7VÖW"–â4ôå5TÔU%ôäÔU3 Ð¢6öç7VÖW%÷&W7VÇG5¶6öç7VÖW%ÒÒÓÐ¢Wf–FVæ6RæVæB†b%d$”åB¶æÖWÒ6öç7VÖW#×¶6öç7VÖW'ÒW†—CÖæ÷BÖ'V–ÇB"Ð¢VÇ6S Ð¢f÷"6öç7VÖW"Â6öÖÖæB–â6öç7VÖW%ö6öÖÖæG2†6Æ’’æ—FV×2‚“ Ð¢6öFRÂ÷WGWBÒ'Vâ†6öÖÖæBÂv÷&·76RÐ¢6öç7VÖW%÷&W7VÇG5¶6öç7VÖW%ÒÒ6öFPÐ¢Wf–FVæ6RæVæB†b%d$”åB¶æÖWÒ6öç7VÖW#×¶6öç7VÖW'ÒW†—C×¶6öFWÕÆç¶÷WGWGÒ"Ð Ð¢&WV—&VBÒÕUDD”ôåõ$UT•$TEô4ôå5TÔU%5¶æÖUÐÐ¢f&–çEöf–ÇW&W2Ò×WFF–öåö6öç7VÖW%öf–ÇW&W2†æÖRÂ6öç7VÖW%÷&W7VÇG2Ð¢f–ÇW&W2æW‡FVæB‡f&–çEöf–ÇW&W2Ð¢–bFW7Eö6öFRÒæBæ÷BFW7EöæÖW3 Ð¢f–ÇW&W2æVæB†b'¶æÖWÓ¢6÷&RÖwV–FR×FW7Bf–ÆVBv—F†÷WBæÖVBf–Æ–ærFW7B"Ð¢&V¦V7FVBÒ6÷'FVB†6öç7VÖW"f÷"6öç7VÖW"–â&WV—&VB–b6öç7VÖW%÷&W7VÇG2ævWB†6öç7VÖW"Â’ÒÐ¢f–ÆVE÷FW7G2Ò°Ð¢b'¶6öç7VÖW'Ó¢²rÂræ¦ö–â‡FW7EöæÖW2—Ò Ð¢–b6öç7VÖW"ÓÒ&6÷&RÖwV–FR×FW7B"æBFW7EöæÖW0Ð¢VÇ6Rb'¶6öç7VÖW'Ó¢6öçG&7B÷&WÆ’6†V6² Ð¢f÷"6öç7VÖW"–â&V¦V7FV@Ð¢ÐÐ¢7VÖÖ'•÷&÷w2æVæB‚†æÖRÂ"Â"æ¦ö–â‡6÷'FVB‡&WV—&VB’’Â"Â"æ¦ö–â‡&V¦V7FVB’Â#²"æ¦ö–â†f–ÆVE÷FW7G2’’Ð¢F&vWBçw&—FU÷FW‡B‡F&vWEö÷&–v–æÂÂVæ6öF–æsÒ'WFbÓ‚"Ð Ð¢f—‡GW&RÒv÷&·76Rò'FW7FFF÷6W76–öç2övöÆFVâ÷GW&åö6öçG&7B ¢–bf—‡GW&Ræ—5öF—"‚“ Ð¢'&ö¶Våöf—‡GW&RÒv÷&·76Rò&C32×&WÆ’ÖÖ—76–ærÖÆö2 Ð¢6‡WF–Âæ6÷—G&VR†f—‡GW&RÂ'&ö¶Våöf—‡GW&RÐ¢WfVçEöÆ–æW2Ò†'&ö¶Våöf—‡GW&Rò&WfVçG2ææF§6öâ"’ç&VE÷FW‡B†Væ6öF–æsÒ'WFbÓ‚"’ç7Æ—FÆ–æW2‚Ð¢&VÖ÷fVBÒfÇ6PÐ¢&WF–æVC¢Æ—7E·7G%ÒÒµÐÐ¢f÷"Æ–æR–âWfVçEöÆ–æW3 Ð¢WfVçBÒ§6öâæÆöG2†Æ–æRÐ¢–bæ÷B&VÖ÷fVBæBWfVçBævWB‚'7G&VÒ"’ÓÒ&Æö2# Ð¢&VÖ÷fVBÒG'VPÐ¢6öçF–çVPÐ¢&WF–æVBæVæB†Æ–æRÐ¢†'&ö¶Våöf—‡GW&Rò&WfVçG2ææF§6öâ"’çw&—FU÷FW‡B‚%Æâ"æ¦ö–â‡&WF–æVB’²%Æâ"ÂVæ6öF–æsÒ'WFbÓ‚"Ð¢—&–æuö6öFRÂ—&–æuö÷WGWBÒ'Vâ€Ð¢²'—F†öâ"Â'FööÇ2÷&WÆ’ç’"Â7G"†'&ö¶Våöf—‡GW&R’Â"ÒÖ6Æ’"Â7G"†6Æ’’Â"Ò×7G&–7B%ÒÀÐ¢v÷&·76RÀÐ¢Ð¢Wf–FVæ6RæVæB†b%$UÄ’Ö—76–ærÖÆö26öç7VÖW#×&WÆ’W†—C×·—&–æuö6öFWÕÆç·—&–æuö÷WGWGÒ"Ð¢–b—&–æuö6öFRÓÒ Ð¢f–ÇW&W2æVæB‚'&WÆ“¢Ö—76–ærÖÆö2×WFF–öâVæW‡V7FVFÇ’76VB"Ð¢6fUöWf–FVæ6R‚Ð¢–bf–ÇW&W3 Ð¢&–çB‚$d”Ã¢BÓ32æVvF—fR6öçG&öÂ"Ð¢&–çB‚%Æâ"æ¦ö–â†f–ÇW&W2’Ð¢&WGW&âÐ¢&–çB†b%53¢BÓ326öç7VÖW'2&V¦V7FVB¶ÆVâ…d$”åE2—ÒVæv–æR×WFF–öç2"Ð¢&–çB†b&Wf–FVæ6S×¶&w2æ÷WGÒ"Ð¢&WGW&â Ð Ð Ð¦–bõöæÖUõòÓÒ%õöÖ–åõò# Ð¢&—6R7—7FVÔW†—B†Ö–â‚’Ð
+                         'config.turnOnRouteMaxOffsetMeters)',
+                         'if (true /* D-033 direction gate mutation */)'),
+ 'turn-off-route-gate': ('if (next.offRoute) {', 'if (false /* D-033 off-route gate removed */) {'),
+ 'turn-offset-gate': ('if (direction != ProgressDirection.FORWARD || match.distanceMeters >= '
+                      'config.turnOnRouteMaxOffsetMeters)',
+                      'if (direction != ProgressDirection.FORWARD || false /* D-033 on-route offset ignored '
+                      '*/)'),
+ 'peak-prominence-ignored': ('if (peakElevation - elevation >= config.peakProminenceMeters)',
+                             'if (true /* D-033 peak prominence ignored */)'),
+ 'elevation-waypoint-mix': ('val sourcePoints = usable.map { it.point }',
+                            'val sourcePoints = usable.map { it.point } + rawWaypoints.map { it.point } /* '
+                            'D-033 wpt mixed into route */'),
+ 'elevation-always-ok': ('val elevation = classifyElevation(elevations, cumulative, config)',
+                         'val elevation = classifyElevation(elevations, cumulative, config).copy(used = '
+                         'true, reason = "ok") /* D-033 fallback removed */'),
+ 'turn-axis-simplified': ('val positionOnOriginalAxis = originalCumulative[originalPointIndices[index]]',
+                          'val positionOnOriginalAxis = cumulative[index] /* D-033 simplified turn axis */'),
+ 'waypoint-near-filter': ('if (projection.distanceMeters <= config.waypointNearRouteMeters) {',
+                          'if (true /* D-033 waypoint near-route filter removed */) {'),
+ 'sunset-drop-pending': ('pendingSunsetThresholds = state.pendingSunsetThresholds + newlyCrossed',
+                         'pendingSunsetThresholds = emptySet() /* D-033 E7 pending dropped */'),
+ 'sunset-periodic-gate': ('if (!config.sunsetEnabled) return SunsetEvaluation(state, null)',
+                          'if (!config.sunsetEnabled || !config.elapsedEnabled) return '
+                          'SunsetEvaluation(state, null) /* D-033 E7 incorrectly gated */'),
+ 'sunset-no-start': ('val firstEvaluation = !previous.sunsetEvaluated',
+                     'val firstEvaluation = false /* D-033 E7 start announcement removed */'),
+ 'sunset-epoch-day': ("// NOAA's fractional year uses the local day-of-year, never days since\n"
+                      '    // an arbitrary epoch (which introduces a multi-day seasonal drift).\n'
+                      '    val dayOfYear = localDate.dayOfYear',
+                      "// NOAA's fractional year uses the local day-of-year, never days since\n"
+                      '    // an arbitrary epoch (which introduces a multi-day seasonal drift).\n'
+                      '    val dayOfYear = localDate.toEpochDay() - LocalDate.of(2000, 1, 1).toEpochDay() /* '
+                      'D-033 seasonal epoch drift */'),
+ 'sunset-skip-accuracy': ('if (frame.accuracy.toDouble() > config.accuracyRejectMeters) {\n'
+                          '        val sunset = evaluateSunsetStandalone(initializedState, frame, config, '
+                          'higherPriority = false)',
+                          'if (frame.accuracy.toDouble() > config.accuracyRejectMeters) {\n'
+                          '        val sunset = StandaloneSunsetEvaluation(initializedState, null, '
+                          'Reason("event.none")) /* D-033 skip E7 on accuracy frames */'),
+ 'event-offroute-gate': ('if (next.offRoute) {\n'
+                         '        // Advance and consume ordinary event thresholds while off-route, but\n'
+                         '        // keep E7 pending for a later safety announcement.\n'
+                         '        next = evaluateDynamicGuidance(initializedState, next, directedMatch, '
+                         'frame, config, suppressAnnouncements = true).state',
+                         'if (next.offRoute) {\n'
+                         '        // Advance and consume ordinary event thresholds while off-route, but\n'
+                         '        // keep E7 pending for a later safety announcement.\n'
+                         '        next = evaluateDynamicGuidance(initializedState, next.copy(offRoute = '
+                         'false), directedMatch, frame, config, suppressAnnouncements = false).state /* '
+                         'D-033 off-route event gate removed */'),
+ 'event-reverse-gate': ('config.slopeEnabled && onRoute && forward && eventIntervalOpen && index !in '
+                        'previous.consumedSlopeIndices',
+                        'config.slopeEnabled && onRoute && eventIntervalOpen && index !in '
+                        'previous.consumedSlopeIndices /* D-033 reverse event gate removed */'),
+ 'event-min-interval': ('config.milestoneEnabled && onRoute && forward && eventIntervalOpen && '
+                        'freshCrossed.isNotEmpty()',
+                        'config.milestoneEnabled && onRoute && forward && freshCrossed.isNotEmpty() /* D-033 '
+                        'event interval removed */'),
+ 'event-consumption-queue': ('next = next.copy(consumedMilestoneIndices = next.consumedMilestoneIndices + '
+                             'crossed)',
+                             'next = next.copy(consumedMilestoneIndices = next.consumedMilestoneIndices) /* '
+                             'D-033 E1 consumption removed */'),
+ 'event-threshold-refire': ('index !in previous.consumedSlopeIndices',
+                            'true /* D-033 consumed E4 threshold refires */'),
+ 'reverse-sunset-drop': ('if (reverseWarning) {\n'
+                         '        val dynamic = evaluateDynamicGuidance(initializedState, next, '
+                         'directedMatch, frame, config)\n'
+                         '        if (dynamic.guidance != null) {',
+                         'if (reverseWarning) {\n'
+                         '        val dynamic = evaluateDynamicGuidance(initializedState, next, '
+                         'directedMatch, frame, config)\n'
+                         '        if (false /* D-033 reverse E7 result dropped */) {'),
+ 'reverse-events-suppressed': ('val dynamic = evaluateDynamicGuidance(initializedState, next, directedMatch, '
+                               'frame, config)\n'
+                               '        if (dynamic.guidance != null)',
+                               'val dynamic = evaluateDynamicGuidance(initializedState, next, directedMatch, '
+                               'frame, config, suppressAnnouncements = true)\n'
+                               '        if (dynamic.guidance != null) /* D-033 reverse events suppressed */'),
+ 'reverse-status-repeat': ('if (!dynamic.state.reverseStatusIssued) {',
+                           'if (true /* D-033 reverse status repeats */) {'),
+ 'elevation-fallback': ('if (!route.elevationUse.used || route.smoothedElevationMeters.isEmpty())',
+                        'if (route.smoothedElevationMeters.isEmpty()) /* D-033 E5 fallback ignored */'),
+ 'priority-old-order': ('const val REMAINING = 500',
+                        'const val REMAINING = 300 /* D-033 old priority order */'),
+ 'elevation-hysteresis-ignore': ('while (elevation >= (band + 1) * config.elevationBoundaryMeters + '
+                                 'config.elevationHysteresisMeters)',
+                                 'while (elevation >= (band + 1) * config.elevationBoundaryMeters) /* '
+                                 'TASK-038 hysteresis ignored */'),
+ 'elevation-descending-drop': ('while (elevation < band * config.elevationBoundaryMeters - '
+                               'config.elevationHysteresisMeters)',
+                               'while (false /* TASK-038 descending boundary dropped */)'),
+ 'elevation-start-boundary': ('state.copy(elevationBand = floor(elevation / '
+                              'config.elevationBoundaryMeters).toInt())',
+                              'state.copy(elevationBand = floor(elevation / '
+                              'config.elevationBoundaryMeters).toInt() + 1) /* TASK-038 start boundary '
+                              'off-by-one */'),
+ 'sunrise-after-start': ('minutes <= 0.0 -> config.sunriseAnnounceMinutes.filter { it !in consumed }.toSet()',
+                         'minutes < -1.0 -> config.sunriseAnnounceMinutes.filter { it !in consumed }.toSet() '
+                         '/* TASK-038 E8 after-start */'),
+ 'sunrise-zero-minute': ('minutes <= 0.0 || newlyCrossed.isEmpty() || !config.sunriseEnabled ||',
+                         'minutes < -1.0 || newlyCrossed.isEmpty() || !config.sunriseEnabled || /* TASK-038 '
+                         'E8 zero-minute */'),
+ 'sunrise-consumption-refire': ('consumedSunriseThresholds = consumed + newlyCrossed',
+                                'consumedSunriseThresholds = consumed /* TASK-038 E8 consumption removed */'),
+ 'sunrise-day-reset': ('val dayChanged = state.sunriseLocalDay != localDay',
+                       'val dayChanged = false /* TASK-038 E8 local-day reset removed */'),
+ 'sunrise-epoch-day': ('internal fun sunriseEpochSeconds(timestamp: Long, latitude: Double, longitude: '
+                       'Double): Double? {\n'
+                       '    val localDate = sunriseLocalDate(timestamp, longitude)\n'
+                       '    val dayOfYear = localDate.dayOfYear',
+                       'internal fun sunriseEpochSeconds(timestamp: Long, latitude: Double, longitude: '
+                       'Double): Double? {\n'
+                       '    val localDate = sunriseLocalDate(timestamp, longitude)\n'
+                       '    val dayOfYear = localDate.toEpochDay().toInt() /* TASK-038 E8 epoch-day drift '
+                       '*/'),
+ 'sunrise-min-interval': ('!config.sunriseEnabled ||\n        !onRoute || !eventIntervalOpen',
+                          '!config.sunriseEnabled ||\n'
+                          '        !onRoute /* TASK-038 E8 min interval ignored */'),
+ 'elevation-boundary-config-ignore': ('while (elevation >= (band + 1) * config.elevationBoundaryMeters + '
+                                      'config.elevationHysteresisMeters) {',
+                                      'while (elevation >= (band + 1) * 100.0 + '
+                                      'config.elevationHysteresisMeters) { /* TASK-040 E5 boundary config '
+                                      'ignored */'),
+ 'sunrise-announce-config-ignore': ('        else -> config.sunriseAnnounceMinutes.filter {\n'
+                                    '            oldMinutes > it && minutes <= it && it !in consumed\n'
+                                    '        }.toSet()',
+                                    '        else -> listOf(30, 10).filter {\n'
+                                    '            oldMinutes > it && minutes <= it && it !in consumed\n'
+                                    '        }.toSet() /* TASK-040 E8 announce config ignored */'),
+ 'remaining-toggle-ignored': ('if (config.remainingEnabled && onRoute && forward && eventIntervalOpen && '
+                              'crossedRemaining.isNotEmpty()) {',
+                              'if (onRoute && forward && eventIntervalOpen && crossedRemaining.isNotEmpty()) '
+                              '{ /* TASK-040 E3 toggle ignored */'),
+ 'slope-toggle-ignored': ('if (config.slopeEnabled && onRoute && forward && eventIntervalOpen && index !in '
+                          'previous.consumedSlopeIndices) {',
+                          'if (onRoute && forward && eventIntervalOpen && index !in '
+                          'previous.consumedSlopeIndices) { /* TASK-040 E4 toggle ignored */'),
+ 'waypoint-toggle-ignored': ('if (config.waypointEnabled && onRoute && forward && eventIntervalOpen && index '
+                             '!in previous.consumedWaypointIndices) {',
+                             'if (onRoute && forward && eventIntervalOpen && index !in '
+                             'previous.consumedWaypointIndices) { /* TASK-040 E6 toggle ignored */'),
+ 'sunset-toggle-ignored': ('if (!config.sunsetEnabled) return SunsetEvaluation(state, null)',
+                           'if (false) return SunsetEvaluation(state, null) /* TASK-040 E7 toggle ignored '
+                           '*/'),
+ 'sunrise-toggle-ignored': ('minutes <= 0.0 || newlyCrossed.isEmpty() || !config.sunriseEnabled ||',
+                            'minutes <= 0.0 || newlyCrossed.isEmpty() || false /* TASK-040 E8 toggle ignored '
+                            '*/ ||'),
+ 'sunrise-reverse-suppressed': ('minutes <= 0.0 || newlyCrossed.isEmpty() || !config.sunriseEnabled ||\n'
+                                '        !onRoute || !eventIntervalOpen',
+                                'minutes <= 0.0 || newlyCrossed.isEmpty() || !config.sunriseEnabled ||\n'
+                                '        !onRoute || !eventIntervalOpen || state.direction == '
+                                'ProgressDirection.REVERSE /* TASK-040 E8 reverse muted */'),
+ 'priority-elevation-waypoint-reversed': ('const val ELEVATION = 250\n    const val WAYPOINT = 300',
+                                          'const val ELEVATION = 300 /* TASK-040 E5 raised */\n'
+                                          '    const val WAYPOINT = 200 /* TASK-040 E6 lowered */'),
+ 'sunrise-rounding-floor': ('val minutesRemaining = minutes.roundToInt().coerceAtLeast(1)',
+                            'val minutesRemaining = minutes.toInt().coerceAtLeast(1) /* TASK-040 E8 rounds '
+                            'down */'),
+ 'sunset-delayed-by-e5-e8': ('val sunsetEvaluation = evaluateSunset(previous, next, frame, config, '
+                             'eventIntervalOpen, candidates.isNotEmpty())',
+                             'val sunsetEvaluation = evaluateSunset(previous, next, frame, config, '
+                             'eventIntervalOpen, candidates.isNotEmpty() || config.elevationEnabled || '
+                             'config.sunriseEnabled) /* TASK-040 E5/E8 incorrectly delay E7 */'),
+ 'sunrise-consumes-rejected-accuracy': ('    if (frame.accuracy.toDouble() > config.accuracyRejectMeters) {\n'
+                                        '        val sunset = evaluateSunsetStandalone(initializedState, '
+                                        'frame, config, higherPriority = false)\n'
+                                        '        if (sunset.guidance != null) {\n'
+                                        '            return GuideResult(sunset.guidance, sunset.state, '
+                                        'sunset.reason.copy(rule = "input.accuracy-filter"))\n'
+                                        '        }\n'
+                                        '        return GuideResult(\n'
+                                        '            null,\n'
+                                        '            sunset.state,\n'
+                                        '            Reason(\n'
+                                        '                rule = "input.accuracy-filter",\n'
+                                        '                thresholds = mapOf("accuracyRejectMeters" to '
+                                        'config.accuracyRejectMeters),\n'
+                                        '                details = mapOf("accuracy" to '
+                                        'frame.accuracy.toString())\n'
+                                        '            )\n'
+                                        '        )\n'
+                                        '    }',
+                                        '    if (frame.accuracy.toDouble() > config.accuracyRejectMeters) {\n'
+                                        '        val sunset = evaluateSunsetStandalone(initializedState, '
+                                        'frame, config, higherPriority = false)\n'
+                                        '        val sunriseState = evaluateSunriseStandalone(sunset.state, '
+                                        'frame, config) /* TASK-040 E8 rejected frame consumed */\n'
+                                        '        if (sunset.guidance != null) {\n'
+                                        '            return GuideResult(sunset.guidance, sunriseState, '
+                                        'sunset.reason.copy(rule = "input.accuracy-filter"))\n'
+                                        '        }\n'
+                                        '        return GuideResult(\n'
+                                        '            null,\n'
+                                        '            sunriseState,\n'
+                                        '            Reason(\n'
+                                        '                rule = "input.accuracy-filter",\n'
+                                        '                thresholds = mapOf("accuracyRejectMeters" to '
+                                        'config.accuracyRejectMeters),\n'
+                                        '                details = mapOf("accuracy" to '
+                                        'frame.accuracy.toString())\n'
+                                        '            )\n'
+                                        '        )\n'
+                                        '    }'),
+ 'elevation-reverse-dwell-drop': ('        if (dynamic.guidance != null) {\n'
+                                  '            return GuideResult(dynamic.guidance, dynamic.state, '
+                                  'dynamic.reason)\n'
+                                  '        }\n'
+                                  '        if (!dynamic.state.reverseStatusIssued) {',
+                                  '        if (dynamic.guidance != null && dynamic.guidance !is '
+                                  'Guidance.Elevation) {\n'
+                                  '            return GuideResult(dynamic.guidance, dynamic.state, '
+                                  'dynamic.reason)\n'
+                                  '        }\n'
+                                  '        if (!dynamic.state.reverseStatusIssued) {')}
+
+CORE_TEST = frozenset({"core-guide-test"})
+OFF_ROUTE_CONSUMERS = frozenset({"core-guide-test", "replay", "phase1-accuracy", "config-sensitivity"})
+TURN_CONSUMERS = frozenset({"core-guide-test", "replay", "replay-turn-session"})
+TURN_OFF_ROUTE_GATE_CONSUMERS = frozenset({"core-guide-test", "replay"})
+TURN_AXIS_CONSUMERS = frozenset({"core-guide-test", "replay-turn-session"})
+TURN_OFFSET_CONSUMERS = frozenset({"core-guide-test", "config-sensitivity"})
+
+# Each row says which independent consumer must reject that specific mutation.
+# Other consumers still run and their outcomes are logged, but do not decide
+# whether the mutation is considered caught.
+MUTATION_REQUIRED_CONSUMERS = {
+    "dwell-bypass": OFF_ROUTE_CONSUMERS,
+    "approach-gate-removed": CORE_TEST,
+    "config-constant": OFF_ROUTE_CONSUMERS,
+    "unit-heuristic": OFF_ROUTE_CONSUMERS,
+    "turn-merge-gap-ignored": CORE_TEST,
+    "turn-consumption": frozenset({"core-guide-test", "replay"}),
+    "turn-direction-gate": TURN_CONSUMERS,
+    # The geometric turn session stays on-route; off-route suppression is
+    # covered by the core test and the replay contract probe instead.
+    "turn-off-route-gate": TURN_OFF_ROUTE_GATE_CONSUMERS,
+    "turn-offset-gate": TURN_OFFSET_CONSUMERS,
+    "peak-prominence-ignored": CORE_TEST,
+    "elevation-waypoint-mix": CORE_TEST,
+    "elevation-always-ok": CORE_TEST,
+    "turn-axis-simplified": TURN_AXIS_CONSUMERS,
+    "waypoint-near-filter": CORE_TEST,
+    "sunset-drop-pending": CORE_TEST,
+    "sunset-periodic-gate": CORE_TEST,
+    "sunset-no-start": CORE_TEST,
+    "sunset-epoch-day": CORE_TEST,
+    "sunset-skip-accuracy": CORE_TEST,
+    "event-offroute-gate": CORE_TEST,
+    "event-reverse-gate": CORE_TEST,
+    "event-min-interval": CORE_TEST,
+    "event-consumption-queue": CORE_TEST,
+    "event-threshold-refire": CORE_TEST,
+    "reverse-sunset-drop": CORE_TEST,
+    "reverse-events-suppressed": CORE_TEST,
+    "reverse-status-repeat": CORE_TEST,
+    "elevation-fallback": CORE_TEST,
+    "priority-old-order": CORE_TEST,
+    "elevation-hysteresis-ignore": CORE_TEST,
+    "elevation-descending-drop": CORE_TEST,
+    "elevation-start-boundary": CORE_TEST,
+    "sunrise-after-start": CORE_TEST,
+    "sunrise-zero-minute": CORE_TEST,
+    "sunrise-consumption-refire": CORE_TEST,
+    "sunrise-day-reset": CORE_TEST,
+    "sunrise-epoch-day": CORE_TEST,
+    "sunrise-min-interval": CORE_TEST,
+    "elevation-boundary-config-ignore": CORE_TEST,
+    "sunrise-announce-config-ignore": CORE_TEST,
+    "remaining-toggle-ignored": CORE_TEST,
+    "slope-toggle-ignored": CORE_TEST,
+    "waypoint-toggle-ignored": CORE_TEST,
+    "sunset-toggle-ignored": CORE_TEST,
+    "sunrise-toggle-ignored": CORE_TEST,
+    "sunrise-reverse-suppressed": CORE_TEST,
+    "priority-elevation-waypoint-reversed": CORE_TEST,
+    "sunrise-rounding-floor": CORE_TEST,
+    "sunset-delayed-by-e5-e8": CORE_TEST,
+    "sunrise-consumes-rejected-accuracy": CORE_TEST,
+    "elevation-reverse-dwell-drop": CORE_TEST,
+}
+
+CONSUMER_NAMES = ("replay", "replay-turn-session", "config-sensitivity", "phase1-accuracy")
+
+
+def unmutated_consumer_failures(results: dict[str, int]) -> list[str]:
+    """Fail closed when any downstream consumer rejects the clean engine."""
+    failures: list[str] = []
+    for name in ("core-guide-test", *CONSUMER_NAMES):
+        if name not in results:
+            failures.append(f"FAIL: consumer {name} was not run on the unmutated engine")
+        elif results[name] != 0:
+            failures.append(f"FAIL: consumer {name} fails on the unmutated engine")
+    return failures
+
+
+def mutation_consumer_failures(mutation: str, results: dict[str, int]) -> list[str]:
+    """Only consumers named in the mutation table are required to reject it."""
+    required = MUTATION_REQUIRED_CONSUMERS.get(mutation)
+    if required is None:
+        return [f"{mutation}: missing required-consumer table row"]
+    failures: list[str] = []
+    for name in sorted(required):
+        if name not in results:
+            failures.append(f"{mutation}: required consumer {name} was not run")
+        elif results[name] == 0:
+            failures.append(f"{mutation}: required consumer {name} unexpectedly passed")
+    return failures
+
+
+def failed_test_names(workspace: Path) -> list[str]:
+    """Read failure/error names from Gradle's XML test results."""
+    names: set[str] = set()
+    for result_file in (workspace / "core-guide/build/test-results/test").glob("TEST-*.xml"):
+        try:
+            root = ET.parse(result_file).getroot()
+        except ET.ParseError:
+            continue
+        for case in root.findall(".//testcase"):
+            if case.find("failure") is not None or case.find("error") is not None:
+                names.add(f"{case.get('classname', result_file.stem)}.{case.get('name', 'unknown')}")
+    return sorted(names)
+
+
+def mutation_needle_failures(engine_source: str, route_source: str) -> list[str]:
+    """Require every mutation needle to identify exactly one source site."""
+    failures: list[str] = []
+    route_mutations = {"turn-axis-simplified", "elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter", "peak-prominence-ignored"}
+    for name, (needle, _) in VARIANTS.items():
+        source = route_source if name in route_mutations else engine_source
+        count = source.count(needle)
+        if count != 1:
+            failures.append(f"{name}: mutation needle occurrence count={count}, expected=1")
+    return failures
+
+
+def consumer_commands(cli: Path) -> dict[str, list[str]]:
+    return {
+        "replay": ["python", "tools/replay.py", "--cli", str(cli), "--contract"],
+        "replay-turn-session": [
+            "python", "tools/replay.py", "testdata/sessions/golden/turn_contract",
+            "--cli", str(cli), "--strict",
+        ],
+        "config-sensitivity": ["python", "tools/config_sensitivity.py", "--cli", str(cli)],
+        "phase1-accuracy": [
+            "python", "tools/phase1_accuracy.py", "--cli", str(cli), "--contract",
+            "--run-id", "d033", "--commit-sha", "fixture",
+        ],
+    }
+
+
+def installed_cli(workspace: Path, *, windows: bool | None = None) -> Path:
+    """Select the launcher executable for the host running the consumer."""
+    if windows is None:
+        windows = os.name == "nt"
+    windows_cli = workspace / "replay/build/install/replay/bin/replay.bat"
+    unix_cli = workspace / "replay/build/install/replay/bin/replay"
+    candidates = (windows_cli, unix_cli) if windows else (unix_cli, windows_cli)
+    return next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
+
+
+def run(command: list[str], cwd: Path) -> tuple[int, str]:
+    if command and Path(command[0]).suffix.lower() in {".bat", ".cmd"}:
+        command = ["cmd", "/c", *command]
+    result = subprocess.run(command, cwd=cwd, text=True, encoding="utf-8", errors="replace", capture_output=True)
+    return result.returncode, (result.stdout + "\n" + result.stderr).strip()
+
+
+def copy_repo(source: Path, destination: Path) -> None:
+    ignored = shutil.ignore_patterns(".git", ".gradle", "build", "*.jar", "*.log", ".task005-evidence")
+    shutil.copytree(source, destination, ignore=ignored)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--repo-root", type=Path, default=Path("."))
+    parser.add_argument("--gradle", default="gradle")
+    parser.add_argument("--out", type=Path, default=Path("d033-negative-control.log"))
+    args = parser.parse_args()
+    source = args.repo_root.resolve()
+    evidence: list[str] = []
+    failures: list[str] = []
+    summary_rows: list[tuple[str, str, str, str]] = []
+    if set(MUTATION_REQUIRED_CONSUMERS) != set(VARIANTS):
+        missing = sorted(set(VARIANTS) - set(MUTATION_REQUIRED_CONSUMERS))
+        extra = sorted(set(MUTATION_REQUIRED_CONSUMERS) - set(VARIANTS))
+        failures.append(f"mutation consumer table mismatch missing={missing} extra={extra}")
+
+    def save_evidence() -> None:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        table = [
+            "D-033 mutation rejection summary",
+            "mutation | required consumers | rejected by | failed test/contract",
+            "--- | --- | --- | ---",
+        ]
+        table.extend(" | ".join(row) for row in summary_rows)
+        args.out.write_text("\n\n".join(evidence + ["\n".join(table)]) + "\n", encoding="utf-8")
+
+    with tempfile.TemporaryDirectory(prefix="tnapp-d033-") as temporary:
+        workspace = Path(temporary) / "repo"
+        copy_repo(source, workspace)
+        engine = workspace / ENGINE
+        original = engine.read_text(encoding="utf-8")
+        route = workspace / "core-guide/src/main/kotlin/com/trailnav/core/Route.kt"
+        route_original = route.read_text(encoding="utf-8")
+        needle_errors = mutation_needle_failures(original, route_original)
+        if needle_errors:
+            failures.extend(needle_errors)
+            evidence.append("FAIL: mutation needles must be unique\n" + "\n".join(needle_errors))
+            save_evidence()
+            print("FAIL: D-033 mutation needle uniqueness")
+            print("\n".join(needle_errors))
+            return 1
+
+        # Positive control runs first: a consumer that already fails against
+        # the clean engine cannot count as evidence that it rejected a mutant.
+        baseline_core_code, baseline_core_output = run([args.gradle, ":core-guide:test", "--no-daemon"], workspace)
+        evidence.append(f"UNMUTATED consumer=core-guide-test exit={baseline_core_code}\n{baseline_core_output}")
+        baseline_build_code, baseline_build_output = run([args.gradle, ":replay:installDist", "--no-daemon"], workspace)
+        evidence.append(f"UNMUTATED consumer=replay-build exit={baseline_build_code}\n{baseline_build_output}")
+        baseline_cli = installed_cli(workspace)
+        baseline_results = {"core-guide-test": baseline_core_code}
+        if baseline_build_code != 0 or not baseline_cli.is_file():
+            failures.append("FAIL: consumer replay CLI build fails on the unmutated engine")
+            for name in CONSUMER_NAMES:
+                baseline_results[name] = -1
+        else:
+            for consumer, command in consumer_commands(baseline_cli).items():
+                code, output = run(command, workspace)
+                baseline_results[consumer] = code
+                evidence.append(f"UNMUTATED consumer={consumer} exit={code}\n{output}")
+        failures.extend(unmutated_consumer_failures(baseline_results))
+        if failures:
+            save_evidence()
+            print("FAIL: D-033 unmutated-engine positive control")
+            print("\n".join(failures))
+            return 1
+
+        for name, (needle, replacement) in VARIANTS.items():
+            target = route if name in {
+                "turn-axis-simplified", "elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter",
+                "peak-prominence-ignored",
+            } else engine
+            target_original = route_original if target == route else original
+            variant_engine = target_original.replace(needle, replacement, 1)
+            assert variant_engine != target_original
+            target.write_text(variant_engine, encoding="utf-8")
+            shutil.rmtree(workspace / "core-guide/build/test-results/test", ignore_errors=True)
+            test_code, test_output = run([args.gradle, ":core-guide:test", "--no-daemon"], workspace)
+            test_names = failed_test_names(workspace)
+            evidence.append(
+                f"VARIANT {name} consumer=core-guide-test exit={test_code} "
+                f"failed_tests={','.join(test_names) if test_names else 'none'}\n{test_output}"
+            )
+            consumer_results = {"core-guide-test": test_code}
+
+            # A failing test task prevents Gradle from reaching installDist in
+            # the same invocation. Build the real CLI separately so each
+            # downstream consumer is exercised against the mutated engine.
+            cli_code, cli_output = run([args.gradle, ":replay:installDist", "--no-daemon"], workspace)
+            evidence.append(f"VARIANT {name} consumer=replay-build exit={cli_code}\n{cli_output}")
+            if cli_code != 0:
+                failures.append(f"{name}: replay CLI build failed")
+            cli = installed_cli(workspace)
+            if cli_code != 0 or not cli.is_file():
+                for consumer in CONSUMER_NAMES:
+                    consumer_results[consumer] = -1
+                    evidence.append(f"VARIANT {name} consumer={consumer} exit=not-built")
+            else:
+                for consumer, command in consumer_commands(cli).items():
+                    code, output = run(command, workspace)
+                    consumer_results[consumer] = code
+                    evidence.append(f"VARIANT {name} consumer={consumer} exit={code}\n{output}")
+
+            required = MUTATION_REQUIRED_CONSUMERS[name]
+            variant_failures = mutation_consumer_failures(name, consumer_results)
+            failures.extend(variant_failures)
+            if test_code != 0 and not test_names:
+                failures.append(f"{name}: core-guide-test failed without a named failing test")
+            rejected = sorted(consumer for consumer in required if consumer_results.get(consumer, 0) != 0)
+            failed_tests = [
+                f"{consumer}: {', '.join(test_names)}"
+                if consumer == "core-guide-test" and test_names
+                else f"{consumer}: contract/replay check"
+                for consumer in rejected
+            ]
+            summary_rows.append((name, ", ".join(sorted(required)), ", ".join(rejected), "; ".join(failed_tests)))
+            target.write_text(target_original, encoding="utf-8")
+
+        fixture = workspace / "testdata/sessions/golden/turn_contract"
+        if fixture.is_dir():
+            broken_fixture = workspace / "d033-replay-missing-loc"
+            shutil.copytree(fixture, broken_fixture)
+            event_lines = (broken_fixture / "events.ndjson").read_text(encoding="utf-8").splitlines()
+            removed = False
+            retained: list[str] = []
+            for line in event_lines:
+                event = json.loads(line)
+                if not removed and event.get("stream") == "loc":
+                    removed = True
+                    continue
+                retained.append(line)
+            (broken_fixture / "events.ndjson").write_text("\n".join(retained) + "\n", encoding="utf-8")
+            pairing_code, pairing_output = run(
+                ["python", "tools/replay.py", str(broken_fixture), "--cli", str(cli), "--strict"],
+                workspace,
+            )
+            evidence.append(f"REPLAY missing-loc consumer=replay exit={pairing_code}\n{pairing_output}")
+            if pairing_code == 0:
+                failures.append("replay: missing-loc mutation unexpectedly passed")
+    save_evidence()
+    if failures:
+        print("FAIL: D-033 negative control")
+        print("\n".join(failures))
+        return 1
+    print(f"PASS: D-033 consumers rejected {len(VARIANTS)} engine mutations")
+    print(f"evidence={args.out}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
