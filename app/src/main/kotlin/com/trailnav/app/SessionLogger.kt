@@ -68,7 +68,7 @@ class JsonlSessionLogger(
         File(directory, "manifest.json").writeText(
             """{
               "session_id":"${escape(sessionId)}",
-              "schema_version":"0.1.0-draft",
+              "schema_version":"1.0.0",
               "started_at_wall":"${java.time.Instant.now()}",
               "app":{"version":"${escape(appVersion)}","code_hash":"${escape(codeHash)}"},
               "engine":{"config":{"implementation":"core-guide","config_hash":"${escape(configHash)}","events":$eventsJson},"rng_seed":0},
