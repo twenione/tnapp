@@ -14,6 +14,17 @@ class ElevationRouteTest {
         }
     }
 
+    private fun profileXml(elevations: List<Int>, waypointIndices: List<Int> = emptyList()): String {
+        val waypoints = waypointIndices.joinToString("") { index ->
+            "<wpt lat=\"${10.0 + index * 0.00045}\" lon=\"20.0\"><name>W$index</name></wpt>"
+        }
+        val track = elevations.mapIndexed { index, elevation -> pointXml(index, elevation.toString()) }.joinToString("")
+        return "<gpx>$waypoints<trk><trkseg>$track</trkseg></trk></gpx>"
+    }
+
+    private fun singlePeakProfile(): List<Int> =
+        listOf(100, 100, 100, 130, 160, 200, 230, 250, 250, 250, 250, 250, 220, 200, 180, 180, 180)
+
     @Test
     fun missingAndPartialElevationUseTheExplicitFallbackReasons() {
         val absent = RouteModel.fromGpx("<gpx><trk><trkseg>${pointXml(0)}${pointXml(1)}</trkseg></trk></gpx>")
@@ -21,35 +32,36 @@ class ElevationRouteTest {
 
         val partial = RouteModel.fromGpx("<gpx><trk><trkseg>${pointXml(0, "1")}${pointXml(1)}</trkseg></trk></gpx>")
         check(!partial.elevationUsed && partial.elevationReason == "partial")
-        check(partial.slopeSegments.isEmpty())
+        check(partial.peaks.isEmpty())
     }
 
     @Test
-    fun smoothProfileProducesAnAscentSegmentWithoutChangingRouteGeometry() {
-        val xml = "<gpx><trk><trkseg>" +
-            listOf(0, 7, 15, 23, 30).mapIndexed { index, elevation -> pointXml(index, elevation.toString()) }.joinToString("") +
-            "</trkseg></trk></gpx>"
-        val route = RouteModel.fromGpx(xml)
+    fun confirmedPeakUsesTheSmoothedProfileWithoutChangingRouteGeometry() {
+        val route = RouteModel.fromGpx(profileXml(singlePeakProfile()))
         check(route.elevationUse == ElevationUse(true, "ok"))
-        check(route.points.size == 5)
-        check(route.slopeSegments.any { it.kind == SlopeKind.ASCENT && it.deltaMeters >= 20.0 })
+        check(route.points.size == singlePeakProfile().size)
+        check(route.peaks.size == 1)
+        val peak = route.peaks.single()
+        check(peak.s == route.cumulativeMeters[8])
+        check(peak.elevationMeters == 250.0)
+        check(peak.climbMeters == 150.0)
     }
 
     @Test
-    fun noiseAndSingleSpikeDoNotCreateSlopeSegments() {
+    fun flatNoiseAndSingleSpikeDoNotCreatePeaks() {
         val noise = "<gpx><trk><trkseg>" +
             listOf(0, 3, -3, 2, -2, 1).mapIndexed { index, elevation -> pointXml(index, elevation.toString()) }.joinToString("") +
             "</trkseg></trk></gpx>"
         val flat = RouteModel.fromGpx(noise)
         check(flat.elevationUse.reason == "ok")
-        check(flat.slopeSegments.isEmpty())
+        check(flat.peaks.isEmpty())
 
         val spike = "<gpx><trk><trkseg>" +
             listOf(0, 0, 15, 0, 0, 0).mapIndexed { index, elevation -> pointXml(index, elevation.toString()) }.joinToString("") +
             "</trkseg></trk></gpx>"
         val unstable = RouteModel.fromGpx(spike)
         check(unstable.elevationReason == "unstable")
-        check(unstable.slopeSegments.isEmpty())
+        check(unstable.peaks.isEmpty())
     }
 
     @Test
@@ -127,35 +139,61 @@ class ElevationRouteTest {
     }
 
     @Test
-    fun slopeProfileUsesLookahead() {
-        val xml = "<gpx><trk><trkseg>" +
-            listOf(0, 7, 15, 23, 30, 38, 46).mapIndexed { index, elevation -> pointXml(index, elevation.toString()) }.joinToString("") +
-            "</trkseg></trk></gpx>"
-        val short = RouteModel.fromGpx(xml, GuideConfig(slopeLookaheadMeters = 120.0))
-        val long = RouteModel.fromGpx(xml, GuideConfig(slopeLookaheadMeters = 400.0))
-        check(long.slopeSegments.firstOrNull()?.endS ?: 0.0 > (short.slopeSegments.firstOrNull()?.endS ?: 0.0))
+    fun peakRequiresConfiguredProminence() {
+        val elevations = listOf(0, 0, 0) +
+            (10..250 step 10).toList() +
+            listOf(250, 250, 250, 240, 240, 240, 240, 250) +
+            (260..400 step 10).toList() +
+            listOf(400, 400) +
+            (390 downTo 100 step 10).toList()
+        val default = RouteModel.fromGpx(profileXml(elevations))
+        val sensitive = RouteModel.fromGpx(profileXml(elevations), GuideConfig(peakProminenceMeters = 5.0))
+        check(default.elevationUse.used)
+        check(default.peaks.size == 1) { "default peaks=" + default.peaks + " smoothed=" + default.smoothedElevationMeters }
+        check(default.peaks.single().elevationMeters == 400.0)
+        check(sensitive.peaks.size == 2) { "sensitive peaks=" + sensitive.peaks + " smoothed=" + sensitive.smoothedElevationMeters }
+        check(sensitive.peaks.first().elevationMeters == 250.0)
     }
 
     @Test
-    fun slopeProfileUsesThreshold() {
-        val xml = "<gpx><trk><trkseg>" +
-            listOf(0, 7, 15, 23, 30).mapIndexed { index, elevation -> pointXml(index, elevation.toString()) }.joinToString("") +
-            "</trkseg></trk></gpx>"
-        val defaultRoute = RouteModel.fromGpx(xml)
-        val highThreshold = RouteModel.fromGpx(xml, GuideConfig(slopeMinDeltaMeters = 100.0))
-        check(defaultRoute.slopeSegments.isNotEmpty())
-        check(highThreshold.slopeSegments.isEmpty())
+    fun peakClimbMetersIsRiseSincePrecedingValley() {
+        val peak = RouteModel.fromGpx(profileXml(singlePeakProfile())).peaks.single()
+        check(peak.elevationMeters == 250.0)
+        check(peak.climbMeters == 150.0)
     }
 
     @Test
-    fun slopeProfileUsesHysteresis() {
-        val xml = "<gpx><trk><trkseg>" +
-            listOf(0, 5, 5, 10, 15, 20).mapIndexed { index, elevation -> pointXml(index, elevation.toString()) }.joinToString("") +
-            "</trkseg></trk></gpx>"
-        val hysteresis = RouteModel.fromGpx(xml, GuideConfig(slopeHysteresisMeters = 30.0, slopeLookaheadMeters = 400.0, slopeMinDeltaMeters = 25.0))
-        val noHysteresis = RouteModel.fromGpx(xml, GuideConfig(slopeHysteresisMeters = 0.0, slopeLookaheadMeters = 400.0, slopeMinDeltaMeters = 1.0))
-        check(hysteresis.slopeSegments.isEmpty())
-        check(noHysteresis.slopeSegments.isNotEmpty())
+    fun peakWithinDedupeDistanceOfAWaypointIsOmitted() {
+        val elevations = singlePeakProfile()
+        val base = RouteModel.fromGpx(profileXml(elevations))
+        val peakIndex = base.cumulativeMeters.indexOf(base.peaks.single().s)
+        check(peakIndex >= 4)
+        val within100Meters = RouteModel.fromGpx(profileXml(elevations, listOf(peakIndex - 2)))
+        val beyond150Meters = RouteModel.fromGpx(profileXml(elevations, listOf(peakIndex - 4)))
+        check(within100Meters.waypoints.single().s.let { kotlin.math.abs(base.peaks.single().s - it) } < 150.0)
+        check(within100Meters.peaks.isEmpty())
+        check(beyond150Meters.waypoints.single().s.let { kotlin.math.abs(base.peaks.single().s - it) } > 150.0)
+        check(beyond150Meters.peaks.single().elevationMeters == 250.0)
+    }
+
+    @Test
+    fun flatOrMonotonicProfilesProduceNoPeaks() {
+        val flat = RouteModel.fromGpx(profileXml(List(8) { 100 }))
+        val ascending = RouteModel.fromGpx(profileXml(listOf(0, 10, 20, 30, 40, 50, 60, 70)))
+        val descending = RouteModel.fromGpx(profileXml(listOf(70, 60, 50, 40, 30, 20, 10, 0)))
+        check(flat.peaks.isEmpty())
+        check(ascending.peaks.isEmpty())
+        check(descending.peaks.isEmpty())
+    }
+
+    @Test
+    fun unstableOrAbsentElevationProducesNoPeaks() {
+        val absent = RouteModel.fromGpx("<gpx><trk><trkseg>${pointXml(0)}${pointXml(1)}${pointXml(2)}</trkseg></trk></gpx>")
+        val partial = RouteModel.fromGpx("<gpx><trk><trkseg>${pointXml(0, "100")}${pointXml(1)}${pointXml(2, "110")}</trkseg></trk></gpx>")
+        val unstable = RouteModel.fromGpx(profileXml(listOf(0, 0, 15, 0, 0, 0)))
+        check(!absent.elevationUse.used && absent.peaks.isEmpty())
+        check(!partial.elevationUse.used && partial.peaks.isEmpty())
+        check(!unstable.elevationUse.used && unstable.peaks.isEmpty())
     }
 
     @Test
@@ -184,6 +222,7 @@ class ElevationRouteTest {
         val defaultRoute = RouteModel.fromGpx(xml)
         val tolerant = RouteModel.fromGpx(xml, GuideConfig(elevationSpikeThresholdMeters = 20.0))
         check(defaultRoute.elevationReason == "unstable")
+        check(defaultRoute.peaks.isEmpty())
         check(tolerant.elevationReason == "ok")
     }
 }

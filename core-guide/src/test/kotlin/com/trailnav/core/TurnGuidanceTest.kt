@@ -87,6 +87,85 @@ class TurnGuidanceTest {
         assertNull(routeStatus(reverseState)?.nextTurn)
     }
 
+    private fun adjacentTurnsConfig(mergeGapMeters: Double = 40.0) = GuideConfig(
+        sunsetEnabled = false,
+        eventMinIntervalSeconds = 0.0,
+        turnLookbackMeters = 5.0,
+        turnLookaheadMeters = 5.0,
+        turnAngleThresholdDegrees = 45.0,
+        turnMergeGapMeters = mergeGapMeters,
+        douglasPeuckerEpsilonMeters = 0.0,
+    )
+
+    private fun adjacentTurnsRoute(gapMeters: Double, config: GuideConfig): RouteModel {
+        val metersPerDegreeLatitude = 111_195.0
+        val metersPerDegreeLongitude = metersPerDegreeLatitude * cos(Math.toRadians(10.0))
+        val startLat = 10.0
+        val startLon = 20.0
+        val points = listOf(
+            GeoPoint(startLat, startLon),
+            GeoPoint(startLat + 50.0 / metersPerDegreeLatitude, startLon),
+            GeoPoint(startLat + 100.0 / metersPerDegreeLatitude, startLon),
+            GeoPoint(startLat + 100.0 / metersPerDegreeLatitude, startLon + 5.0 / metersPerDegreeLongitude),
+            GeoPoint(startLat + 100.0 / metersPerDegreeLatitude, startLon + gapMeters / metersPerDegreeLongitude),
+            GeoPoint(startLat + 150.0 / metersPerDegreeLatitude, startLon + gapMeters / metersPerDegreeLongitude),
+            GeoPoint(startLat + 200.0 / metersPerDegreeLatitude, startLon + gapMeters / metersPerDegreeLongitude),
+        )
+        val track = points.joinToString("") { point ->
+            "<trkpt lat=\"${point.lat}\" lon=\"${point.lon}\"/>"
+        }
+        return RouteModel.fromGpx("<gpx><trk><trkseg>$track</trkseg></trk></gpx>", config)
+    }
+
+    private fun frameAt(route: RouteModel, pointIndex: Int, timestamp: Long) =
+        SensorFrame(timestamp, route.sourcePoints[pointIndex].lat, route.sourcePoints[pointIndex].lon, 5f, 1f, null)
+
+    private fun afterFirstTurn(route: RouteModel, config: GuideConfig, expectedGapMeters: Double = 27.0): GuideResult {
+        assertTrue(route.turns.size >= 2, "synthetic route must contain both right-angle turns")
+        assertTrue(kotlin.math.abs((route.turns[1].s - route.turns[0].s) - expectedGapMeters) < 2.0)
+        var result = guide(GuideState.initial(route), frameAt(route, 0, 0L), config)
+        result = guide(result.nextState, frameAt(route, 1, 1_000L), config)
+        assertIs<Guidance.TurnAhead>(result.guidance)
+        assertEquals("0", result.reason.details["turnIndex"])
+        result = guide(result.nextState, frameAt(route, 2, 2_000L), config)
+        assertIs<Guidance.TurnNow>(result.guidance)
+        assertEquals("0", result.reason.details["turnIndex"])
+        return guide(result.nextState, frameAt(route, 3, 3_000L), config)
+    }
+
+    @Test
+    fun adjacentTurnsWithinMergeGapSuppressTheSecondAheadButNotTheSecondNow() {
+        val config = adjacentTurnsConfig()
+        val route = adjacentTurnsRoute(27.0, config)
+        val onShortLeg = afterFirstTurn(route, config)
+        assertNull(onShortLeg.guidance, "the second turn's ahead cue is merged into the first")
+        val atSecondTurn = guide(onShortLeg.nextState, frameAt(route, 4, 4_000L), config)
+        assertIs<Guidance.TurnNow>(atSecondTurn.guidance)
+        assertEquals("1", atSecondTurn.reason.details["turnIndex"])
+    }
+
+    @Test
+    fun turnsBeyondMergeGapBothAnnounceAhead() {
+        val config = adjacentTurnsConfig()
+        val route = adjacentTurnsRoute(50.0, config)
+        val secondTurn = afterFirstTurn(route, config, expectedGapMeters = 50.0)
+        assertIs<Guidance.TurnAhead>(secondTurn.guidance)
+        assertEquals("1", secondTurn.reason.details["turnIndex"])
+    }
+
+    @Test
+    fun mergeGapConfigChangesSuppression() {
+        val defaultConfig = adjacentTurnsConfig()
+        val defaultRoute = adjacentTurnsRoute(27.0, defaultConfig)
+        assertNull(afterFirstTurn(defaultRoute, defaultConfig).guidance)
+
+        val smallerGapConfig = adjacentTurnsConfig(20.0)
+        val smallerGapRoute = adjacentTurnsRoute(27.0, smallerGapConfig)
+        val secondTurn = afterFirstTurn(smallerGapRoute, smallerGapConfig)
+        assertIs<Guidance.TurnAhead>(secondTurn.guidance)
+        assertEquals("1", secondTurn.reason.details["turnIndex"])
+    }
+
     @Test
     fun knownStraightBranchLimitationHasNoTurn() {
         val straight = RouteModel.fromGpx(

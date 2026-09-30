@@ -76,12 +76,13 @@ data class GuideConfig(
     val turnAngleThresholdDegrees: Double = 45.0,
     val turnAheadDistanceMeters: Double = 60.0,
     val turnNowDistanceMeters: Double = 15.0,
+    val turnMergeGapMeters: Double = 40.0,
     val turnOnRouteMaxOffsetMeters: Double = 15.0,
     val eventMinIntervalSeconds: Double = 60.0,
     val milestoneIntervalMeters: Double = 1000.0,
     val remainingAnnounceMeters: List<Double> = listOf(2000.0, 1000.0, 500.0),
     val elapsedAnnounceIntervalSeconds: Double = 3600.0,
-    val slopeAnnounceLeadMeters: Double = 100.0,
+    val peakAnnounceLeadMeters: Double = 100.0,
     val waypointAnnounceLeadMeters: Double = 200.0,
     val sunsetAnnounceMinutes: List<Int> = listOf(60, 30),
     val sunriseAnnounceMinutes: List<Int> = listOf(30, 10),
@@ -95,12 +96,10 @@ data class GuideConfig(
     val waypointEnabled: Boolean = false,
     val sunsetEnabled: Boolean = true,
     val sunriseEnabled: Boolean = false,
-    /** Maximum route look-ahead used while extracting deterministic E4 slope segments. */
-    val slopeLookaheadMeters: Double = 200.0,
-    /** Minimum smoothed elevation delta for an E4 segment. */
-    val slopeMinDeltaMeters: Double = 20.0,
-    /** Hysteresis used to close a slope segment after the trend flattens. */
-    val slopeHysteresisMeters: Double = 5.0,
+    /** Minimum prominence required to confirm a route peak for E4. */
+    val peakProminenceMeters: Double = 30.0,
+    /** Route distance within which a waypoint suppresses a duplicate peak announcement. */
+    val peakWaypointDedupeMeters: Double = 150.0,
     /** Maximum perpendicular distance for an eligible waypoint. */
     val waypointNearRouteMeters: Double = 50.0,
     /** Maximum sanitized waypoint name length. */
@@ -127,21 +126,21 @@ data class GuideConfig(
         require(turnAheadDistanceMeters > 0.0)
         require(turnNowDistanceMeters > 0.0)
         require(turnNowDistanceMeters < turnAheadDistanceMeters)
+        require(turnMergeGapMeters >= 0.0)
         require(turnOnRouteMaxOffsetMeters > 0.0)
         require(eventMinIntervalSeconds >= 0.0)
         require(milestoneIntervalMeters > 0.0)
         require(remainingAnnounceMeters.all { it > 0.0 })
         require(elapsedAnnounceIntervalSeconds > 0.0)
-        require(slopeAnnounceLeadMeters >= 0.0)
+        require(peakAnnounceLeadMeters >= 0.0)
         require(waypointAnnounceLeadMeters >= 0.0)
         require(sunsetAnnounceMinutes.all { it > 0 })
         require(sunriseAnnounceMinutes.all { it > 0 })
         require(elevationBoundaryMeters > 0.0)
         require(elevationHysteresisMeters >= 0.0)
         require(2.0 * elevationHysteresisMeters < elevationBoundaryMeters)
-        require(slopeLookaheadMeters > 0.0)
-        require(slopeMinDeltaMeters > 0.0)
-        require(slopeHysteresisMeters >= 0.0)
+        require(peakProminenceMeters > 0.0)
+        require(peakWaypointDedupeMeters >= 0.0)
         require(waypointNearRouteMeters >= 0.0)
         require(waypointNameMaxLength > 0)
         require(elevationSpikeThresholdMeters > 0.0)
@@ -175,9 +174,9 @@ data class GuideConfig(
             "turnLookbackMeters" to "turn extraction criterion for Phase 3",
             "turnLookaheadMeters" to "turn extraction criterion for Phase 3",
             "turnAngleThresholdDegrees" to "fixed Phase 1 turn extraction criterion",
-            "slopeLookaheadMeters" to "covered by ElevationRouteTest.slopeProfileUsesLookahead",
-            "slopeMinDeltaMeters" to "covered by ElevationRouteTest.slopeProfileUsesThreshold",
-            "slopeHysteresisMeters" to "covered by ElevationRouteTest.slopeProfileUsesHysteresis",
+            "turnMergeGapMeters" to "covered by TurnGuidanceTest.mergeGapConfigChangesSuppression",
+            "peakProminenceMeters" to "covered by ElevationRouteTest.peakRequiresConfiguredProminence",
+            "peakWaypointDedupeMeters" to "covered by ElevationRouteTest.peakWithinDedupeDistanceOfAWaypointIsOmitted",
             "waypointNearRouteMeters" to "covered by ElevationRouteTest.waypointNearRouteFilter",
             "waypointNameMaxLength" to "covered by ElevationRouteTest.waypointNameIsSanitized",
             "elevationSpikeThresholdMeters" to "covered by ElevationRouteTest.spikeIsUnstable",
@@ -185,7 +184,7 @@ data class GuideConfig(
             "milestoneIntervalMeters" to "covered by DynamicGuidanceTest.milestoneThreshold",
             "remainingAnnounceMeters" to "covered by DynamicGuidanceTest.remainingThresholds",
             "elapsedAnnounceIntervalSeconds" to "covered by DynamicGuidanceTest.elapsedThreshold",
-            "slopeAnnounceLeadMeters" to "covered by DynamicGuidanceTest.slopeWindow",
+            "peakAnnounceLeadMeters" to "covered by DynamicGuidanceTest.peakEventFiresWithinLeadDistanceAndConsumesOnce",
             "waypointAnnounceLeadMeters" to "covered by DynamicGuidanceTest.waypointWindow",
             "sunsetAnnounceMinutes" to "covered by DynamicGuidanceTest.sunsetThresholds",
             "sunriseAnnounceMinutes" to "covered by SunriseGuidanceTest.announceMinutesConfigChangesCrossings",
