@@ -90,6 +90,38 @@ class DynamicGuidanceTest {
     }
 
     @Test
+    fun pendingRemainingStaysSilentInReverseThenSpeaksAfterReturningForward() {
+        val route = remainingEventRoute()
+        val config = GuideConfig(
+            remainingEnabled = true,
+            remainingAnnounceMeters = listOf(500.0),
+            reverseWarningDwellSeconds = 0.0,
+            eventMinIntervalSeconds = 60.0,
+            sunsetEnabled = false,
+        )
+        val initial = remainingEventState(route, remainingMeters = 600.0, lastPeriodicEventAt = 0L)
+        val pending = guide(initial, remainingEventFrame(route, 499.0, 49_000L), config)
+        check(pending.guidance !is Guidance.Remaining)
+        check(pending.nextState.direction == ProgressDirection.FORWARD)
+        check(pending.nextState.pendingRemainingThresholds == setOf(500.0))
+
+        val reverse = guide(pending.nextState, remainingEventFrame(route, 650.0, 60_000L), config)
+        check(reverse.nextState.direction == ProgressDirection.REVERSE) {
+            "the test must exercise a confirmed reverse frame, got ${reverse.nextState.direction}"
+        }
+        check(reverse.guidance !is Guidance.Remaining)
+        check(reverse.nextState.pendingRemainingThresholds == setOf(500.0))
+
+        val forwardAgain = guide(reverse.nextState, remainingEventFrame(route, 400.0, 61_000L), config)
+        val remaining = forwardAgain.guidance as? Guidance.Remaining
+            ?: error("the pending E3 threshold should speak after returning to forward movement")
+        check(forwardAgain.nextState.direction == ProgressDirection.FORWARD)
+        check(remaining.thresholdMeters == 500.0)
+        check(remaining.remainingMeters in 399.0..401.0)
+        check(forwardAgain.nextState.pendingRemainingThresholds.isEmpty())
+    }
+
+    @Test
     fun immediateRemainingKeepsItsExistingDetailsAndNearThresholdDistance() {
         val route = this.route
         val config = GuideConfig(

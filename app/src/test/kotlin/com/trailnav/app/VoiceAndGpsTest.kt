@@ -82,6 +82,12 @@ class VoiceAndGpsTest {
     }
 
     @Test
+    fun delayedRemainingSpeechUsesCurrentRemainingDistance() {
+        assertEquals("목적지까지 410미터", Guidance.Remaining(500.0, 412.0).toSpeech())
+        assertEquals("목적지까지 1.2킬로미터", Guidance.Remaining(2_000.0, 1_234.0).toSpeech())
+    }
+
+    @Test
     fun approachPhraseUsesTheBearingTowardTheRoute() {
         assertEquals("경로까지 85미터, 북동쪽입니다", GuidancePhrases.approach(85.0, 45.0))
         assertEquals("경로까지 85미터, 서쪽입니다", GuidancePhrases.approach(85.0, 270.0))

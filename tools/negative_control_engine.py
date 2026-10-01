@@ -176,6 +176,10 @@ VARIANTS = {'dwell-bypass': ('elapsedSeconds(timestamp, since) >= config.offRout
                                         '        next.pendingRemainingThresholds.isNotEmpty()',
                                         'config.remainingEnabled && onRoute && forward &&\n'
                                         '        next.pendingRemainingThresholds.isNotEmpty() /* D-071 min interval ignored */'),
+ 'remaining-pending-reverse-spoken': ('config.remainingEnabled && onRoute && forward && eventIntervalOpen &&\n'
+                                      '        next.pendingRemainingThresholds.isNotEmpty()',
+                                      'config.remainingEnabled && onRoute && eventIntervalOpen &&\n'
+                                      '        next.pendingRemainingThresholds.isNotEmpty() /* D-071 reverse pending spoken */'),
  'remaining-delayed-threshold-text': ('Guidance.Remaining(threshold, remaining)',
                                       'Guidance.Remaining(threshold, threshold) /* D-071 delayed threshold text */'),
  'remaining-pending-not-cleared': ('val remainingPendingAfterSelection = next.pendingRemainingThresholds - selected.remainingThresholds\n'
@@ -329,6 +333,7 @@ MUTATION_REQUIRED_CONSUMERS = {
     "sunrise-announce-config-ignore": CORE_TEST,
     "remaining-drop-pending": CORE_TEST,
     "remaining-pending-interval-ignored": CORE_TEST,
+    "remaining-pending-reverse-spoken": CORE_TEST,
     "remaining-delayed-threshold-text": CORE_TEST,
     "remaining-pending-not-cleared": CORE_TEST,
     "remaining-reverse-pending": CORE_TEST,
