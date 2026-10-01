@@ -13,7 +13,7 @@ object GuidancePhrases {
         "경로까지 ${formatDistance(distanceMeters)}, ${cardinal(bearingDegrees)}쪽입니다"
     fun arrived(): String = "목적지에 도착했습니다"
     fun milestone(distanceMeters: Double): String = "${formatDistance(distanceMeters)} 지점입니다"
-    fun elapsed(hours: Int): String = "출발 ${hours}시간 경과"
+    fun elapsed(hours: Int): String = "출발, ${hours}시간 경과"
     fun remaining(distanceMeters: Double): String = "목적지까지 ${formatDistance(distanceMeters)}"
     fun ended(): String = "안내를 종료합니다."
     fun slope(kind: SlopeKind): String = if (kind == SlopeKind.ASCENT) "잠시 후 오르막이 끝납니다" else "잠시 후 내리막입니다"
@@ -54,13 +54,18 @@ object GuidancePhrases {
         return "$route, $direction, $remaining, $next"
     }
 
-    /** <100 m: 1 m, 100–999 m: 10 m, >=1 km: 0.1 km. */
+    /** <100 m: 1 m, 100–994 m: 10 m, >=995 m: 0.1 km or 1 km. */
     fun formatDistance(valueMeters: Double): String {
         val value = valueMeters.coerceAtLeast(0.0)
         return when {
             value < 100.0 -> "${round(value).toInt()}미터"
-            value < 1_000.0 -> "${(round(value / 10.0) * 10.0).toInt()}미터"
-            else -> "%.1f킬로미터".format(value / 1_000.0)
+            value < 995.0 -> "${(round(value / 10.0) * 10.0).toInt()}미터"
+            value < 1_000.0 -> "1킬로미터"
+            else -> {
+                val formattedKilometers = "%.1f".format(value / 1_000.0)
+                val zeroDecimalSuffix = "${java.text.DecimalFormatSymbols.getInstance().decimalSeparator}0"
+                "${formattedKilometers.removeSuffix(zeroDecimalSuffix)}킬로미터"
+            }
         }
     }
 

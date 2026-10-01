@@ -35,6 +35,36 @@ class EventSettingsUiTest {
     }
 
     @Test
+    fun resetDraftMutatesSelectionsToTheEightDefaults() {
+        assertEquals(
+            listOf(false, false, true, true, false, true, true, true),
+            EventSettingsUi.defaultCheckedItems().toList(),
+        )
+        val checked = BooleanArray(GuideEvent.values().size) { true }
+
+        EventSettingsUi.resetToDefaults(checked)
+
+        assertEquals(
+            listOf(false, false, true, true, false, true, true, true),
+            checked.toList(),
+        )
+        assertEquals(EventSettings.defaults(), EventSettingsUi.settingsFromCheckedItems(checked))
+    }
+
+    @Test
+    fun resetIsPersistedOnlyWhenAcceptedAndCancelLeavesSavedSettingsUntouched() {
+        val saved = EventSettings.fromPreferenceValues(
+            GuideEvent.values().associate { event -> "event_${event.id.lowercase()}" to true },
+        )
+        val draft = EventSettingsUi.checkedItems(saved)
+        EventSettingsUi.resetToDefaults(draft)
+
+        assertEquals(EventSettings.defaults(), EventSettingsUi.resolveDialogSelection(draft, accepted = true))
+        assertNull(EventSettingsUi.resolveDialogSelection(draft, accepted = false))
+        assertEquals(List(GuideEvent.values().size) { true }, EventSettingsUi.checkedItems(saved).toList())
+    }
+
+    @Test
     fun cancellingDialogProducesNoSettingsToPersist() {
         val saved = EventSettings.defaults()
         val draft = EventSettingsUi.checkedItems(saved).apply { this[0] = true }

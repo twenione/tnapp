@@ -85,6 +85,14 @@ internal object EventSettingsUi {
     fun settingsFromCheckedItems(checked: BooleanArray): EventSettings =
         EventSettings.fromCheckedItems(checked)
 
+    fun defaultCheckedItems(): BooleanArray = checkedItems(EventSettings.defaults())
+
+    fun resetToDefaults(checked: BooleanArray) {
+        val defaults = defaultCheckedItems()
+        require(checked.size == defaults.size) { "Exactly eight event selections are required" }
+        defaults.copyInto(checked)
+    }
+
     /** A cancelled dialog yields no value, so callers cannot persist its draft. */
     fun resolveDialogSelection(
         checked: BooleanArray,
