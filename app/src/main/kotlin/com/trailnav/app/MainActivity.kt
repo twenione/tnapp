@@ -642,12 +642,13 @@ class MainActivity : AppCompatActivity() {
         if (isFinishing || isDestroyed) return
         val currentSettings = NavigationPreferences.eventSettings(this)
         val checked = EventSettingsUi.checkedItems(currentSettings)
-        androidx.appcompat.app.AlertDialog.Builder(this)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("안내 설정")
             .setMultiChoiceItems(EventSettingsUi.labels().toTypedArray(), checked) { _, which, isChecked ->
                 if (which in checked.indices) checked[which] = isChecked
             }
             .setNegativeButton("취소", null)
+            .setNeutralButton("기본값으로 되돌리기", null)
             .setPositiveButton("저장") { _, _ ->
                 EventSettingsUi.resolveDialogSelection(checked, accepted = true)?.let { settings ->
                     NavigationPreferences.saveEventSettings(this, settings)
@@ -655,7 +656,16 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .setCancelable(true)
-            .show()
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
+                EventSettingsUi.resetToDefaults(checked)
+                checked.indices.forEach { index ->
+                    dialog.listView.setItemChecked(index, checked[index])
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun applyButtonSelection(button: Button, selected: Boolean, label: String) {

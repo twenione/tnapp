@@ -1,5 +1,7 @@
 package com.trailnav.app
 
+import java.text.DecimalFormatSymbols
+
 import com.trailnav.core.Side
 import com.trailnav.core.SlopeKind
 import kotlin.test.Test
@@ -9,9 +11,30 @@ class GuidancePhrasesTest {
     @Test
     fun distanceFormattingUsesTheAdoptedBands() {
         assertEquals("99미터", GuidancePhrases.formatDistance(99.4))
+        assertEquals("100미터", GuidancePhrases.formatDistance(99.5))
         assertEquals("100미터", GuidancePhrases.formatDistance(100.0))
         assertEquals("560미터", GuidancePhrases.formatDistance(556.0))
+        assertEquals("990미터", GuidancePhrases.formatDistance(994.0))
+        assertEquals("1킬로미터", GuidancePhrases.formatDistance(995.0))
+        assertEquals("1킬로미터", GuidancePhrases.formatDistance(997.0))
+        assertEquals("1킬로미터", GuidancePhrases.formatDistance(999.9))
+        assertEquals("1킬로미터", GuidancePhrases.formatDistance(1_000.0))
         assertEquals("1.2킬로미터", GuidancePhrases.formatDistance(1_234.0))
+        assertEquals("4.4킬로미터", GuidancePhrases.formatDistance(4_350.0))
+        assertEquals("2킬로미터", GuidancePhrases.formatDistance(1_950.0))
+        assertEquals("2킬로미터", GuidancePhrases.formatDistance(2_000.0))
+        assertEquals("10킬로미터", GuidancePhrases.formatDistance(10_000.0))
+    }
+
+    @Test
+    fun kilometerFormattingMatchesTheLegacyRoundedNumberForEveryIntegerMeter() {
+        val decimalSeparator = DecimalFormatSymbols.getInstance().decimalSeparator
+        val fractionalMeters = listOf(1_234.5, 1_999.5, 4_350.5, 10_999.9)
+        (1_000..20_000).map(Int::toDouble).plus(fractionalMeters).forEach { meters ->
+            val legacy = "%.1f킬로미터".format(meters / 1_000.0)
+            val expected = legacy.replace("${decimalSeparator}0킬로미터", "킬로미터")
+            assertEquals(expected, GuidancePhrases.formatDistance(meters), "meters=$meters")
+        }
     }
 
     @Test
@@ -47,8 +70,9 @@ class GuidancePhrasesTest {
 
     @Test
     fun otherEventPhrasesRemainUnchanged() {
-        assertEquals("1.0킬로미터 지점입니다", GuidancePhrases.milestone(1_000.0))
-        assertEquals("출발 1시간 경과", GuidancePhrases.elapsed(1))
+        assertEquals("1킬로미터 지점입니다", GuidancePhrases.milestone(1_000.0))
+        assertEquals("출발, 1시간 경과", GuidancePhrases.elapsed(1))
+        assertEquals("출발, 2시간 경과", GuidancePhrases.elapsed(2))
         assertEquals("목적지까지 500미터", GuidancePhrases.remaining(500.0))
         assertEquals("잠시 후 오르막이 끝납니다", GuidancePhrases.slope(SlopeKind.ASCENT))
         assertEquals("일몰까지 30분입니다", GuidancePhrases.sunset(30, afterSunset = false))
