@@ -263,6 +263,7 @@ private data class DynamicCandidate(
     val guidance: Guidance,
     val reason: Reason,
     val sunsetThresholds: Set<Int> = emptySet(),
+    val remainingThresholds: Set<Double> = emptySet(),
 )
 
 /** Single arbitration table for simultaneous periodic events (R14). */
@@ -335,12 +336,46 @@ private fun evaluateDynamicGuidance(
     // E3: remaining-distance thresholds are consumed while moving forward.
     val oldRemainingValue = oldRemaining ?: remaining
     val crossedRemaining = config.remainingAnnounceMeters.filter { oldRemainingValue > it && remaining <= it }
-    next = next.copy(consumedRemainingThresholds = next.consumedRemainingThresholds + crossedRemaining)
-    if (config.remainingEnabled && onRoute && forward && eventIntervalOpen && crossedRemaining.isNotEmpty()) {
-        val threshold = crossedRemaining.minOrNull()!!
+    val retainCrossedRemaining = config.remainingEnabled && forward && crossedRemaining.isNotEmpty()
+    val pendingRemainingBefore = next.pendingRemainingThresholds
+    val pendingRemaining = if (retainCrossedRemaining) {
+        pendingRemainingBefore + crossedRemaining
+    } else {
+        pendingRemainingBefore
+    }
+    val pendingRemainingDelayReason = when {
+        pendingRemainingBefore.isNotEmpty() -> next.pendingRemainingDelayReason
+        !retainCrossedRemaining -> next.pendingRemainingDelayReason
+        !onRoute -> "off-route"
+        !eventIntervalOpen -> "event-min-interval"
+        else -> null
+    }
+    next = next.copy(
+        consumedRemainingThresholds = next.consumedRemainingThresholds + crossedRemaining,
+        pendingRemainingThresholds = pendingRemaining,
+        pendingRemainingDelayReason = if (pendingRemaining.isEmpty()) null else pendingRemainingDelayReason,
+    )
+    if (
+        config.remainingEnabled && onRoute && forward && eventIntervalOpen &&
+        next.pendingRemainingThresholds.isNotEmpty()
+    ) {
+        val thresholds = next.pendingRemainingThresholds
+        val threshold = thresholds.minOrNull()!!
+        val delayed = previous.pendingRemainingThresholds.isNotEmpty()
+        val details = linkedMapOf(
+            "thresholdMeters" to threshold.toString(),
+            "remainingMeters" to remaining.toString(),
+        )
+        if (delayed) {
+            details["delayed"] = "true"
+            details["delayReason"] = next.pendingRemainingDelayReason ?: "pending"
+        }
         candidates += DynamicCandidate(
-            EventPriority.REMAINING, "event.remaining", Guidance.Remaining(threshold),
-            reason("event.remaining", "E3", mapOf("thresholdMeters" to threshold.toString(), "remainingMeters" to remaining.toString()))
+            EventPriority.REMAINING,
+            "event.remaining",
+            Guidance.Remaining(threshold, remaining),
+            reason("event.remaining", "E3", details),
+            remainingThresholds = thresholds,
         )
     }
 
@@ -426,9 +461,12 @@ private fun evaluateDynamicGuidance(
     }
     // A higher-priority candidate delays E7; all other candidates are consumed.
     val pending = next.pendingSunsetThresholds - selected.sunsetThresholds
+    val remainingPendingAfterSelection = next.pendingRemainingThresholds - selected.remainingThresholds
     next = next.copy(
         pendingSunsetThresholds = pending,
         pendingSunsetDelayReason = if (selected.sunsetThresholds.isNotEmpty()) null else next.pendingSunsetDelayReason,
+        pendingRemainingThresholds = remainingPendingAfterSelection,
+        pendingRemainingDelayReason = if (selected.remainingThresholds.isNotEmpty()) null else next.pendingRemainingDelayReason,
         lastPeriodicEventAt = frame.timestamp,
     )
     return DynamicEvaluation(next, selected.guidance, selected.reason)

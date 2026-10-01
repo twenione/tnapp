@@ -53,7 +53,7 @@ class VoiceAndGpsTest {
         val automaticGuidance = listOf<Guidance?>(
             Guidance.Milestone(1_000.0),
             Guidance.Elapsed(1),
-            Guidance.Remaining(2_000.0),
+            Guidance.Remaining(2_000.0, 1_996.0),
             Guidance.Slope(SlopeKind.ASCENT, 25.0),
             Guidance.Elevation(300.0),
             Guidance.Waypoint(1, "망경대", 100.0),
@@ -79,6 +79,12 @@ class VoiceAndGpsTest {
     fun reverseStatusIsNeverMappedToSpeech() {
         assertNull(Guidance.Status("역방향 진행 중").toSpeech())
         assertTrue(Guidance.Status("다른 상태").toSpeech() == "다른 상태")
+    }
+
+    @Test
+    fun delayedRemainingSpeechUsesCurrentRemainingDistance() {
+        assertEquals("목적지까지 410미터", Guidance.Remaining(500.0, 412.0).toSpeech())
+        assertEquals("목적지까지 1.2킬로미터", Guidance.Remaining(2_000.0, 1_234.0).toSpeech())
     }
 
     @Test
