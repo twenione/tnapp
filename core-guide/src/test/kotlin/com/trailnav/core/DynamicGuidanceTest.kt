@@ -1,6 +1,7 @@
 package com.trailnav.core
 
 import java.time.Instant
+import kotlin.math.abs
 import kotlin.test.Test
 
 /** Phase 3 C event threshold, gating, and consumption checks. */
@@ -45,6 +46,340 @@ class DynamicGuidanceTest {
         state = guide(state, SensorFrame(0L, 10.008, 20.0, 5f, 1f, null), config).nextState
         val result = guide(state, SensorFrame(1_000L, 10.0095, 20.0, 5f, 1f, null), config)
         check(result.guidance is Guidance.Remaining)
+    }
+
+    @Test
+    fun remainingIsDeferredUntilTheIntervalOpensAndUsesTheCurrentDistance() {
+        val route = remainingEventRoute()
+        val config = GuideConfig(
+            milestoneEnabled = true,
+            milestoneIntervalMeters = 100.0,
+            remainingEnabled = true,
+            remainingAnnounceMeters = listOf(500.0),
+            eventMinIntervalSeconds = 60.0,
+            sunsetEnabled = false,
+        )
+        val primed = remainingEventState(route, remainingMeters = route.totalLengthMeters)
+        val first = guide(primed, remainingEventFrame(route, route.totalLengthMeters - 120.0, 0L), config)
+        check(first.guidance is Guidance.Milestone)
+
+        val crossed = guide(first.nextState, remainingEventFrame(route, 499.0, 49_000L), config)
+        check(crossed.guidance !is Guidance.Remaining)
+        check(crossed.nextState.pendingRemainingThresholds == setOf(500.0))
+        check(crossed.nextState.pendingRemainingDelayReason == "event-min-interval")
+
+        val stillClosed = guide(crossed.nextState, remainingEventFrame(route, 400.0, 59_000L), config)
+        check(stillClosed.guidance !is Guidance.Remaining)
+        check(stillClosed.nextState.pendingRemainingThresholds == setOf(500.0))
+
+        val opened = guide(stillClosed.nextState, remainingEventFrame(route, 400.0, 60_000L), config)
+        val remaining = opened.guidance as? Guidance.Remaining
+            ?: error("the retained E3 threshold should speak at the inclusive 60-second boundary")
+        val expectedProgress = route.totalLengthMeters - 400.0
+        val independentlyCalculatedRemaining = route.totalLengthMeters - expectedProgress
+        check(remaining.thresholdMeters == 500.0)
+        check(abs(remaining.remainingMeters - independentlyCalculatedRemaining) <= 1.0)
+        check(remaining.remainingMeters != remaining.thresholdMeters)
+        check(opened.reason.details["delayed"] == "true")
+        check(opened.reason.details["delayReason"] == "event-min-interval")
+        check(opened.nextState.pendingRemainingThresholds.isEmpty())
+        check(opened.nextState.pendingRemainingDelayReason == null)
+
+        val afterFlush = guide(opened.nextState, remainingEventFrame(route, 399.0, 61_000L), config)
+        check(afterFlush.guidance !is Guidance.Remaining)
+    }
+
+    @Test
+    fun immediateRemainingKeepsItsExistingDetailsAndNearThresholdDistance() {
+        val route = this.route
+        val config = GuideConfig(
+            remainingEnabled = true,
+            remainingAnnounceMeters = listOf(3_000.0),
+            eventMinIntervalSeconds = 0.0,
+            sunsetEnabled = false,
+        )
+        val state = remainingEventState(route, remainingMeters = 3_005.0)
+        val result = guide(state, remainingEventFrame(route, 2_998.0, 1_000L), config)
+        val remaining = result.guidance as? Guidance.Remaining ?: error("expected immediate E3")
+        check(remaining.thresholdMeters == 3_000.0)
+        check(remaining.remainingMeters in 2_995.0..3_000.0)
+        check(result.reason.details.keys == setOf("event", "thresholdMeters", "remainingMeters"))
+        check(result.reason.details["delayed"] == null)
+        check(result.nextState.pendingRemainingThresholds.isEmpty())
+    }
+
+    @Test
+    fun multipleDeferredRemainingThresholdsFlushOnceUsingTheNearestThreshold() {
+        val route = this.route
+        val config = GuideConfig(
+            remainingEnabled = true,
+            remainingAnnounceMeters = listOf(2_000.0, 1_990.0),
+            eventMinIntervalSeconds = 60.0,
+            sunsetEnabled = false,
+        )
+        val state = remainingEventState(route, remainingMeters = 2_050.0, lastPeriodicEventAt = 0L)
+        val crossed = guide(state, remainingEventFrame(route, 1_980.0, 49_000L), config)
+        check(crossed.guidance !is Guidance.Remaining)
+        check(crossed.nextState.pendingRemainingThresholds == setOf(2_000.0, 1_990.0)) {
+            "pending=" + crossed.nextState.pendingRemainingThresholds +
+                ", reason=" + crossed.nextState.pendingRemainingDelayReason +
+                ", consumed=" + crossed.nextState.consumedRemainingThresholds +
+                ", direction=" + crossed.nextState.direction +
+                ", oldProgress=" + state.lastMatch?.projectedMeters +
+                ", newProgress=" + crossed.nextState.lastMatch?.projectedMeters +
+                ", guidance=" + crossed.guidance
+        }
+
+        val flushed = guide(crossed.nextState, remainingEventFrame(route, 1_980.0, 60_000L), config)
+        val remaining = flushed.guidance as? Guidance.Remaining ?: error("expected one deferred E3")
+        check(remaining.thresholdMeters == 1_990.0)
+        check(remaining.remainingMeters in 1_979.0..1_981.0)
+        check(flushed.nextState.pendingRemainingThresholds.isEmpty())
+        check(guide(flushed.nextState, remainingEventFrame(route, 1_979.0, 61_000L), config).guidance !is Guidance.Remaining)
+    }
+
+    @Test
+    fun offRouteRemainingIsRetainedUntilTheFirstOnRouteSpeakableFrame() {
+        val route = remainingEventRoute()
+        val config = GuideConfig(
+            remainingEnabled = true,
+            remainingAnnounceMeters = listOf(500.0),
+            eventMinIntervalSeconds = 0.0,
+            offRouteEnterDistMeters = 20.0,
+            offRouteExitDistMeters = 15.0,
+            offRouteExitDwellSeconds = 0.0,
+            sunsetEnabled = false,
+        )
+        val state = remainingEventState(route, remainingMeters = 600.0).copy(offRoute = true, offRouteSince = 0L)
+        val offRoute = guide(state, remainingEventFrame(route, 499.0, 1_000L, lateralMeters = 30.0), config)
+        check(offRoute.nextState.offRoute)
+        check(offRoute.guidance !is Guidance.Remaining)
+        check(offRoute.nextState.pendingRemainingThresholds == setOf(500.0))
+        check(offRoute.nextState.pendingRemainingDelayReason == "off-route")
+
+        val returned = guide(offRoute.nextState, remainingEventFrame(route, 400.0, 2_000L), config)
+        val remaining = returned.guidance as? Guidance.Remaining ?: error("expected E3 after returning on-route")
+        check(!returned.nextState.offRoute)
+        check(remaining.remainingMeters in 399.0..401.0)
+        check(returned.reason.details["delayed"] == "true")
+        check(returned.reason.details["delayReason"] == "off-route")
+    }
+
+    @Test
+    fun reverseRemainingCrossingIsConsumedButNeverRetained() {
+        val route = remainingEventRoute()
+        val config = GuideConfig(
+            remainingEnabled = true,
+            remainingAnnounceMeters = listOf(500.0),
+            reverseWarningDwellSeconds = 0.0,
+            eventMinIntervalSeconds = 0.0,
+            sunsetEnabled = false,
+        )
+        val reverse = remainingEventState(
+            route,
+            remainingMeters = 600.0,
+            direction = ProgressDirection.REVERSE,
+        ).copy(emaDeltaMeters = -500.0, reverseSince = 0L)
+        val result = guide(reverse, remainingEventFrame(route, 499.0, 1_000L), config)
+        check(result.nextState.direction == ProgressDirection.REVERSE)
+        check(result.guidance !is Guidance.Remaining)
+        check(result.nextState.pendingRemainingThresholds.isEmpty())
+        check(500.0 in result.nextState.consumedRemainingThresholds)
+    }
+
+    @Test
+    fun disabledRemainingIsConsumedWithoutPendingState() {
+        val route = remainingEventRoute()
+        val config = GuideConfig(
+            remainingEnabled = false,
+            remainingAnnounceMeters = listOf(500.0),
+            eventMinIntervalSeconds = 0.0,
+            sunsetEnabled = false,
+        )
+        val state = remainingEventState(route, remainingMeters = 600.0)
+        val result = guide(state, remainingEventFrame(route, 499.0, 1_000L), config)
+        check(result.guidance !is Guidance.Remaining)
+        check(result.nextState.pendingRemainingThresholds.isEmpty())
+        check(result.nextState.pendingRemainingDelayReason == null)
+        check(500.0 in result.nextState.consumedRemainingThresholds)
+    }
+
+    @Test
+    fun pendingRemainingDoesNotDiscardPendingSunset() {
+        val route = remainingEventRoute()
+        val start = epoch("2026-09-21T09:00:00Z")
+        val config = GuideConfig(
+            remainingEnabled = true,
+            remainingAnnounceMeters = listOf(500.0),
+            eventMinIntervalSeconds = 60.0,
+            sunsetEnabled = true,
+        )
+        val state = remainingEventState(
+            route,
+            remainingMeters = 600.0,
+            timestamp = start - 1_000L,
+            lastPeriodicEventAt = start - 60_000L,
+        ).copy(
+            sunsetEvaluated = true,
+            consumedSunsetThresholds = setOf(30),
+            pendingSunsetThresholds = setOf(30),
+            pendingSunsetDelayReason = "event-min-interval",
+        )
+        val e3 = guide(state, remainingEventFrame(route, 499.0, start), config)
+        check(e3.guidance is Guidance.Remaining)
+        check(e3.nextState.pendingRemainingThresholds.isEmpty())
+        check(e3.nextState.pendingSunsetThresholds == setOf(30))
+
+        val e7 = guide(e3.nextState, remainingEventFrame(route, 499.0, start + 60_000L), config)
+        check(e7.guidance is Guidance.Sunset)
+        check(e7.reason.details["event"] == "E7")
+        check(e7.nextState.pendingSunsetThresholds.isEmpty())
+    }
+
+    @Test
+    fun otherPeriodicEventsStillConsumeWithoutCreatingRemainingPendingState() {
+        fun assertNoRemainingPending(result: GuideResult) {
+            check(result.guidance !is Guidance.Remaining)
+            check(result.nextState.pendingRemainingThresholds.isEmpty())
+            check(result.nextState.pendingRemainingDelayReason == null)
+        }
+
+        val interval = 60.0
+        val shortRoute = remainingEventRoute()
+        val milestoneState = remainingEventState(shortRoute, remainingMeters = 412.0, lastPeriodicEventAt = 0L)
+        val milestone = guide(
+            milestoneState,
+            remainingEventFrame(shortRoute, 312.0, 30_000L),
+            GuideConfig(
+                milestoneEnabled = true,
+                milestoneIntervalMeters = 100.0,
+                remainingEnabled = true,
+                remainingAnnounceMeters = listOf(1.0),
+                eventMinIntervalSeconds = interval,
+                sunsetEnabled = false,
+            ),
+        )
+        check(milestone.guidance !is Guidance.Milestone)
+        check(milestone.nextState.consumedMilestoneIndices.isNotEmpty())
+        assertNoRemainingPending(milestone)
+
+        val elapsedState = remainingEventState(shortRoute, remainingMeters = 500.0, lastPeriodicEventAt = 0L)
+            .copy(sessionStartTimestamp = 0L, lastTimestamp = 0L)
+        val elapsed = guide(
+            elapsedState,
+            remainingEventFrame(shortRoute, 500.0, 30_000L),
+            GuideConfig(
+                elapsedEnabled = true,
+                elapsedAnnounceIntervalSeconds = 10.0,
+                remainingEnabled = true,
+                remainingAnnounceMeters = listOf(1.0),
+                eventMinIntervalSeconds = interval,
+                sunsetEnabled = false,
+            ),
+        )
+        check(elapsed.guidance !is Guidance.Elapsed)
+        check(elapsed.nextState.consumedElapsedIndices.isNotEmpty())
+        assertNoRemainingPending(elapsed)
+
+        val slopeRoute = peakEventRoute()
+        val peak = slopeRoute.peaks.first()
+        val slopeState = peakStateAt(slopeRoute, peak.s - 100.0).copy(
+            hasEnteredRoute = true,
+            lastPeriodicEventAt = 0L,
+        )
+        val slope = guide(
+            slopeState,
+            frameAtProgress(peak.s - 50.0, 30_000L),
+            GuideConfig(
+                slopeEnabled = true,
+                peakAnnounceLeadMeters = 75.0,
+                remainingEnabled = true,
+                remainingAnnounceMeters = listOf(1.0),
+                eventMinIntervalSeconds = interval,
+                sunsetEnabled = false,
+            ),
+        )
+        check(slope.guidance !is Guidance.Slope)
+        check(0 in slope.nextState.consumedSlopeIndices)
+        assertNoRemainingPending(slope)
+
+        val elevationRoute = peakEventRoute()
+        val elevationPeak = elevationRoute.peaks.first()
+        val elevationState = peakStateAt(elevationRoute, 0.0).copy(
+            hasEnteredRoute = true,
+            elevationBand = -1,
+            lastPeriodicEventAt = 0L,
+        )
+        val elevation = guide(
+            elevationState,
+            frameAtProgress(0.0, 30_000L),
+            GuideConfig(
+                elevationEnabled = true,
+                elevationBoundaryMeters = 50.0,
+                elevationHysteresisMeters = 0.0,
+                remainingEnabled = true,
+                remainingAnnounceMeters = listOf(1.0),
+                eventMinIntervalSeconds = interval,
+                sunsetEnabled = false,
+            ),
+        )
+        check(elevation.guidance !is Guidance.Elevation)
+        check((elevation.nextState.elevationBand ?: -1) > -1)
+        assertNoRemainingPending(elevation)
+
+        val waypointRoute = RouteModel.fromGpx(
+            "<gpx><wpt lat=\"10.005\" lon=\"20.0\"><name>View</name></wpt>" +
+                "<trk><trkseg><trkpt lat=\"10.0\" lon=\"20.0\"/>" +
+                "<trkpt lat=\"10.01\" lon=\"20.0\"/></trkseg></trk></gpx>"
+        )
+        val waypoint = waypointRoute.waypoints.single()
+        val waypointState = remainingEventState(
+            waypointRoute,
+            remainingMeters = waypointRoute.totalLengthMeters - (waypoint.s - 200.0),
+            lastPeriodicEventAt = 0L,
+        )
+        val waypointResult = guide(
+            waypointState,
+            remainingEventFrame(waypointRoute, waypointRoute.totalLengthMeters - (waypoint.s - 50.0), 30_000L),
+            GuideConfig(
+                waypointEnabled = true,
+                waypointAnnounceLeadMeters = 100.0,
+                remainingEnabled = true,
+                remainingAnnounceMeters = listOf(1.0),
+                eventMinIntervalSeconds = interval,
+                sunsetEnabled = false,
+            ),
+        )
+        check(waypointResult.guidance !is Guidance.Waypoint)
+        check(0 in waypointResult.nextState.consumedWaypointIndices)
+        assertNoRemainingPending(waypointResult)
+
+        val sunriseRoute = RouteModel.fromGpx(
+            "<gpx><trk><trkseg><trkpt lat=\"37.5665\" lon=\"126.9780\"/>" +
+                "<trkpt lat=\"37.5765\" lon=\"126.9780\"/></trkseg></trk></gpx>"
+        )
+        val sunriseTime = epoch("2026-09-20T19:00:00Z")
+        val sunriseState = remainingEventState(
+            sunriseRoute,
+            remainingMeters = sunriseRoute.totalLengthMeters - 100.0,
+            timestamp = sunriseTime - 1_000L,
+            lastPeriodicEventAt = sunriseTime - 30_000L,
+        ).copy(lastTimestamp = sunriseTime - 1_000L)
+        val sunrise = guide(
+            sunriseState,
+            remainingEventFrame(sunriseRoute, sunriseRoute.totalLengthMeters - 100.0, sunriseTime),
+            GuideConfig(
+                sunriseEnabled = true,
+                sunriseAnnounceMinutes = listOf(1_000),
+                remainingEnabled = true,
+                remainingAnnounceMeters = listOf(1.0),
+                eventMinIntervalSeconds = interval,
+                sunsetEnabled = false,
+            ),
+        )
+        check(sunrise.guidance !is Guidance.Sunrise)
+        check(1_000 in sunrise.nextState.consumedSunriseThresholds)
+        assertNoRemainingPending(sunrise)
     }
 
     @Test
@@ -173,6 +508,44 @@ class DynamicGuidanceTest {
 
     private fun frameAtProgress(progressMeters: Double, timestamp: Long) =
         SensorFrame(timestamp, 10.0 + progressMeters / 111_195.0, 20.0, 5f, 1f, null)
+
+    private fun remainingEventRoute(): RouteModel = RouteModel.fromGpx(
+        "<gpx><trk><trkseg><trkpt lat=\"10.0\" lon=\"20.0\"/>" +
+            "<trkpt lat=\"10.01\" lon=\"20.0\"/></trkseg></trk></gpx>"
+    )
+
+    private fun remainingEventState(
+        route: RouteModel,
+        remainingMeters: Double,
+        timestamp: Long = 0L,
+        lastPeriodicEventAt: Long? = null,
+        direction: ProgressDirection = ProgressDirection.FORWARD,
+    ): GuideState {
+        val progress = (route.totalLengthMeters - remainingMeters).coerceIn(0.0, route.totalLengthMeters)
+        val segment = route.cumulativeMeters.indexOfLast { it <= progress }.coerceIn(0, route.points.lastIndex - 1)
+        return GuideState.initial(route).copy(
+            hasEnteredRoute = true,
+            lastMatch = MatchResult(0.0, progress, segment, route.points[segment], direction),
+            lastTimestamp = timestamp,
+            sessionStartTimestamp = timestamp,
+            emaDeltaMeters = if (direction == ProgressDirection.REVERSE) -100.0 else 0.0,
+            direction = direction,
+            reverseSince = if (direction == ProgressDirection.REVERSE) timestamp else null,
+            lastPeriodicEventAt = lastPeriodicEventAt,
+        )
+    }
+
+    private fun remainingEventFrame(
+        route: RouteModel,
+        remainingMeters: Double,
+        timestamp: Long,
+        lateralMeters: Double = 0.0,
+    ): SensorFrame {
+        val progress = (route.totalLengthMeters - remainingMeters).coerceIn(0.0, route.totalLengthMeters)
+        val latitude = 10.0 + progress / 111_195.0
+        val longitude = 20.0 + lateralMeters / (111_195.0 * kotlin.math.cos(Math.toRadians(10.0)))
+        return SensorFrame(timestamp, latitude, longitude, 5f, 5f, null)
+    }
 
     @Test
     fun peakEventFiresWithinLeadDistanceAndConsumesOnce() {

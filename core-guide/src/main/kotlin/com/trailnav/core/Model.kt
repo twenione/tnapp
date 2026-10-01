@@ -30,7 +30,7 @@ sealed class Guidance {
     data class TurnNow(val side: Side) : Guidance()
     data class Milestone(val distanceMeters: Double) : Guidance()
     data class Elapsed(val hours: Int) : Guidance()
-    data class Remaining(val thresholdMeters: Double) : Guidance()
+    data class Remaining(val thresholdMeters: Double, val remainingMeters: Double) : Guidance()
     data class Slope(val kind: SlopeKind, val deltaMeters: Double) : Guidance()
     data class Elevation(val elevationMeters: Double) : Guidance()
     data class Waypoint(val index: Int, val name: String, val distanceMeters: Double) : Guidance()
@@ -243,6 +243,8 @@ data class GuideState(
     val completedTurnNowIndices: Set<Int> = emptySet(),
     val consumedMilestoneIndices: Set<Int> = emptySet(),
     val consumedRemainingThresholds: Set<Double> = emptySet(),
+    val pendingRemainingThresholds: Set<Double> = emptySet(),
+    val pendingRemainingDelayReason: String? = null,
     val consumedElapsedIndices: Set<Int> = emptySet(),
     val consumedSlopeIndices: Set<Int> = emptySet(),
     val consumedWaypointIndices: Set<Int> = emptySet(),

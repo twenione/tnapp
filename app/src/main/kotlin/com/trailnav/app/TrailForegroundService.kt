@@ -834,7 +834,7 @@ internal fun Guidance?.toSpeech(): String? = when (this) {
     Guidance.Arrived -> GuidancePhrases.arrived()
     is Guidance.Milestone -> GuidancePhrases.milestone(distanceMeters)
     is Guidance.Elapsed -> GuidancePhrases.elapsed(hours)
-    is Guidance.Remaining -> GuidancePhrases.remaining(thresholdMeters)
+    is Guidance.Remaining -> GuidancePhrases.remaining(remainingMeters)
     is Guidance.Slope -> GuidancePhrases.slope(kind)
     is Guidance.Elevation -> GuidancePhrases.elevation(elevationMeters)
     is Guidance.Waypoint -> GuidancePhrases.waypoint(name)

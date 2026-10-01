@@ -53,7 +53,7 @@ class VoiceAndGpsTest {
         val automaticGuidance = listOf<Guidance?>(
             Guidance.Milestone(1_000.0),
             Guidance.Elapsed(1),
-            Guidance.Remaining(2_000.0),
+            Guidance.Remaining(2_000.0, 1_996.0),
             Guidance.Slope(SlopeKind.ASCENT, 25.0),
             Guidance.Elevation(300.0),
             Guidance.Waypoint(1, "망경대", 100.0),

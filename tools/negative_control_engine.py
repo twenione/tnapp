@@ -166,10 +166,32 @@ VARIANTS = {'dwell-bypass': ('elapsedSeconds(timestamp, since) >= config.offRout
                                     '        else -> listOf(30, 10).filter {\n'
                                     '            oldMinutes > it && minutes <= it && it !in consumed\n'
                                     '        }.toSet() /* TASK-040 E8 announce config ignored */'),
- 'remaining-toggle-ignored': ('if (config.remainingEnabled && onRoute && forward && eventIntervalOpen && '
-                              'crossedRemaining.isNotEmpty()) {',
-                              'if (onRoute && forward && eventIntervalOpen && crossedRemaining.isNotEmpty()) '
-                              '{ /* TASK-040 E3 toggle ignored */'),
+ 'remaining-drop-pending': ('val pendingRemaining = if (retainCrossedRemaining) {\n'
+                            '        pendingRemainingBefore + crossedRemaining\n'
+                            '    } else {\n'
+                            '        pendingRemainingBefore\n'
+                            '    }',
+                            'val pendingRemaining = emptySet<Double>() /* D-071 E3 pending dropped */'),
+ 'remaining-pending-interval-ignored': ('config.remainingEnabled && onRoute && forward && eventIntervalOpen &&\n'
+                                        '        next.pendingRemainingThresholds.isNotEmpty()',
+                                        'config.remainingEnabled && onRoute && forward &&\n'
+                                        '        next.pendingRemainingThresholds.isNotEmpty() /* D-071 min interval ignored */'),
+ 'remaining-delayed-threshold-text': ('Guidance.Remaining(threshold, remaining)',
+                                      'Guidance.Remaining(threshold, threshold) /* D-071 delayed threshold text */'),
+ 'remaining-pending-not-cleared': ('val remainingPendingAfterSelection = next.pendingRemainingThresholds - selected.remainingThresholds\n'
+                                   '    next = next.copy(\n'
+                                   '        pendingSunsetThresholds = pending,\n'
+                                   '        pendingSunsetDelayReason = if (selected.sunsetThresholds.isNotEmpty()) null else next.pendingSunsetDelayReason,\n'
+                                   '        pendingRemainingThresholds = remainingPendingAfterSelection,',
+                                   'val remainingPendingAfterSelection = next.pendingRemainingThresholds - selected.remainingThresholds\n'
+                                   '    next = next.copy(\n'
+                                   '        pendingSunsetThresholds = pending,\n'
+                                   '        pendingSunsetDelayReason = if (selected.sunsetThresholds.isNotEmpty()) null else next.pendingSunsetDelayReason,\n'
+                                   '        pendingRemainingThresholds = next.pendingRemainingThresholds /* D-071 pending not cleared */,'),
+ 'remaining-reverse-pending': ('val retainCrossedRemaining = config.remainingEnabled && forward && crossedRemaining.isNotEmpty()',
+                               'val retainCrossedRemaining = config.remainingEnabled && crossedRemaining.isNotEmpty() /* D-071 reverse retained */'),
+ 'remaining-toggle-ignored': ('val retainCrossedRemaining = config.remainingEnabled && forward && crossedRemaining.isNotEmpty()',
+                              'val retainCrossedRemaining = forward && crossedRemaining.isNotEmpty() /* TASK-040 E3 toggle ignored */'),
  'slope-toggle-ignored': ('if (config.slopeEnabled && onRoute && forward && eventIntervalOpen && index !in '
                           'previous.consumedSlopeIndices) {',
                           'if (onRoute && forward && eventIntervalOpen && index !in '
@@ -305,6 +327,11 @@ MUTATION_REQUIRED_CONSUMERS = {
     "sunrise-min-interval": CORE_TEST,
     "elevation-boundary-config-ignore": CORE_TEST,
     "sunrise-announce-config-ignore": CORE_TEST,
+    "remaining-drop-pending": CORE_TEST,
+    "remaining-pending-interval-ignored": CORE_TEST,
+    "remaining-delayed-threshold-text": CORE_TEST,
+    "remaining-pending-not-cleared": CORE_TEST,
+    "remaining-reverse-pending": CORE_TEST,
     "remaining-toggle-ignored": CORE_TEST,
     "slope-toggle-ignored": CORE_TEST,
     "waypoint-toggle-ignored": CORE_TEST,
