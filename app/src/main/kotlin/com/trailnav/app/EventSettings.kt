@@ -11,7 +11,7 @@ internal enum class GuideEvent(
     MILESTONE("E1", "이정표 (1km마다)", false),
     ELAPSED("E2", "경과 시간 (1시간마다)", false),
     REMAINING("E3", "남은 거리 (2·1·0.5km)", true),
-    SLOPE("E4", "오르막·내리막 예고", true),
+    SLOPE("E4", "정점 도착 예고", true),
     ELEVATION("E5", "고도 통과 (100m마다)", false),
     WAYPOINT("E6", "지점 접근 (이름 있는 지점)", true),
     SUNSET("E7", "일몰 안내 (안전 안내)", true),

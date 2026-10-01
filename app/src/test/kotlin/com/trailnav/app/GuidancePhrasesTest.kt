@@ -50,7 +50,7 @@ class GuidancePhrasesTest {
         assertEquals("1.0킬로미터 지점입니다", GuidancePhrases.milestone(1_000.0))
         assertEquals("출발 1시간 경과", GuidancePhrases.elapsed(1))
         assertEquals("목적지까지 500미터", GuidancePhrases.remaining(500.0))
-        assertEquals("잠시 후 오르막입니다", GuidancePhrases.slope(SlopeKind.ASCENT))
+        assertEquals("잠시 후 오르막이 끝납니다", GuidancePhrases.slope(SlopeKind.ASCENT))
         assertEquals("일몰까지 30분입니다", GuidancePhrases.sunset(30, afterSunset = false))
         assertEquals("일출까지 10분입니다", GuidancePhrases.sunrise(10))
     }
