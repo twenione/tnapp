@@ -764,7 +764,7 @@ class TrailForegroundService : Service() {
                     "next_turn_index" to (status.nextTurn?.index?.toString() ?: ""),
                     "next_turn_side" to (status.nextTurn?.side?.name ?: ""),
                     "next_turn_distance_m" to (status.nextTurn?.distanceMeters?.toString() ?: ""),
-                ),
+                ).apply { putAll(status.target.toOnDemandEtaDetails()) },
             ),
         )
         logger?.appendGuide(location, result, text, sourceSeq, trigger = "on-demand")
