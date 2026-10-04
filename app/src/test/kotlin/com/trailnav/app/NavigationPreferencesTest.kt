@@ -11,6 +11,24 @@ import kotlin.test.assertTrue
 
 class NavigationPreferencesTest {
     @Test
+    fun onDemandResponseModeDefaultsToBothAndSavedValuesRoundTripIndependently() {
+        val context = InMemoryPreferencesContext()
+
+        assertEquals(DistanceTimeMode.Both, NavigationPreferences.onDemandResponseMode(context))
+        assertEquals(null, context.preferences.getAll()["ondemand_response_mode"])
+
+        NavigationPreferences.saveOnDemandEnabled(context, false)
+        NavigationPreferences.saveOnDemandResponseMode(context, DistanceTimeMode.TimeOnly)
+        assertEquals(DistanceTimeMode.TimeOnly, NavigationPreferences.onDemandResponseMode(context))
+        assertEquals(false, NavigationPreferences.onDemandEnabled(context))
+
+        NavigationPreferences.saveOnDemandResponseMode(context, DistanceTimeMode.DistanceOnly)
+        assertEquals(DistanceTimeMode.DistanceOnly, NavigationPreferences.onDemandResponseMode(context))
+        assertEquals(false, NavigationPreferences.onDemandEnabled(context))
+        assertEquals("distance", context.preferences.getAll()["ondemand_response_mode"])
+    }
+
+    @Test
     fun imuCollectionDefaultsOffAndSavedValuesRoundTrip() {
         val context = InMemoryPreferencesContext()
 
@@ -27,10 +45,12 @@ class NavigationPreferencesTest {
     fun resetDefaultsDraftTurnsImuCollectionOffOnlyWhenSaved() {
         val context = InMemoryPreferencesContext()
         NavigationPreferences.saveImuCollectEnabled(context, true)
+        NavigationPreferences.saveOnDemandResponseMode(context, DistanceTimeMode.TimeOnly)
         val eventDraft = BooleanArray(GuideEvent.values().size) { true }
 
         val defaults = NavigationSettingsUi.resetToDefaults(eventDraft)
         assertTrue(NavigationPreferences.imuCollectEnabled(context))
+        assertEquals(DistanceTimeMode.TimeOnly, NavigationPreferences.onDemandResponseMode(context))
 
         val cancelled = NavigationSettingsUi.resolveDialogSelection(
             eventChecked = eventDraft,
@@ -40,6 +60,7 @@ class NavigationPreferencesTest {
         )
         assertNull(cancelled)
         assertTrue(NavigationPreferences.imuCollectEnabled(context))
+        assertEquals(DistanceTimeMode.TimeOnly, NavigationPreferences.onDemandResponseMode(context))
 
         val accepted = requireNotNull(
             NavigationSettingsUi.resolveDialogSelection(
@@ -47,11 +68,15 @@ class NavigationPreferencesTest {
                 onDemandEnabled = defaults.onDemandEnabled,
                 imuCollectEnabled = defaults.imuCollectEnabled,
                 accepted = true,
+                onDemandResponseMode = defaults.onDemandResponseMode,
             ),
         )
         NavigationPreferences.saveImuCollectEnabled(context, accepted.imuCollectEnabled)
+        NavigationPreferences.saveOnDemandResponseMode(context, accepted.onDemandResponseMode)
 
         assertFalse(NavigationPreferences.imuCollectEnabled(context))
+        assertEquals(DistanceTimeMode.Both, NavigationPreferences.onDemandResponseMode(context))
+        assertEquals("both", context.preferences.getAll()["ondemand_response_mode"])
     }
 }
 
