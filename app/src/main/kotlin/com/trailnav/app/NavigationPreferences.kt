@@ -13,6 +13,7 @@ internal object NavigationPreferences {
     private const val KEY_VOICE_INTERVAL_SECONDS = "voice_on_route_interval_seconds"
     private const val KEY_VOICE_MODE = "voice_on_route_mode"
     private const val KEY_ON_DEMAND_ENABLED = "ondemand_enabled"
+    private const val KEY_ON_DEMAND_RESPONSE_MODE = "ondemand_response_mode"
     private const val KEY_IMU_COLLECT_ENABLED = "imu_collect_enabled"
     private const val KEY_SERVICE_STATE = "service_state"
     private const val KEY_ACTIVE_SESSION_ID = "active_session_id"
@@ -61,6 +62,27 @@ internal object NavigationPreferences {
     fun saveOnDemandEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_ON_DEMAND_ENABLED, enabled)
+            .apply()
+    }
+
+    fun onDemandResponseMode(context: Context): DistanceTimeMode {
+        val value = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_ON_DEMAND_RESPONSE_MODE, null)
+        return when (value) {
+            "distance" -> DistanceTimeMode.DistanceOnly
+            "time" -> DistanceTimeMode.TimeOnly
+            else -> DistanceTimeMode.Both
+        }
+    }
+
+    fun saveOnDemandResponseMode(context: Context, mode: DistanceTimeMode) {
+        val value = when (mode) {
+            DistanceTimeMode.Both -> "both"
+            DistanceTimeMode.DistanceOnly -> "distance"
+            DistanceTimeMode.TimeOnly -> "time"
+        }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_ON_DEMAND_RESPONSE_MODE, value)
             .apply()
     }
 

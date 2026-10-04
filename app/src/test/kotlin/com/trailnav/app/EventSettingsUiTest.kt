@@ -83,6 +83,7 @@ class EventSettingsUiTest {
             initiallySavedEvents,
             onDemandEnabled = false,
             imuCollectEnabled = true,
+            onDemandResponseMode = DistanceTimeMode.TimeOnly,
         )
         var persisted = initiallySaved
 
@@ -92,6 +93,7 @@ class EventSettingsUiTest {
             onDemandEnabled = true,
             imuCollectEnabled = false,
             accepted = false,
+            onDemandResponseMode = DistanceTimeMode.DistanceOnly,
         )
         if (cancelled != null) persisted = cancelled
         assertEquals(initiallySaved, persisted)
@@ -105,12 +107,14 @@ class EventSettingsUiTest {
             onDemandEnabled = false,
             imuCollectEnabled = false,
             accepted = true,
+            onDemandResponseMode = DistanceTimeMode.DistanceOnly,
         )
         persisted = requireNotNull(saved)
 
         assertEquals(EventSettingsUi.settingsFromCheckedItems(savedEvents), persisted.eventSettings)
         assertEquals(false, persisted.onDemandEnabled)
         assertEquals(false, persisted.imuCollectEnabled)
+        assertEquals(DistanceTimeMode.DistanceOnly, persisted.onDemandResponseMode)
     }
 
     @Test
@@ -121,15 +125,18 @@ class EventSettingsUiTest {
         assertEquals(EventSettingsUi.defaultCheckedItems().toList(), eventDraft.toList())
         assertTrue(defaults.onDemandEnabled)
         assertEquals(false, defaults.imuCollectEnabled)
+        assertEquals(DistanceTimeMode.Both, defaults.onDemandResponseMode)
 
         val saved = NavigationSettingsUi.resolveDialogSelection(
             eventChecked = eventDraft,
             onDemandEnabled = defaults.onDemandEnabled,
             imuCollectEnabled = defaults.imuCollectEnabled,
             accepted = true,
+            onDemandResponseMode = defaults.onDemandResponseMode,
         )
         assertEquals(EventSettings.defaults(), saved?.eventSettings)
         assertEquals(true, saved?.onDemandEnabled)
         assertEquals(false, saved?.imuCollectEnabled)
+        assertEquals(DistanceTimeMode.Both, saved?.onDemandResponseMode)
     }
 }

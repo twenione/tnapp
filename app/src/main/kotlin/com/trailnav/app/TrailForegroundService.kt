@@ -741,6 +741,7 @@ class TrailForegroundService : Service() {
             logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-location", "paused" to paused.toString()))
             return
         }
+        val snapshot = session.snapshot()
         val status = session.routeStatus()
         if (status == null) {
             val text = GuidancePhrases.noLocationStatus()
@@ -748,7 +749,16 @@ class TrailForegroundService : Service() {
             logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-match", "paused" to paused.toString()))
             return
         }
-        val text = GuidancePhrases.routeStatus(status)
+        val responseStatus = if (!snapshot.hasEnteredRoute && status.offRouteDistanceMeters == null) {
+            status.copy(offRouteDistanceMeters = snapshot.lastMatch?.distanceMeters)
+        } else {
+            status
+        }
+        val text = GuidancePhrases.onDemandResponse(
+            status = responseStatus,
+            mode = NavigationPreferences.onDemandResponseMode(this),
+            hasEnteredRoute = snapshot.hasEnteredRoute,
+        )
         val result = GuideResult(
             guidance = Guidance.Status(text),
             nextState = session.snapshot(),

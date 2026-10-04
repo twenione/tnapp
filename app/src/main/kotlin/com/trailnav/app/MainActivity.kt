@@ -19,6 +19,8 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.ListView
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -648,6 +650,22 @@ class MainActivity : AppCompatActivity() {
             text = "정지 상태에서 흔들어 경로 상태 확인"
             isChecked = NavigationPreferences.onDemandEnabled(this@MainActivity)
         }
+        val responseModes = DistanceTimeMode.values()
+        val responseModeGroup = RadioGroup(this).apply {
+            orientation = RadioGroup.VERTICAL
+            responseModes.forEach { mode ->
+                val label = when (mode) {
+                    DistanceTimeMode.Both -> "거리와 시간"
+                    DistanceTimeMode.DistanceOnly -> "거리만"
+                    DistanceTimeMode.TimeOnly -> "시간만"
+                }
+                addView(RadioButton(this@MainActivity).apply {
+                    id = mode.ordinal + 1
+                    text = label
+                })
+            }
+            check(NavigationPreferences.onDemandResponseMode(this@MainActivity).ordinal + 1)
+        }
         val imuCollectEnabled = CheckBox(this).apply {
             text = "원 가속도 수집(연구용)"
             isChecked = NavigationPreferences.imuCollectEnabled(this@MainActivity)
@@ -663,6 +681,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding((20 * density).roundToInt(), 0, (20 * density).roundToInt(), 0)
             addView(onDemandEnabled)
+            addView(responseModeGroup)
             addView(imuCollectEnabled)
             addView(TextView(this@MainActivity).apply {
                 text = "안내 이벤트 (E1–E8)"
@@ -687,11 +706,15 @@ class MainActivity : AppCompatActivity() {
                     onDemandEnabled = onDemandEnabled.isChecked,
                     imuCollectEnabled = imuCollectEnabled.isChecked,
                     accepted = true,
+                    onDemandResponseMode = responseModes.firstOrNull {
+                        it.ordinal + 1 == responseModeGroup.checkedRadioButtonId
+                    } ?: DistanceTimeMode.Both,
                 )?.let { selection ->
                     NavigationPreferences.saveEventSettings(this, selection.eventSettings)
                     NavigationPreferences.saveOnDemandEnabled(this, selection.onDemandEnabled)
                     NavigationPreferences.saveImuCollectEnabled(this, selection.imuCollectEnabled)
-                    status.text = "안내 설정을 저장했습니다. 다음 안내 시작부터 적용됩니다"
+                    NavigationPreferences.saveOnDemandResponseMode(this, selection.onDemandResponseMode)
+                    status.text = "안내 설정을 저장했습니다"
                 }
             }
             .setCancelable(true)
@@ -701,6 +724,7 @@ class MainActivity : AppCompatActivity() {
                 val defaults = NavigationSettingsUi.resetToDefaults(checked)
                 onDemandEnabled.isChecked = defaults.onDemandEnabled
                 imuCollectEnabled.isChecked = defaults.imuCollectEnabled
+                responseModeGroup.check(defaults.onDemandResponseMode.ordinal + 1)
                 eventCheckBoxes.forEachIndexed { index, checkBox -> checkBox.isChecked = checked[index] }
             }
         }

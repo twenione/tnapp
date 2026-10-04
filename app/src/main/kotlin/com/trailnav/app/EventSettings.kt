@@ -104,11 +104,13 @@ internal data class NavigationSettingsSelection(
     val eventSettings: EventSettings,
     val onDemandEnabled: Boolean,
     val imuCollectEnabled: Boolean,
+    val onDemandResponseMode: DistanceTimeMode = DistanceTimeMode.Both,
 )
 
 internal data class NavigationSettingsDefaults(
     val onDemandEnabled: Boolean = true,
     val imuCollectEnabled: Boolean = false,
+    val onDemandResponseMode: DistanceTimeMode = DistanceTimeMode.Both,
 )
 
 /** Keeps independent navigation settings separate from the E1–E8 event selections. */
@@ -123,8 +125,9 @@ internal object NavigationSettingsUi {
         onDemandEnabled: Boolean,
         imuCollectEnabled: Boolean,
         accepted: Boolean,
+        onDemandResponseMode: DistanceTimeMode = DistanceTimeMode.Both,
     ): NavigationSettingsSelection? {
         val settings = EventSettingsUi.resolveDialogSelection(eventChecked, accepted) ?: return null
-        return NavigationSettingsSelection(settings, onDemandEnabled, imuCollectEnabled)
+        return NavigationSettingsSelection(settings, onDemandEnabled, imuCollectEnabled, onDemandResponseMode)
     }
 }
