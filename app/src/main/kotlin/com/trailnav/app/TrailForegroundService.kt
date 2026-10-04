@@ -12,9 +12,6 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.media.session.MediaSession
-import android.media.session.PlaybackState
-import android.view.KeyEvent
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
@@ -59,9 +56,10 @@ class TrailForegroundService : Service() {
     private var lastLocationSeq: Long? = null
     private var onDemandConfig = OnDemandConfig()
     private var onDemandRouter = OnDemandRequestRouter(onDemandConfig)
+    private var stopGate = StopGate()
+    private var stopGateSuppressions = StopGateSuppressionAggregator()
     private var shakeDetector = ShakeDetector(onDemandConfig)
     private var shakeStats = ShakeStats(onDemandConfig.shakeThresholdMetersPerSecondSquared)
-    private var mediaSession: MediaSession? = null
     private var sensorManager: SensorManager? = null
     private var shakeListener: SensorEventListener? = null
     private var tonePlayer: TonePlayer? = null
@@ -218,8 +216,15 @@ class TrailForegroundService : Service() {
             onRouteVoiceEnabled && onRouteVoiceMode != NavigationPreferences.PeriodicVoiceMode.OFF,
             onRouteVoiceIntervalSeconds,
         )
-        onDemandConfig = OnDemandConfig()
+        onDemandConfig = OnDemandConfig(shakeEnabled = NavigationPreferences.onDemandEnabled(this))
         onDemandRouter = OnDemandRequestRouter(onDemandConfig)
+        stopGate = StopGate(
+            speedThresholdMps = onDemandConfig.stopGateSpeedThresholdMps,
+            settleMillis = onDemandConfig.stopGateSettleMillis,
+            staleMillis = onDemandConfig.stopGateStaleMillis,
+            minAccuracyMeters = onDemandConfig.stopGateMinAccuracyMeters,
+        )
+        stopGateSuppressions = StopGateSuppressionAggregator()
         shakeDetector = ShakeDetector(onDemandConfig)
         shakeStats = ShakeStats(onDemandConfig.shakeThresholdMetersPerSecondSquared)
         sessionStarted = true
@@ -247,8 +252,8 @@ class TrailForegroundService : Service() {
         logger?.appendSystem(
             "ondemand.config",
             onDemandConfig.toWireMap() + mapOf(
-                "shake_sampling" to "SENSOR_DELAY_GAME",
-                "shake_stats" to "per-minute-aggregates",
+                "shake_sampling" to if (onDemandConfig.shakeEnabled) "SENSOR_DELAY_GAME" else "disabled",
+                "shake_stats" to if (onDemandConfig.shakeEnabled) "per-minute-aggregates" else "disabled",
             ),
         )
         installOnDemandTriggers()
@@ -334,6 +339,7 @@ class TrailForegroundService : Service() {
         val locationSeq = logger?.appendLocation(location)
         lastLocation = location
         lastLocationSeq = locationSeq
+        stopGate.onLocation(SystemClock.elapsedRealtime(), location.speedMps, location.accuracyMeters)
         val startup = routeStartupCoordinator
         if (startup != null) {
             val update = startup.accept(location, SystemClock.elapsedRealtime(), locationSeq)
@@ -614,30 +620,7 @@ class TrailForegroundService : Service() {
     }
 
     private fun installOnDemandTriggers() {
-        mediaSession = MediaSession(this, "TrailNav").apply {
-            setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS)
-            setPlaybackState(
-                PlaybackState.Builder()
-                    .setActions(
-                        PlaybackState.ACTION_PLAY_PAUSE or
-                            PlaybackState.ACTION_PLAY or
-                            PlaybackState.ACTION_PAUSE,
-                    )
-                    .setState(PlaybackState.STATE_PLAYING, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 0f)
-                    .build(),
-            )
-            setCallback(object : MediaSession.Callback() {
-                override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
-                    val event = mediaButtonIntent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
-                    if (event?.action == KeyEvent.ACTION_DOWN && event.keyCode in setOf(KeyEvent.KEYCODE_HEADSETHOOK, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)) {
-                        handleOnDemand(OnDemandSource.MEDIA_BUTTON)
-                        return true
-                    }
-                    return false
-                }
-            })
-            isActive = true
-        }
+        if (!onDemandConfig.shakeEnabled) return
         val manager = getSystemService(SENSOR_SERVICE) as SensorManager
         val sensor = manager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         if (sensor != null) {
@@ -661,21 +644,25 @@ class TrailForegroundService : Service() {
     }
 
     private fun uninstallOnDemandTriggers() {
-        mediaSession?.run { isActive = false; release() }
-        mediaSession = null
         val manager = sensorManager
         val listener = shakeListener
         if (manager != null && listener != null) manager.unregisterListener(listener)
         sensorManager = null
         shakeListener = null
-        shakeStats.flush()?.let(::appendShakeStats)
+        if (onDemandConfig.shakeEnabled) shakeStats.flush()?.let(::appendShakeStats)
         onDemandRouter.flushSuppressedEvents().forEach(::appendShakeCooldownSuppression)
+        stopGateSuppressions.flush().forEach(::appendStopGateSuppression)
     }
 
     private fun handleOnDemand(source: OnDemandSource) {
         if (ending) return
-        val accepted = onDemandRouter.accept(source, SystemClock.elapsedRealtime())
+        val timestamp = SystemClock.elapsedRealtime()
+        val decision = routeOnDemandRequest(source, timestamp, stopGate, onDemandRouter)
+        decision.stopGateReason?.let { reason ->
+            stopGateSuppressions.record(timestamp, reason)?.let(::appendStopGateSuppression)
+        }
         onDemandRouter.takeSuppressedEvents().forEach(::appendShakeCooldownSuppression)
+        val accepted = decision.acceptedSource
         if (accepted == null) return
         logger?.appendSystem("ondemand.request", mapOf("source" to source.wireName, "paused" to paused.toString()))
         tonePlayer?.play(ToneSynth.acknowledgement())
@@ -720,6 +707,10 @@ class TrailForegroundService : Service() {
     }
 
     private fun appendShakeCooldownSuppression(suppression: ShakeCooldownSuppression) {
+        logger?.appendSystem("ondemand.suppressed", suppression.toWireMap())
+    }
+
+    private fun appendStopGateSuppression(suppression: StopGateSuppression) {
         logger?.appendSystem("ondemand.suppressed", suppression.toWireMap())
     }
 

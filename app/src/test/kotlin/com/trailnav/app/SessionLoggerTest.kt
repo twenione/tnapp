@@ -112,7 +112,7 @@ class SessionLoggerTest {
 
         val events = File(directory, "events.ndjson").readLines()
         assertTrue(events[0].contains("\"kind\":\"ondemand.config\""))
-        assertTrue(events[0].contains("\"shake_cooldown_ms\":\"300000\""))
+        assertTrue(events[0].contains("\"shake_cooldown_ms\":\"60000\""))
         assertTrue(events[1].contains("\"kind\":\"ondemand.suppressed\""))
         assertTrue(events[1].contains("\"source\":\"shake\""))
         assertTrue(events[1].contains("\"reason\":\"cooldown\""))

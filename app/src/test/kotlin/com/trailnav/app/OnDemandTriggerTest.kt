@@ -10,8 +10,8 @@ class OnDemandTriggerTest {
     @Test
     fun walkingLikeSamplesDoNotTriggerAndFourHitsDo() {
         val config = OnDemandConfig()
-        assertEquals(true, config.mediaButtonEnabled)
         assertEquals(true, config.shakeEnabled)
+        assertEquals(60_000L, config.shakeCooldownMillis)
         assertEquals(8.0, config.shakeThresholdMetersPerSecondSquared)
         assertEquals(4, config.shakeHitsRequired)
         val detector = ShakeDetector(config)
@@ -59,11 +59,14 @@ class OnDemandTriggerTest {
     }
 
     @Test
-    fun requestRouterRejectsDisabledSourcesAndDebouncesMedia() {
-        val router = OnDemandRequestRouter(OnDemandConfig(shakeEnabled = false))
-        assertTrue(router.accept(OnDemandSource.MEDIA_BUTTON, 0L) == OnDemandSource.MEDIA_BUTTON)
-        assertTrue(router.accept(OnDemandSource.MEDIA_BUTTON, 1_000L) == null)
-        assertTrue(router.accept(OnDemandSource.SHAKE, 2_000L) == null)
+    fun requestRouterRejectsDisabledShakeAndDebouncesEnabledShake() {
+        val disabled = OnDemandRequestRouter(OnDemandConfig(shakeEnabled = false))
+        assertEquals(null, disabled.accept(OnDemandSource.SHAKE, 0L))
+
+        val enabled = OnDemandRequestRouter(OnDemandConfig(shakeCooldownMillis = 0L))
+        assertEquals(OnDemandSource.SHAKE, enabled.accept(OnDemandSource.SHAKE, 0L))
+        assertEquals(null, enabled.accept(OnDemandSource.SHAKE, 1_000L))
+        assertEquals(OnDemandSource.SHAKE, enabled.accept(OnDemandSource.SHAKE, 1_500L))
     }
 
     @Test
@@ -82,13 +85,13 @@ class OnDemandTriggerTest {
     }
 
     @Test
-    fun shakeCooldownUsesInclusiveFiveMinuteBoundary() {
+    fun shakeCooldownUsesInclusiveOneMinuteBoundary() {
         val router = OnDemandRequestRouter(OnDemandConfig())
 
         assertEquals(OnDemandSource.SHAKE, router.accept(OnDemandSource.SHAKE, 0L))
         assertEquals(null, router.accept(OnDemandSource.SHAKE, 1_500L))
-        assertEquals(null, router.accept(OnDemandSource.SHAKE, 299_999L))
-        assertEquals(OnDemandSource.SHAKE, router.accept(OnDemandSource.SHAKE, 300_000L))
+        assertEquals(null, router.accept(OnDemandSource.SHAKE, 59_999L))
+        assertEquals(OnDemandSource.SHAKE, router.accept(OnDemandSource.SHAKE, 60_000L))
     }
 
     @Test
@@ -96,24 +99,8 @@ class OnDemandTriggerTest {
         val router = OnDemandRequestRouter(OnDemandConfig())
 
         assertEquals(OnDemandSource.SHAKE, router.accept(OnDemandSource.SHAKE, 0L))
-        assertEquals(null, router.accept(OnDemandSource.SHAKE, 200_000L))
-        assertEquals(OnDemandSource.SHAKE, router.accept(OnDemandSource.SHAKE, 300_000L))
-    }
-
-    @Test
-    fun mediaButtonIsIndependentOfShakeCooldownButSharesDebounce() {
-        val duringCooldown = OnDemandRequestRouter(OnDemandConfig())
-        assertEquals(OnDemandSource.SHAKE, duringCooldown.accept(OnDemandSource.SHAKE, 0L))
-        assertEquals(OnDemandSource.MEDIA_BUTTON, duringCooldown.accept(OnDemandSource.MEDIA_BUTTON, 1_500L))
-
-        val mediaFirst = OnDemandRequestRouter(OnDemandConfig())
-        assertEquals(OnDemandSource.MEDIA_BUTTON, mediaFirst.accept(OnDemandSource.MEDIA_BUTTON, 0L))
-        assertEquals(OnDemandSource.SHAKE, mediaFirst.accept(OnDemandSource.SHAKE, 2_000L))
-
-        val sharedDebounce = OnDemandRequestRouter(OnDemandConfig())
-        assertEquals(OnDemandSource.SHAKE, sharedDebounce.accept(OnDemandSource.SHAKE, 0L))
-        assertEquals(null, sharedDebounce.accept(OnDemandSource.MEDIA_BUTTON, 1_499L))
-        assertEquals(OnDemandSource.MEDIA_BUTTON, sharedDebounce.accept(OnDemandSource.MEDIA_BUTTON, 1_500L))
+        assertEquals(null, router.accept(OnDemandSource.SHAKE, 20_000L))
+        assertEquals(OnDemandSource.SHAKE, router.accept(OnDemandSource.SHAKE, 60_000L))
     }
 
     @Test
@@ -181,13 +168,129 @@ class OnDemandTriggerTest {
     }
 
     @Test
-    fun onDemandConfigWireFieldsIncludeTemporaryCooldown() {
+    fun onDemandConfigWireFieldsIncludeTemporaryStopGateAndOneMinuteCooldown() {
         val fields = OnDemandConfig().toWireMap()
 
-        assertEquals("300000", fields["shake_cooldown_ms"])
+        assertEquals("60000", fields["shake_cooldown_ms"])
         assertEquals("1500", fields["debounce_ms"])
         assertEquals("8.0", fields["shake_threshold"])
         assertEquals("4", fields["shake_hits"])
         assertEquals("700", fields["shake_window_ms"])
+        assertEquals("temporary", fields["stop_gate"])
+        assertEquals("0.5", fields["stop_gate_speed_mps"])
+        assertEquals("3000", fields["stop_gate_settle_ms"])
+        assertEquals("5000", fields["stop_gate_stale_ms"])
+        assertEquals("50.0", fields["stop_gate_min_accuracy_m"])
+        assertEquals(
+            setOf(
+                "shake_enabled",
+                "debounce_ms",
+                "shake_threshold",
+                "shake_hits",
+                "shake_window_ms",
+                "shake_cooldown_ms",
+                "stop_gate",
+                "stop_gate_speed_mps",
+                "stop_gate_settle_ms",
+                "stop_gate_stale_ms",
+                "stop_gate_min_accuracy_m",
+            ),
+            fields.keys,
+        )
+    }
+
+    @Test
+    fun stopGateUsesSpeedBoundaryAndThreeSecondDwell() {
+        val gate = StopGate()
+        gate.onLocation(0L, 0.49f, 50f)
+        assertEquals(StopGateReason.SETTLING, gate.check(2_999L).reason)
+        assertTrue(gate.check(3_000L).open)
+
+        gate.onLocation(3_001L, 0.5f, 10f)
+        assertEquals(StopGateReason.MOVING, gate.check(3_001L).reason)
+        gate.onLocation(3_002L, 0.51f, 10f)
+        assertEquals(StopGateReason.MOVING, gate.check(3_002L).reason)
+    }
+
+    @Test
+    fun movementRestartsStopGateDwellAndUntrustedSamplesDoNotResetIt() {
+        val gate = StopGate()
+        gate.onLocation(0L, 0.1f, 10f)
+        gate.onLocation(1_000L, 0.5f, 10f)
+        gate.onLocation(2_000L, 0.1f, 10f)
+        gate.onLocation(3_000L, null, 5f)
+        assertEquals(StopGateReason.SETTLING, gate.check(4_999L).reason)
+        assertTrue(gate.check(5_000L).open)
+    }
+
+    @Test
+    fun stopGateFailsClosedWithoutTrustedSpeedAndExpiresStaleState() {
+        val noFix = StopGate()
+        assertEquals(StopGateReason.SPEED_UNAVAILABLE, noFix.check(0L).reason)
+        noFix.onLocation(0L, Float.NaN, 1f)
+        assertEquals(StopGateReason.SPEED_UNAVAILABLE, noFix.check(0L).reason)
+        noFix.onLocation(1L, 0.1f, 50.1f)
+        assertEquals(StopGateReason.SPEED_UNAVAILABLE, noFix.check(1L).reason)
+
+        val stale = StopGate()
+        stale.onLocation(0L, 0.1f, 10f)
+        assertEquals(StopGateReason.SPEED_UNAVAILABLE, stale.check(5_001L).reason)
+        stale.onLocation(6_000L, 0.1f, 10f)
+        assertEquals(StopGateReason.SETTLING, stale.check(6_001L).reason)
+    }
+
+    @Test
+    fun stopGateRestartsDwellAfterTrustedEvidenceGap() {
+        val gate = StopGate()
+        gate.onLocation(0L, 0.1f, 10f)
+        gate.onLocation(5_001L, 0.1f, 10f)
+
+        assertEquals(StopGateReason.SETTLING, gate.check(5_001L).reason)
+        assertTrue(gate.check(8_001L).open)
+    }
+
+    @Test
+    fun blockedShakeDoesNotConsumeCooldownOrDebounceAndDisabledShakeIsSilent() {
+        val gate = StopGate()
+        val router = OnDemandRequestRouter(OnDemandConfig())
+        gate.onLocation(0L, 0.5f, 5f)
+        assertEquals(
+            StopGateReason.MOVING,
+            routeOnDemandRequest(OnDemandSource.SHAKE, 1_000L, gate, router).stopGateReason,
+        )
+
+        gate.onLocation(2_000L, 0.1f, 5f)
+        val accepted = routeOnDemandRequest(OnDemandSource.SHAKE, 5_000L, gate, router)
+        assertEquals(OnDemandSource.SHAKE, accepted.acceptedSource)
+        assertEquals(null, accepted.stopGateReason)
+
+        val disabledRouter = OnDemandRequestRouter(OnDemandConfig(shakeEnabled = false))
+        assertEquals(
+            OnDemandRouteDecision(),
+            routeOnDemandRequest(OnDemandSource.SHAKE, 6_000L, StopGate(), disabledRouter),
+        )
+    }
+
+    @Test
+    fun stopGateSuppressionsAggregateOneMinutePerReason() {
+        val aggregator = StopGateSuppressionAggregator()
+        assertEquals(null, aggregator.record(0L, StopGateReason.MOVING))
+        assertEquals(null, aggregator.record(10_000L, StopGateReason.MOVING))
+        assertEquals(null, aggregator.record(20_000L, StopGateReason.SETTLING))
+        assertEquals(
+            StopGateSuppression(StopGateReason.MOVING, count = 2),
+            aggregator.record(60_000L, StopGateReason.MOVING),
+        )
+        assertEquals(
+            listOf(
+                StopGateSuppression(StopGateReason.MOVING, count = 1),
+                StopGateSuppression(StopGateReason.SETTLING, count = 1),
+            ),
+            aggregator.flush(),
+        )
+        assertEquals(
+            mapOf("source" to "shake", "reason" to "stop-gate-speed-unavailable", "count" to "3"),
+            StopGateSuppression(StopGateReason.SPEED_UNAVAILABLE, count = 3).toWireMap(),
+        )
     }
 }

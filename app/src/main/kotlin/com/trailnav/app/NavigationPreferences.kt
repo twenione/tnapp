@@ -12,6 +12,7 @@ internal object NavigationPreferences {
     private const val KEY_VOICE_ENABLED = "voice_on_route_enabled"
     private const val KEY_VOICE_INTERVAL_SECONDS = "voice_on_route_interval_seconds"
     private const val KEY_VOICE_MODE = "voice_on_route_mode"
+    private const val KEY_ON_DEMAND_ENABLED = "ondemand_enabled"
     private const val KEY_SERVICE_STATE = "service_state"
     private const val KEY_ACTIVE_SESSION_ID = "active_session_id"
 
@@ -50,6 +51,15 @@ internal object NavigationPreferences {
             .putBoolean(KEY_VOICE_ENABLED, active)
             .putLong(KEY_VOICE_INTERVAL_SECONDS, if (intervalSeconds > 0L) intervalSeconds else 0L)
             .putString(KEY_VOICE_MODE, if (active) mode.name else PeriodicVoiceMode.OFF.name)
+            .apply()
+    }
+
+    fun onDemandEnabled(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .getBoolean(KEY_ON_DEMAND_ENABLED, true)
+
+    fun saveOnDemandEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_ON_DEMAND_ENABLED, enabled)
             .apply()
     }
 

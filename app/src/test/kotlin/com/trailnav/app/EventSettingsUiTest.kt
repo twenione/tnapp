@@ -3,6 +3,7 @@ package com.trailnav.app
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class EventSettingsUiTest {
     @Test
@@ -71,5 +72,31 @@ class EventSettingsUiTest {
 
         assertNull(EventSettingsUi.resolveDialogSelection(draft, accepted = false))
         assertEquals(EventSettings.defaults(), saved)
+    }
+
+    @Test
+    fun onDemandToggleIsIndependentDefaultsOnAndIsReturnedOnlyForSave() {
+        val eventDraft = EventSettingsUi.checkedItems(EventSettings.defaults()).apply { this[2] = false }
+        val savedOnDemandEnabled = false
+        val resetOnDemandEnabled = NavigationSettingsUi.resetToDefaults(eventDraft)
+
+        assertEquals(EventSettingsUi.defaultCheckedItems().toList(), eventDraft.toList())
+        assertTrue(resetOnDemandEnabled)
+        assertNull(
+            NavigationSettingsUi.resolveDialogSelection(
+                eventChecked = eventDraft,
+                onDemandEnabled = resetOnDemandEnabled,
+                accepted = false,
+            ),
+        )
+        assertEquals(false, savedOnDemandEnabled)
+
+        val saved = NavigationSettingsUi.resolveDialogSelection(
+            eventChecked = eventDraft,
+            onDemandEnabled = resetOnDemandEnabled,
+            accepted = true,
+        )
+        assertEquals(EventSettings.defaults(), saved?.eventSettings)
+        assertEquals(true, saved?.onDemandEnabled)
     }
 }
