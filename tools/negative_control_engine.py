@@ -20,7 +20,14 @@ from xml.etree import ElementTree as ET
 
 
 ENGINE = Path("core-guide/src/main/kotlin/com/trailnav/core/Engine.kt")
-VARIANTS = {'dwell-bypass': ('elapsedSeconds(timestamp, since) >= config.offRouteEnterDwellSeconds',
+VARIANTS = {
+ 'eta-no-grade': ('exp(-3.5 * abs(slope + 0.05))',
+                  'exp(-3.5 * abs(0.0 + 0.05))'),
+ 'eta-target-ignores-switch': ('progressMeters >= switchMeters',
+                  'false /* D-033 summit switch ignored */'),
+ 'eta-correction-includes-stops': ('distanceMeters > 0.0 && distanceMeters / elapsedSeconds >= config.etaMinMovingSpeedMps',
+                  'true /* D-033 stopped interval admitted */'),
+ 'dwell-bypass': ('elapsedSeconds(timestamp, since) >= config.offRouteEnterDwellSeconds',
                   'true /* D-033 dwell bypass */'),
  'approach-gate-removed': ('if (!next.hasEnteredRoute) {',
                            'if (false /* D-033 approach gate removed */) {'),
@@ -278,6 +285,18 @@ VARIANTS = {'dwell-bypass': ('elapsedSeconds(timestamp, since) >= config.offRout
                                   '        }\n'
                                   '        if (!dynamic.state.reverseStatusIssued) {')}
 
+ROUTE_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/Route.kt")
+ETA_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/RouteEta.kt")
+VARIANT_SOURCE_PATHS = {
+    "turn-axis-simplified": ROUTE_SOURCE,
+    "elevation-waypoint-mix": ROUTE_SOURCE,
+    "elevation-always-ok": ROUTE_SOURCE,
+    "waypoint-near-filter": ROUTE_SOURCE,
+    "peak-prominence-ignored": ROUTE_SOURCE,
+    "eta-no-grade": ETA_SOURCE,
+    "eta-target-ignores-switch": ETA_SOURCE,
+    "eta-correction-includes-stops": ETA_SOURCE,
+}
 CORE_TEST = frozenset({"core-guide-test"})
 OFF_ROUTE_CONSUMERS = frozenset({"core-guide-test", "replay", "phase1-accuracy", "config-sensitivity"})
 TURN_CONSUMERS = frozenset({"core-guide-test", "replay", "replay-turn-session"})
@@ -348,6 +367,9 @@ MUTATION_REQUIRED_CONSUMERS = {
     "sunset-delayed-by-e5-e8": CORE_TEST,
     "sunrise-consumes-rejected-accuracy": CORE_TEST,
     "elevation-reverse-dwell-drop": CORE_TEST,
+    "eta-no-grade": CORE_TEST,
+    "eta-target-ignores-switch": CORE_TEST,
+    "eta-correction-includes-stops": CORE_TEST,
 }
 
 CONSUMER_NAMES = ("replay", "replay-turn-session", "config-sensitivity", "phase1-accuracy")
@@ -392,17 +414,15 @@ def failed_test_names(workspace: Path) -> list[str]:
     return sorted(names)
 
 
-def mutation_needle_failures(engine_source: str, route_source: str) -> list[str]:
-    """Require every mutation needle to identify exactly one source site."""
+def mutation_needle_failures(sources: dict[Path, str]) -> list[str]:
+    """Require each mutation needle to identify one site in its target source."""
     failures: list[str] = []
-    route_mutations = {"turn-axis-simplified", "elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter", "peak-prominence-ignored"}
     for name, (needle, _) in VARIANTS.items():
-        source = route_source if name in route_mutations else engine_source
-        count = source.count(needle)
+        target = VARIANT_SOURCE_PATHS.get(name, ENGINE)
+        count = sources[target].count(needle)
         if count != 1:
-            failures.append(f"{name}: mutation needle occurrence count={count}, expected=1")
+            failures.append(f"{name}: mutation needle occurrence count={count}, expected=1 in {target}")
     return failures
-
 
 def consumer_commands(cli: Path) -> dict[str, list[str]]:
     return {
@@ -469,11 +489,12 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="tnapp-d033-") as temporary:
         workspace = Path(temporary) / "repo"
         copy_repo(source, workspace)
-        engine = workspace / ENGINE
-        original = engine.read_text(encoding="utf-8")
-        route = workspace / "core-guide/src/main/kotlin/com/trailnav/core/Route.kt"
-        route_original = route.read_text(encoding="utf-8")
-        needle_errors = mutation_needle_failures(original, route_original)
+        sources = {
+            ENGINE: (workspace / ENGINE).read_text(encoding="utf-8"),
+            ROUTE_SOURCE: (workspace / ROUTE_SOURCE).read_text(encoding="utf-8"),
+            ETA_SOURCE: (workspace / ETA_SOURCE).read_text(encoding="utf-8"),
+        }
+        needle_errors = mutation_needle_failures(sources)
         if needle_errors:
             failures.extend(needle_errors)
             evidence.append("FAIL: mutation needles must be unique\n" + "\n".join(needle_errors))
@@ -507,11 +528,9 @@ def main() -> int:
             return 1
 
         for name, (needle, replacement) in VARIANTS.items():
-            target = route if name in {
-                "turn-axis-simplified", "elevation-waypoint-mix", "elevation-always-ok", "waypoint-near-filter",
-                "peak-prominence-ignored",
-            } else engine
-            target_original = route_original if target == route else original
+            target_relative = VARIANT_SOURCE_PATHS.get(name, ENGINE)
+            target = workspace / target_relative
+            target_original = sources[target_relative]
             variant_engine = target_original.replace(needle, replacement, 1)
             assert variant_engine != target_original
             target.write_text(variant_engine, encoding="utf-8")

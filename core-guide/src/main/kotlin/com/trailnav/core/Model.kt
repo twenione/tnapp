@@ -110,7 +110,12 @@ data class GuideConfig(
     val spatialGridSizeMeters: Double = 100.0,
     val taggingOffRouteDistanceMeters: Double = 30.0,
     val taggingOffRouteDwellSeconds: Double = 60.0,
-    val minimumSessionSecondsBeforeArrival: Double = 10.0
+    val minimumSessionSecondsBeforeArrival: Double = 10.0,
+    val etaWindowSeconds: Double = 600.0,
+    val etaMinWindowMeters: Double = 300.0,
+    val etaMinMovingSpeedMps: Double = 0.3,
+    val etaCorrectionMin: Double = 0.5,
+    val etaCorrectionMax: Double = 2.0
 ) {
     init {
         require(accuracyRejectMeters >= 0.0)
@@ -145,6 +150,11 @@ data class GuideConfig(
         require(waypointNearRouteMeters >= 0.0)
         require(waypointNameMaxLength > 0)
         require(elevationSpikeThresholdMeters > 0.0)
+        require(etaWindowSeconds > 0.0)
+        require(etaMinWindowMeters >= 0.0)
+        require(etaMinMovingSpeedMps >= 0.0)
+        require(etaCorrectionMin > 0.0)
+        require(etaCorrectionMax >= etaCorrectionMin)
     }
 
     companion object {
@@ -202,7 +212,12 @@ data class GuideConfig(
             "spatialGridSizeMeters" to "route index implementation parameter",
             "taggingOffRouteDistanceMeters" to "Phase 0 tagging parameter; not consumed by guide",
             "taggingOffRouteDwellSeconds" to "Phase 0 tagging parameter; not consumed by guide",
-            "minimumSessionSecondsBeforeArrival" to "startup arrival guard; covered by the immediate-arrival regression test"
+            "minimumSessionSecondsBeforeArrival" to "startup arrival guard; covered by the immediate-arrival regression test",
+            "etaWindowSeconds" to "covered by RouteEtaTest.windowExpiry",
+            "etaMinWindowMeters" to "covered by RouteEtaTest.correctionActivationThreshold",
+            "etaMinMovingSpeedMps" to "covered by RouteEtaTest.stoppedSegmentsDoNotAffectCorrection",
+            "etaCorrectionMin" to "covered by RouteEtaTest.correctionClampsToConfiguredBounds",
+            "etaCorrectionMax" to "covered by RouteEtaTest.correctionClampsToConfiguredBounds"
         )
 
         fun sensitivityFieldNames(): Set<String> =
@@ -277,7 +292,8 @@ data class RouteStatus(
     val direction: ProgressDirection,
     val remainingMeters: Double,
     val nextTurn: NextTurn?,
-    val arrived: Boolean
+    val arrived: Boolean,
+    val target: RouteTargetEstimate? = null
 )
 
 /** Pure state report shared by on-demand voice and the route ribbon. */

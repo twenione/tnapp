@@ -84,13 +84,20 @@ def test_unique_mutation_needles() -> None:
     route_path = Path("core-guide/src/main/kotlin/com/trailnav/core/Route.kt")
     engine = engine_path.read_text(encoding="utf-8")
     route = route_path.read_text(encoding="utf-8")
-    assert source and d033.mutation_needle_failures(engine, route) == []
+    eta_path = Path("core-guide/src/main/kotlin/com/trailnav/core/RouteEta.kt")
+    eta = eta_path.read_text(encoding="utf-8")
+    sources = {d033.ENGINE: engine, d033.ROUTE_SOURCE: route, d033.ETA_SOURCE: eta}
+    assert source and d033.mutation_needle_failures(sources) == []
 
     original = d033.VARIANTS.get("test-duplicate-needle")
     d033.VARIANTS["test-duplicate-needle"] = ("TASK-042-DUPLICATE-NEEDLE", "unused")
     try:
-        errors = d033.mutation_needle_failures(engine + "\nTASK-042-DUPLICATE-NEEDLE\nTASK-042-DUPLICATE-NEEDLE\n", route)
-        assert errors == ["test-duplicate-needle: mutation needle occurrence count=2, expected=1"]
+        duplicate_sources = sources.copy()
+        duplicate_sources[d033.ENGINE] = engine + "\nTASK-042-DUPLICATE-NEEDLE\nTASK-042-DUPLICATE-NEEDLE\n"
+        errors = d033.mutation_needle_failures(duplicate_sources)
+        assert errors == [
+            f"test-duplicate-needle: mutation needle occurrence count=2, expected=1 in {d033.ENGINE}"
+        ]
     finally:
         if original is None:
             del d033.VARIANTS["test-duplicate-needle"]
