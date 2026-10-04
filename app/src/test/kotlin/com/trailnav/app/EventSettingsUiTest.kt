@@ -79,13 +79,18 @@ class EventSettingsUiTest {
         val initiallySavedEvents = GuideEvent.values().fold(EventSettings.defaults()) { settings, event ->
             settings.withEnabled(event, true)
         }
-        val initiallySaved = NavigationSettingsSelection(initiallySavedEvents, onDemandEnabled = false)
+        val initiallySaved = NavigationSettingsSelection(
+            initiallySavedEvents,
+            onDemandEnabled = false,
+            imuCollectEnabled = true,
+        )
         var persisted = initiallySaved
 
         val cancelledEvents = EventSettingsUi.checkedItems(initiallySavedEvents).apply { this[0] = false }
         val cancelled = NavigationSettingsUi.resolveDialogSelection(
             eventChecked = cancelledEvents,
             onDemandEnabled = true,
+            imuCollectEnabled = false,
             accepted = false,
         )
         if (cancelled != null) persisted = cancelled
@@ -98,28 +103,33 @@ class EventSettingsUiTest {
         val saved = NavigationSettingsUi.resolveDialogSelection(
             eventChecked = savedEvents,
             onDemandEnabled = false,
+            imuCollectEnabled = false,
             accepted = true,
         )
         persisted = requireNotNull(saved)
 
         assertEquals(EventSettingsUi.settingsFromCheckedItems(savedEvents), persisted.eventSettings)
         assertEquals(false, persisted.onDemandEnabled)
+        assertEquals(false, persisted.imuCollectEnabled)
     }
 
     @Test
     fun restoringDialogDefaultsResetsEventsAndEnablesShakeBeforeSave() {
         val eventDraft = BooleanArray(GuideEvent.values().size) { true }
 
-        val resetOnDemandEnabled = NavigationSettingsUi.resetToDefaults(eventDraft)
+        val defaults = NavigationSettingsUi.resetToDefaults(eventDraft)
         assertEquals(EventSettingsUi.defaultCheckedItems().toList(), eventDraft.toList())
-        assertTrue(resetOnDemandEnabled)
+        assertTrue(defaults.onDemandEnabled)
+        assertEquals(false, defaults.imuCollectEnabled)
 
         val saved = NavigationSettingsUi.resolveDialogSelection(
             eventChecked = eventDraft,
-            onDemandEnabled = resetOnDemandEnabled,
+            onDemandEnabled = defaults.onDemandEnabled,
+            imuCollectEnabled = defaults.imuCollectEnabled,
             accepted = true,
         )
         assertEquals(EventSettings.defaults(), saved?.eventSettings)
         assertEquals(true, saved?.onDemandEnabled)
+        assertEquals(false, saved?.imuCollectEnabled)
     }
 }
