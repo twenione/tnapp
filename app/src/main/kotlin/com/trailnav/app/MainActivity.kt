@@ -648,6 +648,10 @@ class MainActivity : AppCompatActivity() {
             text = "정지 상태에서 흔들어 경로 상태 확인"
             isChecked = NavigationPreferences.onDemandEnabled(this@MainActivity)
         }
+        val imuCollectEnabled = CheckBox(this).apply {
+            text = "원 가속도 수집(연구용)"
+            isChecked = NavigationPreferences.imuCollectEnabled(this@MainActivity)
+        }
         val eventCheckBoxes = EventSettingsUi.labels().mapIndexed { index, label ->
             CheckBox(this).apply {
                 text = label
@@ -659,6 +663,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding((20 * density).roundToInt(), 0, (20 * density).roundToInt(), 0)
             addView(onDemandEnabled)
+            addView(imuCollectEnabled)
             addView(TextView(this@MainActivity).apply {
                 text = "안내 이벤트 (E1–E8)"
                 setTypeface(typeface, Typeface.BOLD)
@@ -680,10 +685,12 @@ class MainActivity : AppCompatActivity() {
                 NavigationSettingsUi.resolveDialogSelection(
                     eventChecked = checked,
                     onDemandEnabled = onDemandEnabled.isChecked,
+                    imuCollectEnabled = imuCollectEnabled.isChecked,
                     accepted = true,
                 )?.let { selection ->
                     NavigationPreferences.saveEventSettings(this, selection.eventSettings)
                     NavigationPreferences.saveOnDemandEnabled(this, selection.onDemandEnabled)
+                    NavigationPreferences.saveImuCollectEnabled(this, selection.imuCollectEnabled)
                     status.text = "안내 설정을 저장했습니다. 다음 안내 시작부터 적용됩니다"
                 }
             }
@@ -691,7 +698,9 @@ class MainActivity : AppCompatActivity() {
             .create()
         dialog.setOnShowListener {
             dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
-                onDemandEnabled.isChecked = NavigationSettingsUi.resetToDefaults(checked)
+                val defaults = NavigationSettingsUi.resetToDefaults(checked)
+                onDemandEnabled.isChecked = defaults.onDemandEnabled
+                imuCollectEnabled.isChecked = defaults.imuCollectEnabled
                 eventCheckBoxes.forEachIndexed { index, checkBox -> checkBox.isChecked = checked[index] }
             }
         }

@@ -63,6 +63,10 @@ class TrailForegroundService : Service() {
     private var shakeStats = ShakeStats(onDemandConfig.shakeThresholdMetersPerSecondSquared)
     private var sensorManager: SensorManager? = null
     private var shakeListener: SensorEventListener? = null
+    private var imuCollectEnabled = false
+    private var imuRecorder: ImuRecorder? = null
+    private var imuSensorManager: SensorManager? = null
+    private var imuListener: SensorEventListener? = null
     private var tonePlayer: TonePlayer? = null
     private var ending = false
     private var endStartId: Int? = null
@@ -127,6 +131,15 @@ class TrailForegroundService : Service() {
                     beginUserEnd(startId)
                 }
                 return START_NOT_STICKY
+            }
+            ACTION_NOTIFICATION_MARK -> {
+                if (sessionStarted && !ending && imuCollectEnabled) {
+                    val timestamp = SystemClock.elapsedRealtime()
+                    if (imuRecorder?.mark(timestamp) == true) {
+                        logger?.appendSystem("imu.mark", mapOf("t_ms" to timestamp.toString()))
+                    }
+                }
+                return START_STICKY
             }
         }
         if (!hasLocationPermission()) {
@@ -217,6 +230,7 @@ class TrailForegroundService : Service() {
             onRouteVoiceEnabled && onRouteVoiceMode != NavigationPreferences.PeriodicVoiceMode.OFF,
             onRouteVoiceIntervalSeconds,
         )
+        imuCollectEnabled = NavigationPreferences.imuCollectEnabled(this)
         onDemandSessionPlan = createOnDemandSessionPlan(NavigationPreferences.onDemandEnabled(this))
         onDemandConfig = onDemandSessionPlan.config
         onDemandRouter = OnDemandRequestRouter(onDemandConfig)
@@ -255,7 +269,16 @@ class TrailForegroundService : Service() {
             "ondemand.config",
             onDemandSessionPlan.configEventFields,
         )
+        logger?.appendSystem(
+            "imu.config",
+            mapOf(
+                "enabled" to imuCollectEnabled.toString(),
+                "file" to if (imuCollectEnabled) "imu.ndjson" else "",
+                "sampling" to if (imuCollectEnabled) "SENSOR_DELAY_GAME" else "disabled",
+            ),
+        )
         installOnDemandTriggers()
+        installImuRecorder(sessionDirectory)
         source = FusedLocationSource(this).also { locationSource ->
             locationSource.start(
                 onLocation = ::onLocation,
@@ -612,8 +635,11 @@ class TrailForegroundService : Service() {
         if (paused) {
             builder.addAction(notificationAction(ACTION_NOTIFICATION_RESUME, 1002, "재개"))
             builder.addAction(notificationAction(ACTION_NOTIFICATION_END, 1003, "종료"))
-        } else if (showPauseAction) {
+        } else if (showPauseAction || (sessionStarted && imuCollectEnabled)) {
             builder.addAction(notificationAction(ACTION_NOTIFICATION_PAUSE, 1004, "안내 일시중지"))
+        }
+        if (sessionStarted && imuCollectEnabled) {
+            builder.addAction(notificationAction(ACTION_NOTIFICATION_MARK, 1005, "흔들기 표시"))
         }
         return builder.build()
     }
@@ -642,12 +668,53 @@ class TrailForegroundService : Service() {
         }
     }
 
+    private fun installImuRecorder(sessionDirectory: File) {
+        if (!imuCollectEnabled) return
+        val recorder = ImuRecorder(File(sessionDirectory, "imu.ndjson")).apply {
+            onWriteFailure = { error ->
+                logger?.appendError("imu.write-failed", error.message ?: error::class.java.simpleName)
+            }
+        }
+        imuRecorder = recorder
+        val manager = getSystemService(SENSOR_SERVICE) as? SensorManager ?: return
+        val sensor = manager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) ?: return
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                if (event.values.size < 3) return
+                recorder.onSample(
+                    elapsedMillis = SystemClock.elapsedRealtime(),
+                    sensorTimestampNanos = event.timestamp,
+                    x = event.values[0],
+                    y = event.values[1],
+                    z = event.values[2],
+                )
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+        }
+        imuListener = listener
+        imuSensorManager = manager
+        manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
+    }
+
+    private fun uninstallImuRecorder() {
+        val manager = imuSensorManager
+        val listener = imuListener
+        if (manager != null && listener != null) manager.unregisterListener(listener)
+        imuSensorManager = null
+        imuListener = null
+        imuRecorder?.close()
+        imuRecorder = null
+        imuCollectEnabled = false
+    }
+
     private fun uninstallOnDemandTriggers() {
         val manager = sensorManager
         val listener = shakeListener
         if (manager != null && listener != null) manager.unregisterListener(listener)
         sensorManager = null
         shakeListener = null
+        uninstallImuRecorder()
         if (onDemandSessionPlan.registerShakeListener) shakeStats.flush()?.let(::appendShakeStats)
         onDemandRouter.flushSuppressedEvents().forEach(::appendShakeCooldownSuppression)
         stopGateSuppressions.flush().forEach(::appendStopGateSuppression)
@@ -794,6 +861,7 @@ class TrailForegroundService : Service() {
         const val ACTION_NOTIFICATION_PAUSE = "com.trailnav.app.NOTIFICATION_PAUSE"
         const val ACTION_NOTIFICATION_RESUME = "com.trailnav.app.NOTIFICATION_RESUME"
         const val ACTION_NOTIFICATION_END = "com.trailnav.app.NOTIFICATION_END"
+        const val ACTION_NOTIFICATION_MARK = "com.trailnav.app.NOTIFICATION_MARK"
         const val EXTRA_RIBBON_DISTANCE_METERS = "ribbon_distance_meters"
         const val EXTRA_RIBBON_SIGNED_OFFSET_METERS = "ribbon_signed_offset_meters"
         const val EXTRA_RIBBON_DIRECTION = "ribbon_direction"

@@ -103,21 +103,28 @@ internal object EventSettingsUi {
 internal data class NavigationSettingsSelection(
     val eventSettings: EventSettings,
     val onDemandEnabled: Boolean,
+    val imuCollectEnabled: Boolean,
 )
 
-/** Keeps the D-069 shake toggle independent from the E1–E8 event selections. */
+internal data class NavigationSettingsDefaults(
+    val onDemandEnabled: Boolean = true,
+    val imuCollectEnabled: Boolean = false,
+)
+
+/** Keeps independent navigation settings separate from the E1–E8 event selections. */
 internal object NavigationSettingsUi {
-    fun resetToDefaults(eventChecked: BooleanArray): Boolean {
+    fun resetToDefaults(eventChecked: BooleanArray): NavigationSettingsDefaults {
         EventSettingsUi.resetToDefaults(eventChecked)
-        return true
+        return NavigationSettingsDefaults()
     }
 
     fun resolveDialogSelection(
         eventChecked: BooleanArray,
         onDemandEnabled: Boolean,
+        imuCollectEnabled: Boolean,
         accepted: Boolean,
     ): NavigationSettingsSelection? {
         val settings = EventSettingsUi.resolveDialogSelection(eventChecked, accepted) ?: return null
-        return NavigationSettingsSelection(settings, onDemandEnabled)
+        return NavigationSettingsSelection(settings, onDemandEnabled, imuCollectEnabled)
     }
 }

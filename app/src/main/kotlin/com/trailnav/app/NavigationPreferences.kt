@@ -13,6 +13,7 @@ internal object NavigationPreferences {
     private const val KEY_VOICE_INTERVAL_SECONDS = "voice_on_route_interval_seconds"
     private const val KEY_VOICE_MODE = "voice_on_route_mode"
     private const val KEY_ON_DEMAND_ENABLED = "ondemand_enabled"
+    private const val KEY_IMU_COLLECT_ENABLED = "imu_collect_enabled"
     private const val KEY_SERVICE_STATE = "service_state"
     private const val KEY_ACTIVE_SESSION_ID = "active_session_id"
 
@@ -60,6 +61,16 @@ internal object NavigationPreferences {
     fun saveOnDemandEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_ON_DEMAND_ENABLED, enabled)
+            .apply()
+    }
+
+    fun imuCollectEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_IMU_COLLECT_ENABLED, false)
+
+    fun saveImuCollectEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_IMU_COLLECT_ENABLED, enabled)
             .apply()
     }
 
