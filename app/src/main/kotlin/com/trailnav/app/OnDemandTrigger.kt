@@ -38,6 +38,25 @@ fun OnDemandConfig.toWireMap(): Map<String, String> = linkedMapOf(
     "stop_gate_min_accuracy_m" to stopGateMinAccuracyMeters.toString(),
 )
 
+data class OnDemandSessionPlan(
+    val config: OnDemandConfig,
+    val configEventFields: Map<String, String>,
+    val registerShakeListener: Boolean,
+)
+
+/** Resolves the saved toggle once so runtime, session evidence, and sensor wiring agree. */
+fun createOnDemandSessionPlan(shakeEnabled: Boolean): OnDemandSessionPlan {
+    val config = OnDemandConfig(shakeEnabled = shakeEnabled)
+    return OnDemandSessionPlan(
+        config = config,
+        configEventFields = config.toWireMap() + mapOf(
+            "shake_sampling" to if (config.shakeEnabled) "SENSOR_DELAY_GAME" else "disabled",
+            "shake_stats" to if (config.shakeEnabled) "per-minute-aggregates" else "disabled",
+        ),
+        registerShakeListener = config.shakeEnabled,
+    )
+}
+
 enum class StopGateReason(val wireName: String) {
     MOVING("stop-gate-moving"),
     SETTLING("stop-gate-settling"),

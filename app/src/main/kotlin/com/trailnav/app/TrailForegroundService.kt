@@ -54,7 +54,8 @@ class TrailForegroundService : Service() {
     private var activeSessionId: String? = null
     private var lastLocation: TrailLocation? = null
     private var lastLocationSeq: Long? = null
-    private var onDemandConfig = OnDemandConfig()
+    private var onDemandSessionPlan = createOnDemandSessionPlan(shakeEnabled = true)
+    private var onDemandConfig = onDemandSessionPlan.config
     private var onDemandRouter = OnDemandRequestRouter(onDemandConfig)
     private var stopGate = StopGate()
     private var stopGateSuppressions = StopGateSuppressionAggregator()
@@ -216,7 +217,8 @@ class TrailForegroundService : Service() {
             onRouteVoiceEnabled && onRouteVoiceMode != NavigationPreferences.PeriodicVoiceMode.OFF,
             onRouteVoiceIntervalSeconds,
         )
-        onDemandConfig = OnDemandConfig(shakeEnabled = NavigationPreferences.onDemandEnabled(this))
+        onDemandSessionPlan = createOnDemandSessionPlan(NavigationPreferences.onDemandEnabled(this))
+        onDemandConfig = onDemandSessionPlan.config
         onDemandRouter = OnDemandRequestRouter(onDemandConfig)
         stopGate = StopGate(
             speedThresholdMps = onDemandConfig.stopGateSpeedThresholdMps,
@@ -251,10 +253,7 @@ class TrailForegroundService : Service() {
         )
         logger?.appendSystem(
             "ondemand.config",
-            onDemandConfig.toWireMap() + mapOf(
-                "shake_sampling" to if (onDemandConfig.shakeEnabled) "SENSOR_DELAY_GAME" else "disabled",
-                "shake_stats" to if (onDemandConfig.shakeEnabled) "per-minute-aggregates" else "disabled",
-            ),
+            onDemandSessionPlan.configEventFields,
         )
         installOnDemandTriggers()
         source = FusedLocationSource(this).also { locationSource ->
@@ -620,7 +619,7 @@ class TrailForegroundService : Service() {
     }
 
     private fun installOnDemandTriggers() {
-        if (!onDemandConfig.shakeEnabled) return
+        if (!onDemandSessionPlan.registerShakeListener) return
         val manager = getSystemService(SENSOR_SERVICE) as SensorManager
         val sensor = manager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         if (sensor != null) {
@@ -649,7 +648,7 @@ class TrailForegroundService : Service() {
         if (manager != null && listener != null) manager.unregisterListener(listener)
         sensorManager = null
         shakeListener = null
-        if (onDemandConfig.shakeEnabled) shakeStats.flush()?.let(::appendShakeStats)
+        if (onDemandSessionPlan.registerShakeListener) shakeStats.flush()?.let(::appendShakeStats)
         onDemandRouter.flushSuppressedEvents().forEach(::appendShakeCooldownSuppression)
         stopGateSuppressions.flush().forEach(::appendStopGateSuppression)
     }

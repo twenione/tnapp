@@ -200,6 +200,22 @@ class OnDemandTriggerTest {
     }
 
     @Test
+    fun savedShakeToggleControlsConfigEventAndListenerRegistration() {
+        val disabled = createOnDemandSessionPlan(shakeEnabled = false)
+        assertEquals(false, disabled.config.shakeEnabled)
+        assertEquals("false", disabled.configEventFields["shake_enabled"])
+        assertEquals("disabled", disabled.configEventFields["shake_sampling"])
+        assertEquals("disabled", disabled.configEventFields["shake_stats"])
+        assertEquals(false, disabled.registerShakeListener)
+
+        val enabled = createOnDemandSessionPlan(shakeEnabled = true)
+        assertEquals(true, enabled.config.shakeEnabled)
+        assertEquals("true", enabled.configEventFields["shake_enabled"])
+        assertEquals("SENSOR_DELAY_GAME", enabled.configEventFields["shake_sampling"])
+        assertEquals(true, enabled.registerShakeListener)
+    }
+
+    @Test
     fun stopGateUsesSpeedBoundaryAndThreeSecondDwell() {
         val gate = StopGate()
         gate.onLocation(0L, 0.49f, 50f)
