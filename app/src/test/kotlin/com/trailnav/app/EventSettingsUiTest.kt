@@ -3,6 +3,7 @@ package com.trailnav.app
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class EventSettingsUiTest {
     @Test
@@ -71,5 +72,54 @@ class EventSettingsUiTest {
 
         assertNull(EventSettingsUi.resolveDialogSelection(draft, accepted = false))
         assertEquals(EventSettings.defaults(), saved)
+    }
+
+    @Test
+    fun combinedDialogSaveCommitsBothDraftsWhileCancelLeavesStoredValuesUntouched() {
+        val initiallySavedEvents = GuideEvent.values().fold(EventSettings.defaults()) { settings, event ->
+            settings.withEnabled(event, true)
+        }
+        val initiallySaved = NavigationSettingsSelection(initiallySavedEvents, onDemandEnabled = false)
+        var persisted = initiallySaved
+
+        val cancelledEvents = EventSettingsUi.checkedItems(initiallySavedEvents).apply { this[0] = false }
+        val cancelled = NavigationSettingsUi.resolveDialogSelection(
+            eventChecked = cancelledEvents,
+            onDemandEnabled = true,
+            accepted = false,
+        )
+        if (cancelled != null) persisted = cancelled
+        assertEquals(initiallySaved, persisted)
+
+        val savedEvents = EventSettingsUi.checkedItems(initiallySavedEvents).apply {
+            this[1] = false
+            this[4] = false
+        }
+        val saved = NavigationSettingsUi.resolveDialogSelection(
+            eventChecked = savedEvents,
+            onDemandEnabled = false,
+            accepted = true,
+        )
+        persisted = requireNotNull(saved)
+
+        assertEquals(EventSettingsUi.settingsFromCheckedItems(savedEvents), persisted.eventSettings)
+        assertEquals(false, persisted.onDemandEnabled)
+    }
+
+    @Test
+    fun restoringDialogDefaultsResetsEventsAndEnablesShakeBeforeSave() {
+        val eventDraft = BooleanArray(GuideEvent.values().size) { true }
+
+        val resetOnDemandEnabled = NavigationSettingsUi.resetToDefaults(eventDraft)
+        assertEquals(EventSettingsUi.defaultCheckedItems().toList(), eventDraft.toList())
+        assertTrue(resetOnDemandEnabled)
+
+        val saved = NavigationSettingsUi.resolveDialogSelection(
+            eventChecked = eventDraft,
+            onDemandEnabled = resetOnDemandEnabled,
+            accepted = true,
+        )
+        assertEquals(EventSettings.defaults(), saved?.eventSettings)
+        assertEquals(true, saved?.onDemandEnabled)
     }
 }

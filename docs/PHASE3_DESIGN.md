@@ -25,9 +25,9 @@ The shared status model maps to both channels:
 
 P3-4 will test that these item sets and distance strings are produced from the same `RouteStatus`.
 
-## Q4. Media button
+## Q4. On-demand trigger
 
-The service creates a `MediaSession` only after a guidance session starts, handles one `HEADSETHOOK` or `MEDIA_PLAY_PAUSE` key-down, and releases the session when the service ends. It does not claim volume keys and does not create a media playback notification. Other media apps may receive events when TrailNav is inactive; while active, the session callback is the deliberate comparison candidate for D-R6.
+The initial P3-1 trigger design included a headset-control path. D-067 removed that path, so on-demand status requests now use shake detection only. The temporary stop gate also requires recent trusted location speed below 0.5 m/s, accuracy within 50 m, and three seconds of continuous stationary evidence; missing or stale speed fails closed. The implementation does not intercept volume keys or change audio focus.
 
 ## Q5. Shake detector and battery measurement
 
@@ -43,9 +43,9 @@ The engine, guide stream, session schema, and fixture outputs are deliberately o
 
 This addendum keeps Q1-Q6 above and records the revised Phase 3 numbering and Q7-Q10 decisions. Engine A/B/C are P3-2/P3-3/P3-4, tools and schema are P3-5, app integration is P3-6, final fixture regeneration is P3-7, and UX follow-up is P3-8.
 
-### Q4 — MediaSession and battery evidence
+### Q4 — On-demand trigger and battery evidence
 
-The current P3-1 plumbing creates a `MediaSession`, sets `FLAG_HANDLES_MEDIA_BUTTONS`, installs the callback, and sets `isActive = true` only while the foreground navigation service is running. It does not claim audio focus or set a competing playback state, so it must not take over another media app. Whether Android delivers the headset button while another media app is playing is an owner-device result; the implementation will record the result after the separate wired/Bluetooth trial. This PR does not intercept volume keys.
+The current on-demand request path is shake-only. D-067 removed headset controls from the path; D-091-a adds a temporary stop gate that fails closed when a recent trusted speed fix is unavailable. The path does not claim audio focus or intercept volume keys.
 
 Q5's battery plan is tied to the on-demand shake summary: the service records only per-minute maximum acceleration deviation, p95 deviation, and threshold-exceedance count in `sys` events. It never records the raw accelerometer series. The owner trial compares a three-hour baseline and a three-hour run with all Phase 3 triggers enabled on the same device, build, brightness, network, and route. The acceptance target is the existing D-041 35 percentage-point limit.
 

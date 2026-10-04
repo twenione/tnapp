@@ -99,3 +99,25 @@ internal object EventSettingsUi {
         accepted: Boolean,
     ): EventSettings? = if (accepted) settingsFromCheckedItems(checked) else null
 }
+
+internal data class NavigationSettingsSelection(
+    val eventSettings: EventSettings,
+    val onDemandEnabled: Boolean,
+)
+
+/** Keeps the D-069 shake toggle independent from the E1–E8 event selections. */
+internal object NavigationSettingsUi {
+    fun resetToDefaults(eventChecked: BooleanArray): Boolean {
+        EventSettingsUi.resetToDefaults(eventChecked)
+        return true
+    }
+
+    fun resolveDialogSelection(
+        eventChecked: BooleanArray,
+        onDemandEnabled: Boolean,
+        accepted: Boolean,
+    ): NavigationSettingsSelection? {
+        val settings = EventSettingsUi.resolveDialogSelection(eventChecked, accepted) ?: return null
+        return NavigationSettingsSelection(settings, onDemandEnabled)
+    }
+}

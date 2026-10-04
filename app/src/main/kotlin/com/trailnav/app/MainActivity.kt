@@ -16,8 +16,10 @@ import android.provider.OpenableColumns
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.ListView
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -642,16 +644,46 @@ class MainActivity : AppCompatActivity() {
         if (isFinishing || isDestroyed) return
         val currentSettings = NavigationPreferences.eventSettings(this)
         val checked = EventSettingsUi.checkedItems(currentSettings)
+        val onDemandEnabled = CheckBox(this).apply {
+            text = "정지 상태에서 흔들어 경로 상태 확인"
+            isChecked = NavigationPreferences.onDemandEnabled(this@MainActivity)
+        }
+        val eventCheckBoxes = EventSettingsUi.labels().mapIndexed { index, label ->
+            CheckBox(this).apply {
+                text = label
+                isChecked = checked[index]
+            }
+        }
+        val density = resources.displayMetrics.density
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((20 * density).roundToInt(), 0, (20 * density).roundToInt(), 0)
+            addView(onDemandEnabled)
+            addView(TextView(this@MainActivity).apply {
+                text = "안내 이벤트 (E1–E8)"
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(0, (8 * density).roundToInt(), 0, (4 * density).roundToInt())
+            })
+            eventCheckBoxes.forEach { addView(it) }
+        }
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(content)
+        }
         val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("안내 설정")
-            .setMultiChoiceItems(EventSettingsUi.labels().toTypedArray(), checked) { _, which, isChecked ->
-                if (which in checked.indices) checked[which] = isChecked
-            }
+            .setView(scroll)
             .setNegativeButton("취소", null)
             .setNeutralButton("기본값으로 되돌리기", null)
             .setPositiveButton("저장") { _, _ ->
-                EventSettingsUi.resolveDialogSelection(checked, accepted = true)?.let { settings ->
-                    NavigationPreferences.saveEventSettings(this, settings)
+                eventCheckBoxes.forEachIndexed { index, checkBox -> checked[index] = checkBox.isChecked }
+                NavigationSettingsUi.resolveDialogSelection(
+                    eventChecked = checked,
+                    onDemandEnabled = onDemandEnabled.isChecked,
+                    accepted = true,
+                )?.let { selection ->
+                    NavigationPreferences.saveEventSettings(this, selection.eventSettings)
+                    NavigationPreferences.saveOnDemandEnabled(this, selection.onDemandEnabled)
                     status.text = "안내 설정을 저장했습니다. 다음 안내 시작부터 적용됩니다"
                 }
             }
@@ -659,10 +691,8 @@ class MainActivity : AppCompatActivity() {
             .create()
         dialog.setOnShowListener {
             dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
-                EventSettingsUi.resetToDefaults(checked)
-                checked.indices.forEach { index ->
-                    dialog.listView.setItemChecked(index, checked[index])
-                }
+                onDemandEnabled.isChecked = NavigationSettingsUi.resetToDefaults(checked)
+                eventCheckBoxes.forEachIndexed { index, checkBox -> checkBox.isChecked = checked[index] }
             }
         }
         dialog.show()
