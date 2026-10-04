@@ -635,7 +635,7 @@ class TrailForegroundService : Service() {
         if (paused) {
             builder.addAction(notificationAction(ACTION_NOTIFICATION_RESUME, 1002, "재개"))
             builder.addAction(notificationAction(ACTION_NOTIFICATION_END, 1003, "종료"))
-        } else if (showPauseAction || (sessionStarted && imuCollectEnabled)) {
+        } else if (showPauseAction) {
             builder.addAction(notificationAction(ACTION_NOTIFICATION_PAUSE, 1004, "안내 일시중지"))
         }
         if (sessionStarted && imuCollectEnabled) {
