@@ -6,6 +6,7 @@ import com.trailnav.core.Side
 import com.trailnav.core.SlopeKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 class GuidancePhrasesTest {
     @Test
@@ -38,9 +39,20 @@ class GuidancePhrasesTest {
     }
 
     @Test
-    fun turnPhrasesUseDirectionAndDistance() {
-        assertEquals("45미터 앞, 왼쪽으로 꺾입니다", GuidancePhrases.turnAhead(45.0, Side.LEFT))
-        assertEquals("오른쪽입니다", GuidancePhrases.turnNow(Side.RIGHT))
+    fun turnPhrasesUseFixedPromptAndImmediateDirection() {
+        val prompt = GuidancePhrases.turnAhead(60.0, Side.LEFT)
+        assertEquals("잠시 후 왼쪽으로 꺾입니다", prompt)
+        assertFalse(Regex("\\d").containsMatchIn(prompt))
+        assertEquals("지금 오른쪽입니다", GuidancePhrases.turnNow(Side.RIGHT))
+        assertEquals("지금 왼쪽입니다", GuidancePhrases.turnNow(Side.LEFT))
+    }
+
+    @Test
+    fun turnAheadUsesTheSameWordingFor59And60Meters() {
+        assertEquals(
+            GuidancePhrases.turnAhead(60.0, Side.RIGHT),
+            GuidancePhrases.turnAhead(59.0, Side.RIGHT),
+        )
     }
 
     @Test
@@ -69,10 +81,12 @@ class GuidancePhrasesTest {
     }
 
     @Test
-    fun otherEventPhrasesRemainUnchanged() {
-        assertEquals("1킬로미터 지점입니다", GuidancePhrases.milestone(1_000.0))
-        assertEquals("출발, 1시간 경과", GuidancePhrases.elapsed(1))
-        assertEquals("출발, 2시간 경과", GuidancePhrases.elapsed(2))
+    fun startBasedPhrasesNameTheirReferencePoint() {
+        assertEquals("출발지로부터 1킬로미터", GuidancePhrases.milestone(1_000.0))
+        assertEquals("출발지로부터 2킬로미터", GuidancePhrases.milestone(2_000.0))
+        assertFalse(GuidancePhrases.milestone(1_000.0).contains("지점"))
+        assertEquals("출발지로부터 1시간 경과", GuidancePhrases.elapsed(1))
+        assertEquals("출발지로부터 2시간 경과", GuidancePhrases.elapsed(2))
         assertEquals("목적지까지 500미터", GuidancePhrases.remaining(500.0))
         assertEquals("목적지까지 400미터", GuidancePhrases.remaining(400.0))
         assertEquals("목적지까지 2킬로미터", GuidancePhrases.remaining(1_996.0))
