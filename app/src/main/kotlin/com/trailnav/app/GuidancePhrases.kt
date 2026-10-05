@@ -22,8 +22,8 @@ object GuidancePhrases {
         if (bearingDegrees == null) "경로까지 ${formatDistance(distanceMeters)}"
         else "경로까지 ${formatDistance(distanceMeters)}, ${cardinal(bearingDegrees)}쪽입니다"
     fun arrived(): String = "목적지에 도착했습니다"
-    fun milestone(distanceMeters: Double): String = "${formatDistance(distanceMeters)} 지점입니다"
-    fun elapsed(hours: Int): String = "출발, ${hours}시간 경과"
+    fun milestone(distanceMeters: Double): String = "출발지로부터 ${formatDistance(distanceMeters)}"
+    fun elapsed(hours: Int): String = "출발지로부터 ${hours}시간 경과"
     fun remaining(distanceMeters: Double): String = "목적지까지 ${formatDistance(distanceMeters)}"
     fun ended(): String = "안내를 종료합니다."
     fun slope(kind: SlopeKind): String = if (kind == SlopeKind.ASCENT) "잠시 후 오르막이 끝납니다" else "잠시 후 내리막입니다"
@@ -38,9 +38,9 @@ object GuidancePhrases {
     fun sunrise(minutesRemaining: Int): String = "일출까지 ${minutesRemaining}분입니다"
 
     fun turnAhead(distanceMeters: Double, side: Side): String =
-        "${formatDistance(distanceMeters)} 앞, ${sideLabel(side)}으로 꺾입니다"
+        "잠시 후 ${sideLabel(side)}으로 꺾입니다"
 
-    fun turnNow(side: Side): String = "${sideLabel(side)}입니다"
+    fun turnNow(side: Side): String = "지금 ${sideLabel(side)}입니다"
 
     fun noLocationStatus(): String = "위치를 확인하는 중입니다. 잠시 기다려 주세요."
 
