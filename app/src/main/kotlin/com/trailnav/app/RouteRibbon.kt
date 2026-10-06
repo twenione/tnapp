@@ -3,8 +3,10 @@ package com.trailnav.app
 import com.trailnav.core.GuideConfig
 import com.trailnav.core.GuideResult
 import com.trailnav.core.ProgressDirection
+import com.trailnav.core.RouteTargetEstimate
 import com.trailnav.core.RouteModel
 import com.trailnav.core.Side
+import com.trailnav.core.TargetKind
 import kotlin.math.hypot
 
 /**
@@ -22,6 +24,8 @@ data class RouteRibbonState(
     val accuracyRadiusMeters: Double,
     val remainingDistanceMeters: Double,
     val nextTurn: RibbonNextTurn? = null,
+    val targetKind: TargetKind? = null,
+    val targetRemainingMeters: Double? = null,
 ) {
     val side: RibbonSide
         get() = when {
@@ -37,6 +41,18 @@ enum class RibbonTurnSide { LEFT, RIGHT }
 
 enum class RibbonSide { LEFT, RIGHT, CENTER }
 
+/** Formats the destination or segment target label shown on the route ribbon. */
+fun ribbonDistanceLabel(state: RouteRibbonState): String = when {
+    state.targetKind == TargetKind.NEXT_SUMMIT && state.targetRemainingMeters != null ->
+        "다음 정상까지 ${formatMeters(state.targetRemainingMeters)}"
+    state.targetKind == TargetKind.DESTINATION && state.targetRemainingMeters != null ->
+        "최종 목적지까지 ${formatMeters(state.targetRemainingMeters)}"
+    else -> "목적지까지 ${formatMeters(state.remainingDistanceMeters)}"
+}
+
+internal fun formatMeters(value: Double): String =
+    if (value >= 100.0) "%.0fm".format(value) else "%.1fm".format(value)
+
 /** Pure adapter from a compiled guide result to the UI-facing ribbon state. */
 object RouteRibbonCalculator {
     fun calculate(
@@ -44,6 +60,7 @@ object RouteRibbonCalculator {
         result: GuideResult,
         route: RouteModel,
         config: GuideConfig,
+        target: RouteTargetEstimate? = null,
     ): RouteRibbonState? {
         val match = result.nextState.lastMatch ?: return null
         val signed = signedOffsetMeters(location, route, match.segmentIndex, match.projectedPoint)
@@ -64,6 +81,8 @@ object RouteRibbonCalculator {
             accuracyRadiusMeters = location.accuracyMeters.toDouble().coerceAtLeast(0.0),
             remainingDistanceMeters = (route.totalLengthMeters - match.projectedMeters).coerceAtLeast(0.0),
             nextTurn = nextTurn,
+            targetKind = target?.kind,
+            targetRemainingMeters = target?.remainingMeters,
         )
     }
 

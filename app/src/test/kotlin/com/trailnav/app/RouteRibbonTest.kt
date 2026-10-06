@@ -5,10 +5,13 @@ import com.trailnav.core.GuideConfig
 import com.trailnav.core.GuideState
 import com.trailnav.core.ProgressDirection
 import com.trailnav.core.RouteModel
+import com.trailnav.core.RouteTargetEstimate
+import com.trailnav.core.TargetKind
 import com.trailnav.core.guide
 import kotlin.math.cos
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class RouteRibbonTest {
@@ -34,6 +37,55 @@ class RouteRibbonTest {
         assertEquals(config.offRouteEnterDistMeters, ribbon.enterBandMeters, 0.001)
         assertEquals(config.offRouteExitDistMeters, ribbon.exitBandMeters, 0.001)
         assertTrue(ribbon.remainingDistanceMeters in 40.0..80.0)
+    }
+
+    @Test
+    fun calculatorCarriesAnOptionalRouteTargetWithoutChangingExistingCalls() {
+        val route = route()
+        val config = GuideConfig()
+        val location = location(eastMeters = 5.0, accuracy = 4f)
+        val result = guide(GuideState.initial(route), location.toSensorFrame(), config)
+        val target = RouteTargetEstimate(
+            kind = TargetKind.NEXT_SUMMIT,
+            source = "test",
+            remainingMeters = 850.0,
+            remainingSeconds = 600.0,
+            correction = 1.0,
+            correctionActive = false,
+            slopeSource = "flat",
+        )
+
+        val withTarget = RouteRibbonCalculator.calculate(location, result, route, config, target)!!
+        assertEquals(TargetKind.NEXT_SUMMIT, withTarget.targetKind)
+        assertEquals(850.0, withTarget.targetRemainingMeters)
+
+        val withoutTarget = RouteRibbonCalculator.calculate(location, result, route, config)!!
+        assertNull(withoutTarget.targetKind)
+        assertNull(withoutTarget.targetRemainingMeters)
+    }
+
+    @Test
+    fun ribbonDistanceLabelUsesTargetKindAndFallsBackToDestinationDistance() {
+        val state = RouteRibbonState(
+            perpendicularDistanceMeters = 0.0,
+            signedOffsetMeters = 0.0,
+            direction = ProgressDirection.FORWARD,
+            offRoute = false,
+            enterBandMeters = 25.0,
+            exitBandMeters = 15.0,
+            accuracyRadiusMeters = 5.0,
+            remainingDistanceMeters = 2_000.0,
+        )
+
+        assertEquals(
+            "다음 정상까지 850m",
+            ribbonDistanceLabel(state.copy(targetKind = TargetKind.NEXT_SUMMIT, targetRemainingMeters = 850.0)),
+        )
+        assertEquals(
+            "최종 목적지까지 1234m",
+            ribbonDistanceLabel(state.copy(targetKind = TargetKind.DESTINATION, targetRemainingMeters = 1_234.4)),
+        )
+        assertEquals("목적지까지 2000m", ribbonDistanceLabel(state))
     }
 
     @Test

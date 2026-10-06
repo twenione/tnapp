@@ -91,6 +91,15 @@ class MainActivity : AppCompatActivity() {
                 exitBandMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_EXIT_BAND_METERS, 0.0),
                 accuracyRadiusMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_ACCURACY_METERS, 0.0),
                 remainingDistanceMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_REMAINING_METERS, 0.0),
+                targetKind = runCatching {
+                    com.trailnav.core.TargetKind.valueOf(
+                        intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_TARGET_KIND).orEmpty(),
+                    )
+                }.getOrNull(),
+                targetRemainingMeters = intent.getDoubleExtra(
+                    TrailForegroundService.EXTRA_RIBBON_TARGET_REMAINING_METERS,
+                    -1.0,
+                ).takeIf { it >= 0.0 },
                 nextTurn = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_NEXT_TURN_DISTANCE_METERS, -1.0)
                     .takeIf { it >= 0.0 }
                     ?.let { distance ->
