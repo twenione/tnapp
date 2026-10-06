@@ -501,6 +501,7 @@ def main() -> int:
             ENGINE: (workspace / ENGINE).read_text(encoding="utf-8"),
             ROUTE_SOURCE: (workspace / ROUTE_SOURCE).read_text(encoding="utf-8"),
             ETA_SOURCE: (workspace / ETA_SOURCE).read_text(encoding="utf-8"),
+            TURN_PASS_SOURCE: (workspace / TURN_PASS_SOURCE).read_text(encoding="utf-8"),
         }
         needle_errors = mutation_needle_failures(sources)
         if needle_errors:
