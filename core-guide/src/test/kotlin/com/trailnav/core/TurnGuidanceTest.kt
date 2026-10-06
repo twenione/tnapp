@@ -3,6 +3,7 @@ package com.trailnav.core
 import kotlin.math.cos
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -25,7 +26,9 @@ class TurnGuidanceTest {
         val ahead = guide(state, SensorFrame(1_000L, 10.0013, 20.0, 5f, 1f, null), GuideConfig())
         assertIs<Guidance.TurnAhead>(ahead.guidance)
         assertEquals(Side.RIGHT, (ahead.guidance as Guidance.TurnAhead).side)
+        assertEquals(0, (ahead.guidance as Guidance.TurnAhead).turnIndex)
         assertEquals("turn.ahead", ahead.reason.rule)
+        assertEquals((ahead.guidance as Guidance.TurnAhead).turnIndex.toString(), ahead.reason.details["turnIndex"])
         state = ahead.nextState
         val repeatedAhead = guide(state, SensorFrame(1_500L, 10.00135, 20.0, 5f, 1f, null), GuideConfig())
         assertNull(repeatedAhead.guidance, "a turn-ahead announcement is consumed per turn index")
@@ -33,8 +36,14 @@ class TurnGuidanceTest {
         val now = guide(state, SensorFrame(2_000L, 10.0017, 20.0, 5f, 1f, null), GuideConfig())
         assertIs<Guidance.TurnNow>(now.guidance)
         assertEquals(Side.RIGHT, (now.guidance as Guidance.TurnNow).side)
+        assertEquals(0, (now.guidance as Guidance.TurnNow).turnIndex)
         assertEquals("turn.now", now.reason.rule)
-        val repeated = guide(now.nextState, SensorFrame(3_000L, 10.00175, 20.0, 5f, 1f, null), GuideConfig())
+        assertEquals((now.guidance as Guidance.TurnNow).turnIndex.toString(), now.reason.details["turnIndex"])
+        val turnIndex = (now.guidance as Guidance.TurnNow).turnIndex
+        assertFalse(turnPassed(now.nextState, turnIndex))
+        val afterTurn = guide(now.nextState, SensorFrame(2_500L, 10.0018, 20.0001, 5f, 1f, null), GuideConfig())
+        assertTrue(turnPassed(afterTurn.nextState, turnIndex))
+        val repeated = guide(afterTurn.nextState, SensorFrame(3_000L, 10.0018, 20.0002, 5f, 1f, null), GuideConfig())
         assertNull(repeated.guidance)
     }
 
@@ -141,6 +150,7 @@ class TurnGuidanceTest {
         assertNull(onShortLeg.guidance, "the second turn's ahead cue is merged into the first")
         val atSecondTurn = guide(onShortLeg.nextState, frameAt(route, 4, 4_000L), config)
         assertIs<Guidance.TurnNow>(atSecondTurn.guidance)
+        assertEquals(1, (atSecondTurn.guidance as Guidance.TurnNow).turnIndex)
         assertEquals("1", atSecondTurn.reason.details["turnIndex"])
     }
 
@@ -150,6 +160,7 @@ class TurnGuidanceTest {
         val route = adjacentTurnsRoute(50.0, config)
         val secondTurn = afterFirstTurn(route, config, expectedGapMeters = 50.0)
         assertIs<Guidance.TurnAhead>(secondTurn.guidance)
+        assertEquals(1, (secondTurn.guidance as Guidance.TurnAhead).turnIndex)
         assertEquals("1", secondTurn.reason.details["turnIndex"])
     }
 

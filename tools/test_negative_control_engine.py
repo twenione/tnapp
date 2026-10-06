@@ -41,6 +41,9 @@ def test_required_mutation_consumers() -> None:
         assert "core-guide-test" in required
         assert required & {"replay", "replay-turn-session", "config-sensitivity"}
 
+    assert d033.MUTATION_REQUIRED_CONSUMERS["turn-pass-always-false"] == d033.CORE_TEST
+    assert d033.MUTATION_REQUIRED_CONSUMERS["turn-identity-zero"] == d033.CORE_TEST
+
     for mutation, required in d033.MUTATION_REQUIRED_CONSUMERS.items():
         names = tuple(sorted(required))
         rejected = fake_consumer_runner({name: 1 for name in names}, names)
@@ -86,7 +89,14 @@ def test_unique_mutation_needles() -> None:
     route = route_path.read_text(encoding="utf-8")
     eta_path = Path("core-guide/src/main/kotlin/com/trailnav/core/RouteEta.kt")
     eta = eta_path.read_text(encoding="utf-8")
-    sources = {d033.ENGINE: engine, d033.ROUTE_SOURCE: route, d033.ETA_SOURCE: eta}
+    turn_pass_path = Path("core-guide/src/main/kotlin/com/trailnav/core/TurnPass.kt")
+    turn_pass = turn_pass_path.read_text(encoding="utf-8")
+    sources = {
+        d033.ENGINE: engine,
+        d033.ROUTE_SOURCE: route,
+        d033.ETA_SOURCE: eta,
+        d033.TURN_PASS_SOURCE: turn_pass,
+    }
     assert source and d033.mutation_needle_failures(sources) == []
 
     original = d033.VARIANTS.get("test-duplicate-needle")

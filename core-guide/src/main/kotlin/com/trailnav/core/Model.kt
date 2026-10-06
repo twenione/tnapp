@@ -26,8 +26,8 @@ data class Reason(
 sealed class Guidance {
     data class OffRoute(val distance: Double, val direction: String) : Guidance()
     data class Approach(val distanceMeters: Double, val bearingDegrees: Double) : Guidance()
-    data class TurnAhead(val distance: Double, val side: Side) : Guidance()
-    data class TurnNow(val side: Side) : Guidance()
+    data class TurnAhead(val distance: Double, val side: Side, val turnIndex: Int) : Guidance()
+    data class TurnNow(val side: Side, val turnIndex: Int) : Guidance()
     data class Milestone(val distanceMeters: Double) : Guidance()
     data class Elapsed(val hours: Int) : Guidance()
     data class Remaining(val thresholdMeters: Double, val remainingMeters: Double) : Guidance()

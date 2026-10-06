@@ -40,6 +40,10 @@ VARIANTS = {
  'turn-merge-gap-ignored': ('val suppressAhead = index > 0 &&\n'
                             '                turn.s - state.route.turns[index - 1].s < config.turnMergeGapMeters',
                             'val suppressAhead = false /* D-033 turn merge gap ignored */'),
+ 'turn-pass-always-false': ('return match.projectedMeters >= turn.s',
+                            'return false /* D-033 turn pass always false */'),
+ 'turn-identity-zero': ('Guidance.TurnNow(turn.side, index)',
+                        'Guidance.TurnNow(turn.side, 0) /* D-033 turn identity zero */'),
  'turn-consumption': ('next.copy(completedTurnAheadIndices = next.completedTurnAheadIndices + index)',
                       'next.copy(completedTurnAheadIndices = next.completedTurnAheadIndices) /* D-033 turn '
                       'consumption removed */'),
@@ -287,7 +291,9 @@ VARIANTS = {
 
 ROUTE_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/Route.kt")
 ETA_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/RouteEta.kt")
+TURN_PASS_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/TurnPass.kt")
 VARIANT_SOURCE_PATHS = {
+    "turn-pass-always-false": TURN_PASS_SOURCE,
     "turn-axis-simplified": ROUTE_SOURCE,
     "elevation-waypoint-mix": ROUTE_SOURCE,
     "elevation-always-ok": ROUTE_SOURCE,
@@ -313,6 +319,8 @@ MUTATION_REQUIRED_CONSUMERS = {
     "config-constant": OFF_ROUTE_CONSUMERS,
     "unit-heuristic": OFF_ROUTE_CONSUMERS,
     "turn-merge-gap-ignored": CORE_TEST,
+    "turn-pass-always-false": CORE_TEST,
+    "turn-identity-zero": CORE_TEST,
     "turn-consumption": frozenset({"core-guide-test", "replay"}),
     "turn-direction-gate": TURN_CONSUMERS,
     # The geometric turn session stays on-route; off-route suppression is

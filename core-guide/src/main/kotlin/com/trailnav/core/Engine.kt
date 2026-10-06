@@ -832,13 +832,13 @@ private fun evaluateTurnGuidance(
                 completedTurnAheadIndices = next.completedTurnAheadIndices + index,
                 completedTurnNowIndices = next.completedTurnNowIndices + index
             ),
-            Guidance.TurnNow(turn.side),
+            Guidance.TurnNow(turn.side, index),
             Reason("turn.now", thresholds, details = details)
         )
     } else {
         TurnEvaluation(
             next.copy(completedTurnAheadIndices = next.completedTurnAheadIndices + index),
-            Guidance.TurnAhead(remaining, turn.side),
+            Guidance.TurnAhead(remaining, turn.side, index),
             Reason("turn.ahead", thresholds, details = details)
         )
     }
