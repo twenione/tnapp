@@ -788,7 +788,8 @@ class TrailForegroundService : Service() {
     private fun publishRouteRibbon(location: TrailLocation, decision: SessionDecision) {
         val route = currentRoute ?: return
         val config = currentGuideConfig ?: return
-        val ribbon = RouteRibbonCalculator.calculate(location, decision.result, route, config) ?: return
+        val target = guideSession?.routeStatus()?.target
+        val ribbon = RouteRibbonCalculator.calculate(location, decision.result, route, config, target) ?: return
         sendBroadcast(
             Intent(ACTION_ROUTE_RIBBON_UPDATE)
                 .setPackage(packageName)
@@ -800,6 +801,8 @@ class TrailForegroundService : Service() {
                 .putExtra(EXTRA_RIBBON_EXIT_BAND_METERS, ribbon.exitBandMeters)
                 .putExtra(EXTRA_RIBBON_ACCURACY_METERS, ribbon.accuracyRadiusMeters)
                 .putExtra(EXTRA_RIBBON_REMAINING_METERS, ribbon.remainingDistanceMeters)
+                .putExtra(EXTRA_RIBBON_TARGET_KIND, ribbon.targetKind?.name.orEmpty())
+                .putExtra(EXTRA_RIBBON_TARGET_REMAINING_METERS, ribbon.targetRemainingMeters ?: -1.0)
                 .putExtra(EXTRA_RIBBON_NEXT_TURN_DISTANCE_METERS, ribbon.nextTurn?.distanceMeters ?: -1.0)
                 .putExtra(EXTRA_RIBBON_NEXT_TURN_SIDE, ribbon.nextTurn?.side?.name.orEmpty()),
         )
@@ -1071,6 +1074,8 @@ class TrailForegroundService : Service() {
         const val EXTRA_RIBBON_EXIT_BAND_METERS = "ribbon_exit_band_meters"
         const val EXTRA_RIBBON_ACCURACY_METERS = "ribbon_accuracy_meters"
         const val EXTRA_RIBBON_REMAINING_METERS = "ribbon_remaining_meters"
+        const val EXTRA_RIBBON_TARGET_KIND = "ribbon_target_kind"
+        const val EXTRA_RIBBON_TARGET_REMAINING_METERS = "ribbon_target_remaining_meters"
         const val EXTRA_RIBBON_NEXT_TURN_DISTANCE_METERS = "ribbon_next_turn_distance_meters"
         const val EXTRA_RIBBON_NEXT_TURN_SIDE = "ribbon_next_turn_side"
         private const val LOCATION_FIX_TIMEOUT_MILLIS = 15_000L

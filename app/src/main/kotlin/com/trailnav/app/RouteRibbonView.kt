@@ -157,7 +157,7 @@ class RouteRibbonView @JvmOverloads constructor(
         drawText(canvas, "↓ 지난 경로", centerX + dp(8f), ribbonBottom - dp(4f), 12f, Color.LTGRAY)
         drawText(canvas, "진입 ${formatMeters(current.enterBandMeters)}", left + dp(10f), ribbonTop + dp(22f), 14f, Color.LTGRAY)
         drawText(canvas, "복귀 ${formatMeters(current.exitBandMeters)}", right - dp(10f), ribbonTop + dp(22f), 14f, Color.LTGRAY, Paint.Align.RIGHT)
-        drawText(canvas, "목적지까지 ${formatMeters(current.remainingDistanceMeters)}", left + dp(10f), ribbonBottom - dp(12f), 14f, Color.WHITE)
+        drawText(canvas, ribbonDistanceLabel(current), left + dp(10f), ribbonBottom - dp(12f), 14f, Color.WHITE)
         drawText(canvas, "GPS 정확도 ${formatMeters(current.accuracyRadiusMeters)}", right - dp(10f), ribbonBottom - dp(12f), 13f, Color.LTGRAY, Paint.Align.RIGHT)
         current.nextTurn?.let { next ->
             val sideText = if (next.side == RibbonTurnSide.LEFT) "왼쪽" else "오른쪽"
@@ -187,8 +187,6 @@ class RouteRibbonView @JvmOverloads constructor(
         textPaint.textAlign = align
         canvas.drawText(text, x, y, textPaint)
     }
-
-    private fun formatMeters(value: Double): String = if (value >= 100.0) "%.0fm".format(value) else "%.1fm".format(value)
 
     private fun dp(value: Float): Float = value * resources.displayMetrics.density
     private fun sp(value: Float): Float = value * resources.displayMetrics.scaledDensity
