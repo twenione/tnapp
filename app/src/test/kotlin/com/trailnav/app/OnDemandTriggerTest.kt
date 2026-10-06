@@ -1,6 +1,7 @@
 package com.trailnav.app
 
 import com.trailnav.core.Guidance
+import com.trailnav.core.Side
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -34,13 +35,14 @@ class OnDemandTriggerTest {
     }
 
     @Test
-    fun onlyTurnNowFlushesVoiceQueue() {
-        assertTrue(shouldFlushVoiceQueue(Guidance.TurnNow(com.trailnav.core.Side.RIGHT)))
-        assertFalse(shouldFlushVoiceQueue(Guidance.OffRoute(30.0, "forward")))
-        assertFalse(shouldFlushVoiceQueue(Guidance.Status("상태")))
-        assertFalse(shouldFlushVoiceQueue(Guidance.TurnAhead(20.0, com.trailnav.core.Side.LEFT)))
-        assertFalse(shouldFlushVoiceQueue(Guidance.Sunset(30)))
-        assertFalse(shouldFlushVoiceQueue(null))
+    fun onDemandResponseUsesNormalVoicePriority() {
+        assertEquals(VoicePriority.NORMAL, onDemandVoicePriority(Guidance.Status("상태")))
+    }
+
+    @Test
+    fun turnPrioritiesReplaceTheOldFlushPolicy() {
+        assertEquals(VoicePriority.TIME_CRITICAL, priorityFor(Guidance.TurnNow(Side.RIGHT, 0), "turn.now", false))
+        assertEquals(VoicePriority.NORMAL, priorityFor(Guidance.TurnAhead(20.0, Side.LEFT, 0), "turn.ahead", false))
     }
 
     @Test
