@@ -27,6 +27,7 @@ import com.trailnav.core.Guidance
 import com.trailnav.core.RouteModel
 import com.trailnav.core.GuideResult
 import com.trailnav.core.Reason
+import com.trailnav.core.turnPassed
 import java.io.File
 import java.util.UUID
 
@@ -39,6 +40,9 @@ class TrailForegroundService : Service() {
     private var logger: JsonlSessionLogger? = null
     private var guideSession: GuideSession? = null
     private var tts: TtsController? = null
+    private val voiceQueue = VoiceQueuePolicy()
+    private val voiceCompletionCallbacks = mutableMapOf<String, () -> Unit>()
+    private val turnExpiryCallbacks = mutableMapOf<String, Runnable>()
     private var gpsSignalMonitor: GpsSignalMonitor? = null
     private var onRouteVoiceScheduler: OnRouteVoiceScheduler? = null
     private var onRouteVoiceMode = NavigationPreferences.PeriodicVoiceMode.OFF
@@ -50,6 +54,7 @@ class TrailForegroundService : Service() {
     private var paused = false
     private var offRoutePausePrompted = false
     private val pauseAvailability = GuidancePauseAvailability()
+    private val pausedRecoveryNotificationState = PausedRecoveryNotificationState()
     private var endReason = "service-destroy"
     private var activeSessionId: String? = null
     private var lastLocation: TrailLocation? = null
@@ -208,7 +213,14 @@ class TrailForegroundService : Service() {
             routeElevationReason = parsedRoute.elevationReason,
             routeWaypointCount = parsedRoute.waypoints.size,
         )
-        tts = TtsController(this) { status -> logger?.appendSystem(status) }
+        tts = TtsController(
+            context = this,
+            onStatus = { status -> logger?.appendSystem(status) },
+            onReady = ::pumpVoiceQueue,
+            onInitFailure = ::failVoiceQueue,
+            onStarted = ::onVoiceStarted,
+            onFinished = ::onVoiceFinished,
+        )
         tonePlayer = TonePlayer()
         guideSession = null
         currentRoute = null
@@ -216,6 +228,7 @@ class TrailForegroundService : Service() {
         routeStartupCoordinator = RouteStartupCoordinator(xml, config, SystemClock.elapsedRealtime())
         previousOffRoute = false
         paused = false
+        pausedRecoveryNotificationState.onResume()
         pauseAvailability.reset()
         offRoutePausePrompted = false
         endReason = "service-destroy"
@@ -248,7 +261,7 @@ class TrailForegroundService : Service() {
         startForegroundCompat()
         publishServiceState()
         publishRoutePreparation(RoutePreparationStage.PREPARING)
-        tts?.speak("안내를 준비중입니다.")
+        enqueueVoice("안내를 준비중입니다.", source = "system")
         logger?.appendSystem(
             "service.started",
             mapOf("provider" to "fused", "interval_ms" to "1000", "battery_pct" to batteryPercent()),
@@ -307,10 +320,8 @@ class TrailForegroundService : Service() {
         uninstallOnDemandTriggers()
         tonePlayer?.close()
         onRouteVoiceScheduler?.reset()
-        val finished = tts?.speakWithCompletion(GuidancePhrases.ended(), flush = true) {
-            mainHandler.post { finishUserEnd() }
-        } == true
-        if (finished) {
+        val enqueued = enqueueVoice(GuidancePhrases.ended(), source = "system", onFinished = ::finishUserEnd)
+        if (enqueued) {
             mainHandler.removeCallbacks(endTimeout)
             mainHandler.postDelayed(endTimeout, END_TTS_TIMEOUT_MILLIS)
         } else {
@@ -375,6 +386,142 @@ class TrailForegroundService : Service() {
         processGuidance(location, locationSeq)
     }
 
+    private fun enqueueVoice(
+        text: String,
+        source: String,
+        priority: VoicePriority = VoicePriority.NORMAL,
+        protected: Boolean = false,
+        turnIndex: Int? = null,
+        onFinished: (() -> Unit)? = null,
+    ): Boolean {
+        if (text.isBlank() || ending && source != "system") return false
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post {
+                enqueueVoice(text, source, priority, protected, turnIndex, onFinished)
+            }
+            return true
+        }
+        val item = VoiceQueueItem(
+            id = UUID.randomUUID().toString(),
+            text = text,
+            priority = priority,
+            protected = protected,
+            source = source,
+            turnIndex = turnIndex,
+            enqueuedAtMillis = SystemClock.elapsedRealtime(),
+        )
+        if (onFinished != null) voiceCompletionCallbacks[item.id] = onFinished
+        val result = voiceQueue.enqueue(item)
+        logVoiceDrops(result.dropped)
+        result.stopActive?.let { tts?.stop() }
+        if (priority == VoicePriority.TIME_CRITICAL && item in voiceQueue.pendingItems) {
+            scheduleTurnExpiry(item)
+        }
+        val controller = tts
+        if (controller == null || !controller.isReady) controller?.reportPending()
+        else pumpVoiceQueue()
+        return true
+    }
+
+    private fun scheduleTurnExpiry(item: VoiceQueueItem) {
+        cancelTurnExpiry(item.id)
+        val now = SystemClock.elapsedRealtime()
+        val elapsed = (now - item.enqueuedAtMillis).coerceAtLeast(0L)
+        val delay = if (elapsed < TURN_NOW_UNPASSED_CAP_MILLIS) {
+            TURN_NOW_UNPASSED_CAP_MILLIS - elapsed
+        } else {
+            TURN_STALE_RECHECK_MILLIS
+        }
+        val callback = Runnable {
+            turnExpiryCallbacks.remove(item.id)
+            if (voiceQueue.pendingItems.any { it.id == item.id }) {
+                refreshPendingVoiceTurns(guideSession?.snapshot())
+                if (voiceQueue.pendingItems.any { it.id == item.id }) scheduleTurnExpiry(item)
+                pumpVoiceQueue()
+            }
+        }
+        turnExpiryCallbacks[item.id] = callback
+        mainHandler.postDelayed(callback, delay)
+    }
+
+    private fun cancelTurnExpiry(id: String) {
+        turnExpiryCallbacks.remove(id)?.let(mainHandler::removeCallbacks)
+    }
+
+    private fun locationIsStale(nowMillis: Long): Boolean =
+        stopGate.check(nowMillis).reason == StopGateReason.SPEED_UNAVAILABLE
+
+    private fun refreshPendingVoiceTurns(snapshot: com.trailnav.core.GuideState?) {
+        val now = SystemClock.elapsedRealtime()
+        val dropped = voiceQueue.refreshPendingTurns(
+            nowMillis = now,
+            locationStale = locationIsStale(now),
+            hasPassed = { index -> snapshot?.let { turnPassed(it, index) } ?: false },
+        )
+        logVoiceDrops(dropped)
+    }
+
+    private fun pumpVoiceQueue() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(::pumpVoiceQueue)
+            return
+        }
+        val controller = tts ?: return
+        if (!controller.isReady) return
+        while (controller.isReady) {
+            val now = SystemClock.elapsedRealtime()
+            val snapshot = guideSession?.snapshot()
+            val next = voiceQueue.beginNext(
+                nowMillis = now,
+                locationStale = locationIsStale(now),
+                hasPassed = { index -> snapshot?.let { turnPassed(it, index) } ?: false },
+            )
+            logVoiceDrops(next.dropped)
+            val item = next.started ?: return
+            cancelTurnExpiry(item.id)
+            if (controller.start(item)) return
+            onVoiceFinished(item.id, TtsController.OUTCOME_ERROR)
+        }
+    }
+
+    private fun onVoiceStarted(id: String) {
+        val item = voiceQueue.activeItem?.takeIf { it.id == id } ?: return
+        logger?.appendSystem("tts.started", voiceItemFields(item))
+    }
+
+    private fun onVoiceFinished(id: String, outcome: String) {
+        val item = voiceQueue.finishActive(id) ?: return
+        cancelTurnExpiry(item.id)
+        logger?.appendSystem("tts.done", voiceItemFields(item) + ("outcome" to outcome))
+        voiceCompletionCallbacks.remove(id)?.invoke()
+        pumpVoiceQueue()
+    }
+
+    private fun failVoiceQueue() {
+        val failed = voiceQueue.failAll()
+        failed.forEach { item ->
+            cancelTurnExpiry(item.id)
+            logger?.appendSystem("tts.done", voiceItemFields(item) + ("outcome" to TtsController.OUTCOME_ERROR))
+            voiceCompletionCallbacks.remove(item.id)?.invoke()
+        }
+    }
+
+    private fun logVoiceDrops(dropped: List<VoiceDropped>) {
+        dropped.forEach { entry ->
+            val item = entry.item
+            cancelTurnExpiry(item.id)
+            logger?.appendSystem("voice.dropped", voiceItemFields(item) + ("reason" to entry.reason))
+            voiceCompletionCallbacks.remove(item.id)?.invoke()
+        }
+    }
+
+    private fun voiceItemFields(item: VoiceQueueItem): Map<String, String> = mapOf(
+        "utterance_id" to item.id,
+        "priority" to item.priority.name,
+        "source" to item.source,
+        "protected" to item.protected.toString(),
+    )
+
     private fun finishRouteStartup(update: RouteStartupUpdate) {
         val orientation = update.orientation ?: return
         mainHandler.removeCallbacks(routeOrientationTimeout)
@@ -399,7 +546,7 @@ class TrailForegroundService : Service() {
             ),
         )
         publishRoutePreparation(RoutePreparationStage.DIRECTION_CONFIRMED)
-        tts?.speak("안내를 시작합니다.")
+        enqueueVoice("안내를 시작합니다", source = "system")
         update.replayLocations.forEachIndexed { index, replayLocation ->
             processGuidance(replayLocation, update.replaySourceSeqs.getOrNull(index))
         }
@@ -410,15 +557,20 @@ class TrailForegroundService : Service() {
         val decision = session.accept(location)
         publishRouteRibbon(location, decision)
         val guidance = decision.result.guidance
+        val currentOffRoute = decision.result.nextState.offRoute
         val recoveryPrompt = recoveryVoicePrompt(
             previousOffRoute = previousOffRoute,
-            currentOffRoute = decision.result.nextState.offRoute,
+            currentOffRoute = currentOffRoute,
         )
-        updateOffRoutePauseAvailability(decision.result.nextState.offRoute)
-        previousOffRoute = decision.result.nextState.offRoute
+        if (!previousOffRoute && currentOffRoute) pausedRecoveryNotificationState.onNewOffRouteEntry()
+        if (recoveryPrompt != null && paused) pausedRecoveryNotificationState.onRecovery(paused = true)
+        updateOffRoutePauseAvailability(currentOffRoute)
+        previousOffRoute = currentOffRoute
+        refreshPendingVoiceTurns(decision.result.nextState)
         val spoken = guidance.toSpeech()
         val guidanceVoiceKind = voiceKindFor(guidance)
         val guidanceVoiceAllowed = shouldSpeakVoice(ending, paused, guidanceVoiceKind)
+        val recoveryVoiceAllowed = shouldSpeakVoice(ending, paused, VoiceKind.RECOVERY)
         val gpsAccuracyRejected = decision.result.reason.rule == "input.accuracy-filter"
         val periodic = if (paused) {
             onRouteVoiceScheduler?.reset()
@@ -433,7 +585,7 @@ class TrailForegroundService : Service() {
         ) == true
         val frameSpeech = listOfNotNull(
             spoken?.takeIf { guidanceVoiceAllowed },
-            recoveryPrompt?.takeIf { !paused },
+            recoveryPrompt?.takeIf { recoveryVoiceAllowed },
         ).joinToString(" ").ifBlank { null }
         logger?.appendEnvelope(location, "guide", "decision")
         logger?.appendGuide(
@@ -446,7 +598,7 @@ class TrailForegroundService : Service() {
         if (paused) {
             listOfNotNull(
                 spoken?.takeIf { !guidanceVoiceAllowed }?.let { guidanceVoiceKind to it },
-                recoveryPrompt?.let { VoiceKind.RECOVERY to it },
+                recoveryPrompt?.takeIf { !recoveryVoiceAllowed }?.let { VoiceKind.RECOVERY to it },
             ).forEach { (kind, _) ->
                 logger?.appendSystem(
                     "voice.suppressed",
@@ -457,31 +609,57 @@ class TrailForegroundService : Service() {
                 )
             }
             if (guidanceVoiceAllowed && !spoken.isNullOrBlank()) {
-                tts?.speak(spoken, flush = shouldFlushVoiceQueue(guidance))
+                enqueueGuidanceVoice(guidance, decision.result.reason.rule, spoken)
             }
         } else if (!spoken.isNullOrBlank()) {
-            tts?.speak(spoken, flush = shouldFlushVoiceQueue(guidance))
+            enqueueGuidanceVoice(guidance, decision.result.reason.rule, spoken)
         }
-        if (!paused && recoveryPrompt != null) {
+        if (recoveryVoiceAllowed && recoveryPrompt != null) {
             logger?.appendSystem(
                 "voice.recovered",
                 mapOf("prompt" to recoveryPrompt),
             )
-            tts?.speak(recoveryPrompt)
+            enqueueVoice(
+                recoveryPrompt,
+                source = "recovery",
+                priority = VoicePriority.STATE_TRANSITION,
+                protected = true,
+            )
         }
         if (!ending && !paused && periodic && onRouteVoiceMode == NavigationPreferences.PeriodicVoiceMode.TONE) {
             logger?.appendSystem("voice.on-route-tone", mapOf("mode" to "TONE"))
             tonePlayer?.play(ToneSynth.periodicSignal())
         }
         updateNotification(decision.result.guidance)
+        pumpVoiceQueue()
+    }
+
+    private fun enqueueGuidanceVoice(guidance: Guidance?, reasonRule: String, text: String) {
+        enqueueVoice(
+            text = text,
+            source = "guidance",
+            priority = priorityFor(guidance, reasonRule, recovery = false),
+            protected = isProtected(guidance, recovery = false, reasonRule = reasonRule),
+            turnIndex = (guidance as? Guidance.TurnNow)?.turnIndex,
+        )
     }
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(noLocationWarning)
         mainHandler.removeCallbacks(routeOrientationTimeout)
         mainHandler.removeCallbacks(endTimeout)
+        turnExpiryCallbacks.values.forEach(mainHandler::removeCallbacks)
+        turnExpiryCallbacks.clear()
         source?.stop()
         source = null
+        val voiceShutdown = voiceQueue.shutdown()
+        voiceShutdown.active?.let { item ->
+            logger?.appendSystem("tts.done", voiceItemFields(item) + ("outcome" to TtsController.OUTCOME_STOPPED))
+        }
+        voiceShutdown.pending.forEach { drop ->
+            logger?.appendSystem("voice.dropped", voiceItemFields(drop.item) + ("reason" to drop.reason))
+        }
+        voiceCompletionCallbacks.clear()
         if (sessionStarted) logger?.appendSystem(
             "service.stopped",
             mapOf("battery_pct" to batteryPercent(), "reason" to endReason),
@@ -545,7 +723,7 @@ class TrailForegroundService : Service() {
         NotificationManagerCompat.from(this).notify(
             NOTIFICATION_ID,
             notification(
-                if (paused) "안내 일시중지 중" else message,
+                if (paused) pausedRecoveryNotificationState.recoveryTextOrNull() ?: "안내 일시중지 중" else message,
                 showPauseAction = !paused && offRoutePausePrompted,
             ),
         )
@@ -554,8 +732,9 @@ class TrailForegroundService : Service() {
     private fun pauseGuidance(source: String) {
         if (ending) return
         if (paused) return
-        tts?.speak("안내를 일시중지했습니다")
+        enqueueVoice("안내를 일시중지했습니다", source = "system")
         paused = true
+        pausedRecoveryNotificationState.onPause()
         onRouteVoiceScheduler?.reset()
         logger?.appendSystem("guidance.paused", mapOf("source" to source))
         NavigationPreferences.setState(this, NavigationPreferences.STATE_PAUSED, activeSessionId)
@@ -567,7 +746,8 @@ class TrailForegroundService : Service() {
         if (ending) return
         if (!paused) return
         paused = false
-        tts?.speak("안내를 다시 시작합니다")
+        pausedRecoveryNotificationState.onResume()
+        enqueueVoice("안내를 다시 시작합니다", source = "system")
         onRouteVoiceScheduler?.reset()
         logger?.appendSystem("guidance.resumed", mapOf("source" to source))
         NavigationPreferences.setState(this, NavigationPreferences.STATE_RUNNING, activeSessionId)
@@ -582,7 +762,7 @@ class TrailForegroundService : Service() {
         if (!paused && pauseAvailability.onFrame(offRoute, now)) {
             offRoutePausePrompted = true
             logger?.appendSystem("guidance.pause-available")
-            tts?.speak("안내를 멈추려면 알림에서 일시중지를 누르세요")
+            enqueueVoice("안내를 멈추려면 알림에서 일시중지를 누르세요", source = "system")
             updateNotification(null)
         }
     }
@@ -601,7 +781,7 @@ class TrailForegroundService : Service() {
                 mapOf("type" to "gps", "reason" to "paused"),
             )
         } else {
-            tts?.speak(event.toSpeechPrompt())
+            enqueueVoice(event.toSpeechPrompt(), source = "gps")
         }
     }
 
@@ -631,9 +811,10 @@ class TrailForegroundService : Service() {
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
         if (paused) {
-            builder.addAction(notificationAction(ACTION_NOTIFICATION_RESUME, 1002, "재개"))
+            builder.addAction(notificationAction(ACTION_NOTIFICATION_RESUME, 1002, "안내 재개"))
             builder.addAction(notificationAction(ACTION_NOTIFICATION_END, 1003, "종료"))
         } else if (showPauseAction) {
             builder.addAction(notificationAction(ACTION_NOTIFICATION_PAUSE, 1004, "안내 일시중지"))
@@ -737,7 +918,7 @@ class TrailForegroundService : Service() {
         val sourceSeq = lastLocationSeq
         if (session == null || location == null || sourceSeq == null) {
             val text = GuidancePhrases.noLocationStatus()
-            tts?.speak(text, flush = true)
+            enqueueOnDemandVoice(text)
             logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-location", "paused" to paused.toString()))
             return
         }
@@ -745,7 +926,7 @@ class TrailForegroundService : Service() {
         val status = session.routeStatus()
         if (status == null) {
             val text = GuidancePhrases.noLocationStatus()
-            tts?.speak(text, flush = true)
+            enqueueOnDemandVoice(text)
             logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-match", "paused" to paused.toString()))
             return
         }
@@ -778,8 +959,18 @@ class TrailForegroundService : Service() {
             ),
         )
         logger?.appendGuide(location, result, text, sourceSeq, trigger = "on-demand")
-        tts?.speak(text, flush = true)
+        enqueueOnDemandVoice(text)
         logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "route-status", "paused" to paused.toString()))
+    }
+
+    private fun enqueueOnDemandVoice(text: String) {
+        val guidance = Guidance.Status(text)
+        enqueueVoice(
+            text = text,
+            source = "ondemand",
+            priority = onDemandVoicePriority(guidance),
+            protected = isProtected(guidance, recovery = false),
+        )
     }
 
     private fun appendShakeCooldownSuppression(suppression: ShakeCooldownSuppression) {
@@ -885,15 +1076,13 @@ class TrailForegroundService : Service() {
         private const val LOCATION_FIX_TIMEOUT_MILLIS = 15_000L
         private const val ROUTE_ORIENTATION_TIMEOUT_MILLIS = 30_000L
         private const val END_TTS_TIMEOUT_MILLIS = 3_000L
+        private const val TURN_STALE_RECHECK_MILLIS = 1_000L
         private const val CHANNEL_ID = "trailnav.navigation"
         private const val NOTIFICATION_ID = 1001
     }
 }
 
 internal fun Guidance?.isReverseStatus(): Boolean = this is Guidance.Status && message == "역방향 진행 중"
-
-/** Only an immediate turn instruction interrupts already queued navigation speech. */
-internal fun shouldFlushVoiceQueue(guidance: Guidance?): Boolean = guidance is Guidance.TurnNow
 
 internal fun Guidance?.toSpeech(): String? = when (this) {
     is Guidance.OffRoute -> GuidancePhrases.offRoute(distance)
