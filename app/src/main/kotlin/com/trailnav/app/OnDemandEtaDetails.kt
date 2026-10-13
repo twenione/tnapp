@@ -10,4 +10,6 @@ internal fun RouteTargetEstimate?.toOnDemandEtaDetails(): Map<String, String> = 
     "eta_correction" to (this?.correction?.toString() ?: ""),
     "eta_correction_active" to (this?.correctionActive?.toString() ?: ""),
     "eta_slope_source" to (this?.slopeSource ?: ""),
+    "target_label_kind" to (this?.labelKind?.name ?: ""),
+    "target_name" to (this?.name ?: ""),
 )

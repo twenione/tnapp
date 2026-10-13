@@ -115,7 +115,9 @@ data class GuideConfig(
     val etaMinWindowMeters: Double = 300.0,
     val etaMinMovingSpeedMps: Double = 0.3,
     val etaCorrectionMin: Double = 0.5,
-    val etaCorrectionMax: Double = 2.0
+    val etaCorrectionMax: Double = 2.0,
+    val elevationSpikeMaxRatio: Double = 0.02,
+    val directionResumeHoldSeconds: Double = 3.0,
 ) {
     init {
         require(accuracyRejectMeters >= 0.0)
@@ -150,6 +152,8 @@ data class GuideConfig(
         require(waypointNearRouteMeters >= 0.0)
         require(waypointNameMaxLength > 0)
         require(elevationSpikeThresholdMeters > 0.0)
+        require(elevationSpikeMaxRatio in 0.0..1.0)
+        require(directionResumeHoldSeconds >= 0.0)
         require(etaWindowSeconds > 0.0)
         require(etaMinWindowMeters >= 0.0)
         require(etaMinMovingSpeedMps >= 0.0)
@@ -191,6 +195,8 @@ data class GuideConfig(
             "waypointNearRouteMeters" to "covered by ElevationRouteTest.waypointNearRouteFilter",
             "waypointNameMaxLength" to "covered by ElevationRouteTest.waypointNameIsSanitized",
             "elevationSpikeThresholdMeters" to "covered by ElevationRouteTest.spikeIsUnstable",
+            "elevationSpikeMaxRatio" to "covered by ElevationRouteTest.spikeRatioBoundaryAndConfigControl",
+            "directionResumeHoldSeconds" to "covered by MatchingTest.stopResumeR1DoesNotReportReverseDuringGpsNoise",
             "eventMinIntervalSeconds" to "covered by DynamicGuidanceTest.minimumEventInterval",
             "milestoneIntervalMeters" to "covered by DynamicGuidanceTest.milestoneThreshold",
             "remainingAnnounceMeters" to "covered by DynamicGuidanceTest.remainingThresholds",
@@ -273,6 +279,7 @@ data class GuideState(
     val sunriseEvaluated: Boolean = false,
     val consumedSunriseThresholds: Set<Int> = emptySet(),
     val sunriseLocalDay: Long? = null,
+    val resumeSince: Long? = null,
 ) {
     companion object {
         fun initial(route: RouteModel): GuideState = GuideState(route)

@@ -3,7 +3,7 @@ package com.trailnav.app
 import com.trailnav.core.ProgressDirection
 import com.trailnav.core.RouteStatus
 import com.trailnav.core.RouteTargetEstimate
-import com.trailnav.core.TargetKind
+import com.trailnav.core.TargetLabelKind
 import com.trailnav.core.Side
 import com.trailnav.core.SlopeKind
 import kotlin.math.floor
@@ -82,7 +82,7 @@ object GuidancePhrases {
         }
 
         val targetPhrase = target?.let { targetPhrase(it, mode) }
-            ?: "최종 목적지까지는 ${formatDistance(status.remainingMeters)}입니다"
+            ?: "도착지까지는 ${formatDistance(status.remainingMeters)}입니다"
 
         if (!status.onRoute) {
             return "${offRoute(status.offRouteDistanceMeters ?: 0.0)}. $targetPhrase"
@@ -107,10 +107,7 @@ object GuidancePhrases {
     }
 
     private fun targetPhrase(target: RouteTargetEstimate, mode: DistanceTimeMode): String {
-        val goal = when (target.kind) {
-            TargetKind.NEXT_SUMMIT -> "다음 정상까지는"
-            TargetKind.DESTINATION -> "최종 목적지까지는"
-        }
+        val goal = "${targetSubject(target.labelKind, target.name)}까지는"
         val distance = formatDistance(target.remainingMeters)
         val eta = etaPhrase(target.remainingSeconds)
         val includeDistance = mode != DistanceTimeMode.TimeOnly || eta == null
@@ -122,6 +119,13 @@ object GuidancePhrases {
             else -> distance
         }
         return "$goal ${detail}입니다"
+    }
+
+    internal fun targetSubject(labelKind: TargetLabelKind, name: String?): String = when (labelKind) {
+        TargetLabelKind.NAMED_WAYPOINT -> name?.trim()?.takeIf { it.isNotEmpty() } ?: "다음 경유지"
+        TargetLabelKind.UNNAMED_WAYPOINT -> "다음 경유지"
+        TargetLabelKind.ELEVATION_PEAK -> "다음 정상"
+        TargetLabelKind.DESTINATION -> "도착지"
     }
 
     private fun nextTurnPhrase(turn: com.trailnav.core.NextTurn): String =

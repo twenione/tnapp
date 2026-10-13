@@ -6,6 +6,7 @@ import com.trailnav.core.GuideState
 import com.trailnav.core.ProgressDirection
 import com.trailnav.core.RouteModel
 import com.trailnav.core.RouteTargetEstimate
+import com.trailnav.core.TargetLabelKind
 import com.trailnav.core.TargetKind
 import com.trailnav.core.guide
 import kotlin.math.cos
@@ -53,11 +54,15 @@ class RouteRibbonTest {
             correction = 1.0,
             correctionActive = false,
             slopeSource = "flat",
+            labelKind = TargetLabelKind.NAMED_WAYPOINT,
+            name = "바라산",
         )
 
         val withTarget = RouteRibbonCalculator.calculate(location, result, route, config, target)!!
         assertEquals(TargetKind.NEXT_SUMMIT, withTarget.targetKind)
         assertEquals(850.0, withTarget.targetRemainingMeters)
+        assertEquals(TargetLabelKind.NAMED_WAYPOINT, withTarget.targetLabelKind)
+        assertEquals("바라산", withTarget.targetName)
 
         val withoutTarget = RouteRibbonCalculator.calculate(location, result, route, config)!!
         assertNull(withoutTarget.targetKind)
@@ -65,7 +70,7 @@ class RouteRibbonTest {
     }
 
     @Test
-    fun ribbonDistanceLabelUsesTargetKindAndFallsBackToDestinationDistance() {
+    fun ribbonDistanceLabelUsesTargetSubjectAndFallsBackToDestinationDistance() {
         val state = RouteRibbonState(
             perpendicularDistanceMeters = 0.0,
             signedOffsetMeters = 0.0,
@@ -82,10 +87,35 @@ class RouteRibbonTest {
             ribbonDistanceLabel(state.copy(targetKind = TargetKind.NEXT_SUMMIT, targetRemainingMeters = 850.0)),
         )
         assertEquals(
-            "최종 목적지까지 1234m",
+            "도착지까지 1234m",
             ribbonDistanceLabel(state.copy(targetKind = TargetKind.DESTINATION, targetRemainingMeters = 1_234.4)),
         )
-        assertEquals("목적지까지 2000m", ribbonDistanceLabel(state))
+        assertEquals("도착지까지 2000m", ribbonDistanceLabel(state))
+        assertEquals(
+            "바라산까지 850m",
+            ribbonDistanceLabel(state.copy(
+                targetKind = TargetKind.NEXT_SUMMIT,
+                targetRemainingMeters = 850.0,
+                targetLabelKind = TargetLabelKind.NAMED_WAYPOINT,
+                targetName = "바라산",
+            )),
+        )
+        assertEquals(
+            "다음 경유지까지 840m",
+            ribbonDistanceLabel(state.copy(
+                targetKind = TargetKind.NEXT_SUMMIT,
+                targetRemainingMeters = 840.0,
+                targetLabelKind = TargetLabelKind.UNNAMED_WAYPOINT,
+            )),
+        )
+        assertEquals(
+            "다음 정상까지 830m",
+            ribbonDistanceLabel(state.copy(
+                targetKind = TargetKind.NEXT_SUMMIT,
+                targetRemainingMeters = 830.0,
+                targetLabelKind = TargetLabelKind.ELEVATION_PEAK,
+            )),
+        )
     }
 
     @Test

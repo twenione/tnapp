@@ -1,6 +1,7 @@
 package com.trailnav.app
 
 import com.trailnav.core.RouteTargetEstimate
+import com.trailnav.core.TargetLabelKind
 import com.trailnav.core.TargetKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -16,6 +17,8 @@ class OnDemandEtaDetailsTest {
             correction = 1.2,
             correctionActive = true,
             slopeSource = "tobler",
+            labelKind = TargetLabelKind.NAMED_WAYPOINT,
+            name = "바라산",
         )
 
         assertEquals(
@@ -27,6 +30,8 @@ class OnDemandEtaDetailsTest {
                 "eta_correction" to "1.2",
                 "eta_correction_active" to "true",
                 "eta_slope_source" to "tobler",
+                "target_label_kind" to "NAMED_WAYPOINT",
+                "target_name" to "바라산",
             ),
             target.toOnDemandEtaDetails(),
         )
@@ -43,6 +48,8 @@ class OnDemandEtaDetailsTest {
                 "eta_correction" to "",
                 "eta_correction_active" to "",
                 "eta_slope_source" to "",
+                "target_label_kind" to "",
+                "target_name" to "",
             ),
             null.toOnDemandEtaDetails(),
         )

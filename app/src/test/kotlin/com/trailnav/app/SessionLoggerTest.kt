@@ -2,6 +2,7 @@ package com.trailnav.app
 
 import com.trailnav.core.GuideConfig
 import com.trailnav.core.GuideState
+import com.trailnav.core.ElevationRepair
 import com.trailnav.core.RouteModel
 import com.trailnav.core.guide
 import java.io.File
@@ -30,6 +31,9 @@ class SessionLoggerTest {
             routeElevationUsed = true,
             routeElevationReason = "ok",
             routeWaypointCount = 2,
+            routeElevationRepair = ElevationRepair(2, 2, 100, 16.123, listOf(123.4, 456.7)),
+            routeElevationSpikeRatioCap = 0.02,
+            routeElevationSpikeThresholdMeters = 10.0,
         ).use { logger ->
             val location = TrailLocation(1_000L, 10.0001, 20.0, 5f, 1f, null, "fake")
             val result = guide(GuideState.initial(route), location.toSensorFrame(), GuideConfig())
@@ -49,6 +53,14 @@ class SessionLoggerTest {
         assertTrue(manifest.contains("\"elevation_used\":true"))
         assertTrue(manifest.contains("\"elevation_reason\":\"ok\""))
         assertTrue(manifest.contains("\"waypoint_count\":2"))
+        assertTrue(manifest.contains("\"elevation_spike_points\":2"))
+        assertTrue(manifest.contains("\"elevation_interpolated_points\":2"))
+        assertTrue(manifest.contains("\"elevation_total_points\":100"))
+        assertTrue(manifest.contains("\"elevation_spike_ratio\":0.0200"))
+        assertTrue(manifest.contains("\"elevation_spike_ratio_cap\":0.02"))
+        assertTrue(manifest.contains("\"elevation_max_residual_m\":16.1"))
+        assertTrue(manifest.contains("\"elevation_spike_threshold_m\":10.0"))
+        assertTrue(manifest.contains("\"elevation_spike_at_m\":\"123,457\""))
         assertTrue(manifest.contains("\"events\":{\"E1\":false,\"E2\":false,\"E3\":true,\"E4\":true,\"E5\":false,\"E6\":true,\"E7\":true,\"E8\":true}"))
         val events = File(directory, "events.ndjson").readLines().filter { it.isNotBlank() }
         assertEquals(7, events.size)
@@ -119,5 +131,54 @@ class SessionLoggerTest {
         assertTrue(events[1].contains("\"count\":\"3\""))
         assertTrue(events[1].contains("\"remaining_ms\":\"270000\""))
         directory.deleteRecursively()
+    }
+
+    @Test
+    fun manifestRecordsRejectedAndAbsentElevationRepair() {
+        val rejected = manifestFor(
+            elevationUsed = false,
+            elevationReason = "unstable",
+            repair = ElevationRepair(3, 0, 100, 20.0, listOf(400.0, 410.0, 420.0)),
+        )
+        assertTrue(rejected.contains("\"elevation_spike_points\":3"))
+        assertTrue(rejected.contains("\"elevation_interpolated_points\":0"))
+        assertTrue(rejected.contains("\"elevation_spike_ratio\":0.0300"))
+        assertTrue(rejected.contains("\"elevation_spike_at_m\":\"400,410,420\""))
+
+        val absent = manifestFor(
+            elevationUsed = false,
+            elevationReason = "absent",
+            repair = ElevationRepair(),
+        )
+        assertTrue(absent.contains("\"elevation_spike_points\":0"))
+        assertTrue(absent.contains("\"elevation_interpolated_points\":0"))
+        assertTrue(absent.contains("\"elevation_total_points\":0"))
+        assertTrue(absent.contains("\"elevation_spike_ratio\":0.0000"))
+        assertTrue(absent.contains("\"elevation_spike_at_m\":\"\""))
+    }
+
+    private fun manifestFor(
+        elevationUsed: Boolean,
+        elevationReason: String,
+        repair: ElevationRepair,
+    ): String {
+        val directory = createTempDir(prefix = "tnapp-elevation-repair-")
+        JsonlSessionLogger(
+            directory = directory,
+            sessionId = UUID.randomUUID().toString(),
+            codeHash = "sha256:test",
+            configHash = "sha256:config",
+            eventSettings = EventSettings.defaults().toWireMap(),
+            routeHash = "sha256:route",
+            appVersion = "test",
+            routeElevationUsed = elevationUsed,
+            routeElevationReason = elevationReason,
+            routeElevationRepair = repair,
+            routeElevationSpikeRatioCap = 0.02,
+            routeElevationSpikeThresholdMeters = 10.0,
+        ).close()
+        val manifest = File(directory, "manifest.json").readText()
+        directory.deleteRecursively()
+        return manifest
     }
 }

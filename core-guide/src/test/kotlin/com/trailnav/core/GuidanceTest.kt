@@ -350,6 +350,7 @@ class GuidanceTest {
         </trkseg></trk></gpx>""")
         val config = GuideConfig(
             reverseWarningDwellSeconds = 2.0,
+            directionResumeHoldSeconds = 0.0,
             sunsetEnabled = false,
             minimumSessionSecondsBeforeArrival = 0.0,
         )
@@ -405,6 +406,7 @@ class GuidanceTest {
             reverseWarningDwellSeconds = 2.0,
             sunsetEnabled = false,
             minimumSessionSecondsBeforeArrival = 0.0,
+            directionResumeHoldSeconds = 0.0,
         )
         var state = guide(GuideState.initial(route), SensorFrame(0L, 10.002, 20.0, 5f, 1f, null), config).nextState
         state = guide(state, SensorFrame(1_000L, 10.0018, 20.0, 5f, 1f, null), config).nextState

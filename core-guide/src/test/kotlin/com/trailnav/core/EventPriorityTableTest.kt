@@ -190,7 +190,9 @@ class EventPriorityTableTest {
             sunriseEnabled = true,
             sunriseAnnounceMinutes = listOf(30, 10),
             sunsetEnabled = false,
-            sunsetAnnounceMinutes = listOf(1_000),
+            // The 763-minute sunset threshold crosses on the same second frame
+            // as the 30-minute sunrise threshold; it is not consumed while disabled.
+            sunsetAnnounceMinutes = listOf(763),
             eventMinIntervalSeconds = 0.0,
         )
         val firstTimestamp = ((sunriseTime - 31.0 * 60.0) * 1000.0).roundToLong()
