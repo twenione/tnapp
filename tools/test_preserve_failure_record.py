@@ -8,17 +8,21 @@ import shutil
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
 from preserve_failure_record import (
+    EMPTY_LOG_SHA256,
     ERROR_LINE,
+    SCHEMA_VERSION,
+    empty_log_mismatches,
     failed_job_log_text,
     first_meaningful_line,
     is_action_input_echo,
+    log_is_empty,
     selection_rule_fingerprint,
     signature_is_run_echo,
-    SCHEMA_VERSION,
 )
 
 
@@ -174,6 +178,60 @@ class ExtractorTest(unittest.TestCase):
     def test_rule_fingerprint_mutations_change(self) -> None:
         self.assertNotEqual(selection_rule_fingerprint(), selection_rule_fingerprint(inline_cases=(("changed", "case"),)))
 
+
+class FailureRecordGuardTest(unittest.TestCase):
+    def _run_record(self, logs_exist: bool, log_text: str | None) -> tuple[int, str, Path]:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        logs = root / "logs"
+        if logs_exist:
+            logs.mkdir()
+            if log_text is not None:
+                (logs / "job-main.log").write_text(log_text, encoding="utf-8")
+        output = root / "record.json"
+        argv = [
+            "preserve_failure_record.py", "--logs", str(logs), "--out", str(output),
+            "--run-id", "7", "--commit-sha", "abc", "--branch", "main",
+            "--created-at", "2026-10-13T00:00:00Z", "--runner-image-version", "test",
+        ]
+        stdout = io.StringIO()
+        with patch.object(sys, "argv", argv), patch("preserve_failure_record.toolchain", return_value={}), redirect_stdout(stdout):
+            from preserve_failure_record import main
+            result = main()
+        return result, stdout.getvalue(), output
+
+    def test_empty_log_inputs_are_rejected_without_output(self) -> None:
+        for name, logs_exist, log_text in (
+            ("whitespace", True, "  \n\t"),
+            ("zero_bytes", True, ""),
+            ("missing_directory", False, None),
+        ):
+            with self.subTest(case=name):
+                result, output, record_path = self._run_record(logs_exist, log_text)
+                self.assertEqual(result, 1)
+                self.assertIn("FAIL: refusing to write an empty failure log", output)
+                self.assertFalse(record_path.exists())
+
+    def test_nonempty_log_is_still_written(self) -> None:
+        result, _output, record_path = self._run_record(True, "FAIL: synthetic failure\n")
+        self.assertEqual(result, 0)
+        self.assertTrue(record_path.is_file())
+
+    def test_empty_log_digest_is_independently_correct(self) -> None:
+        self.assertEqual(
+            EMPTY_LOG_SHA256,
+            "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        )
+
+    def test_empty_log_classifier_checks_both_branches(self) -> None:
+        self.assertTrue(log_is_empty("x", EMPTY_LOG_SHA256))
+        self.assertTrue(log_is_empty("   \n", "sha256:" + "d" * 64))
+        self.assertFalse(log_is_empty("x", "sha256:" + "d" * 64))
+        self.assertEqual(empty_log_mismatches(log_is_empty), [])
+        self.assertTrue(empty_log_mismatches(lambda _log, _digest: False))
+        self.assertTrue(empty_log_mismatches(lambda _log, digest: digest == EMPTY_LOG_SHA256))
+        self.assertTrue(empty_log_mismatches(lambda log, _digest: not log.strip()))
 
 def run_legacy_negative_control() -> int:
     expected = json.loads((FIXTURES / "manifest.json").read_text(encoding="utf-8"))

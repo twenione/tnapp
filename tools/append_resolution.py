@@ -6,14 +6,56 @@ import argparse
 import datetime as dt
 import json
 import os
-import tempfile
 import subprocess
+import sys
+import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 try:
     from check_commit_trailer import TRAILER
 except ModuleNotFoundError:  # imported as tools.append_resolution
     from tools.check_commit_trailer import TRAILER
+
+
+class RecordLookupError(Exception):
+    """The failure record could not be checked reliably."""
+
+
+def record_exists(run_id: str, repository: str, token: str) -> bool:
+    """Check whether records/<run_id>.json exists in the private log repo."""
+    url = f"https://api.github.com/repos/{repository}/contents/records/{run_id}.json"
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            if response.status == 200:
+                return True
+            raise RecordLookupError(f"GitHub returned HTTP {response.status}")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return False
+        raise RecordLookupError(f"GitHub returned HTTP {exc.code}") from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise RecordLookupError(str(exc)) from exc
+
+
+def push_resolution(path: Path, remote_path: str) -> subprocess.CompletedProcess:
+    """Use the established immutable writer for a resolution record."""
+    return subprocess.run(
+        [sys.executable, "tools/push_failure_record.py", str(path), "--path", remote_path],
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+    )
 
 
 def main() -> int:
@@ -25,9 +67,11 @@ def main() -> int:
     parser.add_argument("--range-file", type=Path, default=None)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    if args.token_present != "yes":
+    token = os.environ.get("FAILURE_LOG_TOKEN", "")
+    if args.token_present != "yes" or not token:
         print("ERROR: FAILURE_LOG_TOKEN is not available", flush=True)
         return 2
+
     commit_messages: list[tuple[str, str]] = []
     before_sha = args.before_sha
     if args.range_file and args.range_file.is_file():
@@ -81,9 +125,21 @@ def main() -> int:
     if args.dry_run:
         print(json.dumps({"candidates": [{"run_id": run_id, "source_commit": sha} for run_id, sha in candidates]}, sort_keys=True))
         return 0
+
+    repository = os.environ.get("FAILURE_LOG_REPOSITORY") or "twenione/tnapp-failure-log"
     records = []
+    missing: list[str] = []
+    undetermined: list[tuple[str, str]] = []
     with tempfile.TemporaryDirectory(prefix="tnapp-resolution-") as temp:
         for failed_run_id, source_sha in candidates:
+            try:
+                exists = record_exists(failed_run_id, repository, token)
+            except RecordLookupError as exc:
+                undetermined.append((failed_run_id, str(exc)))
+                continue
+            if not exists:
+                missing.append(failed_run_id)
+                continue
             record = {
                 "schema_version": "failrec-resolution-1.0.0",
                 "run_id": failed_run_id,
@@ -93,13 +149,22 @@ def main() -> int:
             }
             path = Path(temp) / f"resolution-{failed_run_id}-{args.head_sha}.json"
             path.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            push = subprocess.run(["python", "tools/push_failure_record.py", str(path), "--path", f"resolutions/{failed_run_id}-{args.head_sha}.json"], text=True, encoding="utf-8", errors="replace", capture_output=True)
+            push = push_resolution(path, f"resolutions/{failed_run_id}-{args.head_sha}.json")
             print(push.stdout, end="")
             print(push.stderr, end="")
             if push.returncode:
                 return push.returncode
             records.append(record)
+
     print(json.dumps({"appended": len(records), "records": records}, sort_keys=True))
+    for run_id in missing:
+        print(f"FAIL: failure record for run {run_id} does not exist")
+    for run_id, error in undetermined:
+        print(f"FAIL: failure record for run {run_id} could not be verified: {error}")
+    if missing:
+        return 1
+    if undetermined:
+        return 2
     return 0
 
 
