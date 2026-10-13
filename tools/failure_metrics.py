@@ -11,7 +11,7 @@ import argparse
 import json
 from pathlib import Path
 
-SUPPORTED_FAILURE_SCHEMAS = {"failrec-2.0.0", "failrec-2.0.1", "failrec-2.0.2"}
+SUPPORTED_FAILURE_SCHEMAS = {"failrec-2.0.0", "failrec-2.0.1", "failrec-2.0.2", "failrec-2.0.3"}
 
 
 def records(root: Path) -> list[dict]:
@@ -29,26 +29,31 @@ def records(root: Path) -> list[dict]:
     return result
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("root", type=Path)
-    args = parser.parse_args()
-    values = records(args.root)
+def summarize(values: list[dict]) -> dict[str, int | str]:
     failures = [item for item in values if not item["schema_version"].startswith("failrec-resolution-")]
     resolutions = [item for item in values if item["schema_version"].startswith("failrec-resolution-")]
     push_failures = [item for item in failures if item.get("trigger_event") == "push"]
     pull_failures = [item for item in failures if item.get("trigger_event") == "pull_request"]
     resolved_ids = {item.get("run_id") for item in resolutions}
     resolved_push = [item for item in push_failures if item.get("run_id") in resolved_ids]
-    print(f"failures_total={len(failures)}")
-    print(f"failures_push={len(push_failures)}")
-    print(f"failures_pull_request={len(pull_failures)}")
-    print(f"resolutions_total={len(resolutions)}")
-    print(f"resolved_push={len(resolved_push)}")
-    if not push_failures:
-        print("resolution_coverage_push=undefined")
-    else:
-        print(f"resolution_coverage_push={len(resolved_push) / len(push_failures):.4f}")
+    coverage = "undefined" if not push_failures else f"{len(resolved_push) / len(push_failures):.4f}"
+    return {
+        "failures_total": len(failures),
+        "failures_push": len(push_failures),
+        "failures_pull_request": len(pull_failures),
+        "resolutions_total": len(resolutions),
+        "resolved_push": len(resolved_push),
+        "resolution_coverage_push": coverage,
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("root", type=Path)
+    args = parser.parse_args()
+    summary = summarize(records(args.root))
+    for key in ("failures_total", "failures_push", "failures_pull_request", "resolutions_total", "resolved_push", "resolution_coverage_push"):
+        print(f"{key}={summary[key]}")
     return 0
 
 

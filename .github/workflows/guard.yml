@@ -203,6 +203,8 @@ jobs:
         run: python tools/test_check_privacy_coverage.py
       - name: Failure rule-version negative controls
         run: python tools/test_failure_rule_versions.py
+      - name: Failure metrics trigger denominator negative controls
+        run: python tools/test_failure_metrics.py
       - name: Failure-log writer contract
         run: python tools/test_push_failure_record.py
       - name: Failure-log commit audit negative controls

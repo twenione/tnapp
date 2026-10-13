@@ -22,7 +22,7 @@ EXIT_FAILURE_LINE = re.compile(r"(?i)##\[error\]\s*Process completed with exit c
 ACTION_INPUT_LINE = re.compile(r"^\s*[A-Za-z][A-Za-z0-9_.-]*:\s+\S")
 EMPTY_LOG_SHA256 = "sha256:" + hashlib.sha256(b"").hexdigest()
 ALLOWED_SOURCES = {"runtime", "declared", "unavailable"}
-SCHEMA_VERSION = "failrec-2.0.2"
+SCHEMA_VERSION = "failrec-2.0.3"
 SELECTION_PRIORITY_PATTERNS = (
     ("kotlin_compile", KOTLIN_COMPILE_LINE),
     ("test_failure", TEST_FAILURE_LINE),
@@ -35,6 +35,11 @@ INLINE_RULE_CASES = (
     ("what_went_wrong_next_nonempty", "first non-empty line after marker"),
     ("what_went_wrong_marker_candidate", "skip ##[ marker"),
     ("what_went_wrong_outside_scope", "ignore outside failed step"),
+)
+AGP_DECLARED_PATTERNS = (
+    r"""(?im)com\.android\.(?:application|library)["']?\s*\)?\s*version\s*[= ]?\s*["']([0-9]+(?:\.[0-9]+)+)["']""",
+    r"(?im)com\.android\.(?:application|library)\s*(?:version\s*[= ]\s*[\"']|\(\s*\"?)([0-9]+(?:\.[0-9]+)+)",
+    r"(?im)agp\s*=\s*[\"']([0-9]+(?:\.[0-9]+)+)[\"']",
 )
 
 
@@ -223,6 +228,29 @@ def empty_log_mismatches(is_empty) -> list[str]:
     return [name for name, log, digest, expected in cases if is_empty(log, digest) != expected]
 
 
+def agp_mismatches(patterns: list[str] | tuple[str, ...]) -> list[str]:
+    cases = (
+        ("kotlin_application", 'id("com.android.application") version "8.13.0" apply false', "8.13.0"),
+        ("groovy_library", "id 'com.android.library' version '8.5.1'", "8.5.1"),
+        ("older_application", 'id "com.android.application" version "7.4.2" apply false', "7.4.2"),
+        ("existing_version_syntax", 'com.android.application version "8.1.0"', "8.1.0"),
+        ("missing_version", 'id("com.android.application")', ""),
+        ("invalid_version", 'id("com.android.application") version "abc"', ""),
+        ("classpath_is_not_plugin_declaration", 'classpath "com.android.tools.build:gradle:8.0.0"', ""),
+    )
+    mismatches = []
+    for name, text, expected in cases:
+        actual = ""
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                actual = match.group(1)
+                break
+        if actual != expected:
+            mismatches.append(name)
+    return mismatches
+
+
 def toolchain(repo_root: Path) -> dict[str, dict[str, str]]:
     """Collect runtime and declared toolchain facts with explicit provenance."""
     gradle_runtime = run_version(["./gradlew", "--version"], repo_root)
@@ -231,13 +259,7 @@ def toolchain(repo_root: Path) -> dict[str, dict[str, str]]:
     if not gradle_runtime:
         gradle_runtime = run_version(["gradle", "--version"], repo_root)
     jdk_runtime = run_version(["java", "-version"], repo_root)
-    agp_declared = declared_version(
-        repo_root,
-        [
-            r"(?im)com\.android\.(?:application|library)\s*(?:version\s*[= ]\s*[\"']|\(\s*\"?)([0-9]+(?:\.[0-9]+)+)",
-            r"(?im)agp\s*=\s*[\"']([0-9]+(?:\.[0-9]+)+)[\"']",
-        ],
-    )
+    agp_declared = declared_version(repo_root, list(AGP_DECLARED_PATTERNS))
     kotlin_declared = declared_version(
         repo_root,
         [
