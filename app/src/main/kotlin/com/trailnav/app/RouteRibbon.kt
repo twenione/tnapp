@@ -6,6 +6,7 @@ import com.trailnav.core.ProgressDirection
 import com.trailnav.core.RouteTargetEstimate
 import com.trailnav.core.RouteModel
 import com.trailnav.core.Side
+import com.trailnav.core.TargetLabelKind
 import com.trailnav.core.TargetKind
 import kotlin.math.hypot
 
@@ -26,6 +27,8 @@ data class RouteRibbonState(
     val nextTurn: RibbonNextTurn? = null,
     val targetKind: TargetKind? = null,
     val targetRemainingMeters: Double? = null,
+    val targetLabelKind: TargetLabelKind? = null,
+    val targetName: String? = null,
 ) {
     val side: RibbonSide
         get() = when {
@@ -43,11 +46,14 @@ enum class RibbonSide { LEFT, RIGHT, CENTER }
 
 /** Formats the destination or segment target label shown on the route ribbon. */
 fun ribbonDistanceLabel(state: RouteRibbonState): String = when {
-    state.targetKind == TargetKind.NEXT_SUMMIT && state.targetRemainingMeters != null ->
-        "다음 정상까지 ${formatMeters(state.targetRemainingMeters)}"
-    state.targetKind == TargetKind.DESTINATION && state.targetRemainingMeters != null ->
-        "최종 목적지까지 ${formatMeters(state.targetRemainingMeters)}"
-    else -> "목적지까지 ${formatMeters(state.remainingDistanceMeters)}"
+    state.targetKind != null && state.targetRemainingMeters != null -> {
+        val labelKind = state.targetLabelKind ?: when (state.targetKind) {
+            TargetKind.NEXT_SUMMIT -> TargetLabelKind.ELEVATION_PEAK
+            TargetKind.DESTINATION -> TargetLabelKind.DESTINATION
+        }
+        "${GuidancePhrases.targetSubject(labelKind, state.targetName)}까지 ${formatMeters(state.targetRemainingMeters)}"
+    }
+    else -> "도착지까지 ${formatMeters(state.remainingDistanceMeters)}"
 }
 
 internal fun formatMeters(value: Double): String =
@@ -83,6 +89,8 @@ object RouteRibbonCalculator {
             nextTurn = nextTurn,
             targetKind = target?.kind,
             targetRemainingMeters = target?.remainingMeters,
+            targetLabelKind = target?.labelKind,
+            targetName = target?.name,
         )
     }
 

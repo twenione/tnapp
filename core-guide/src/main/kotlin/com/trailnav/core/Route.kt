@@ -41,6 +41,14 @@ data class ElevationUse(
     }
 }
 
+data class ElevationRepair(
+    val spikePoints: Int = 0,
+    val interpolatedPoints: Int = 0,
+    val totalPoints: Int = 0,
+    val maxResidualMeters: Double = 0.0,
+    val atMeters: List<Double> = emptyList(),
+)
+
 /** A waypoint that is close enough to the route to be eligible for E6. */
 data class Waypoint(
     val name: String,
@@ -84,6 +92,7 @@ data class RouteModel(
     val elevationUse: ElevationUse = ElevationUse(false, "absent"),
     val peaks: List<Peak> = emptyList(),
     val waypoints: List<Waypoint> = emptyList(),
+    val elevationRepair: ElevationRepair = ElevationRepair(),
 ) {
     val totalLengthMeters: Double
         get() = cumulativeMeters.lastOrNull() ?: 0.0
@@ -342,6 +351,7 @@ internal object GpxRouteParser {
             elevationUse = ElevationUse(elevation.used, elevation.reason),
             peaks = peaks,
             waypoints = eligibleWaypoints,
+            elevationRepair = elevation.repair,
         )
     }
 
@@ -351,6 +361,7 @@ internal object GpxRouteParser {
         val used: Boolean,
         val reason: String,
         val smoothed: List<Double>,
+        val repair: ElevationRepair,
     )
     private data class RouteProjection(val s: Double, val distanceMeters: Double)
 
@@ -382,32 +393,72 @@ internal object GpxRouteParser {
         config: GuideConfig,
     ): ElevationClassification {
         if (values.isEmpty() || values.none { it != null }) {
-            return ElevationClassification(false, "absent", emptyList())
+            return ElevationClassification(false, "absent", emptyList(), ElevationRepair())
         }
         if (values.any { it == null }) {
-            return ElevationClassification(false, "partial", emptyList())
+            return ElevationClassification(false, "partial", emptyList(), ElevationRepair())
         }
         val raw = values.map { requireNotNull(it) }
-        val median = raw.indices.map { index ->
+        fun medianProfile(profile: List<Double>): List<Double> = profile.indices.map { index ->
             val from = max(0, index - 2)
-            val to = min(raw.lastIndex, index + 2)
-            raw.subList(from, to + 1).sorted()[((to - from) / 2)]
+            val to = min(profile.lastIndex, index + 2)
+            profile.subList(from, to + 1).sorted()[((to - from) / 2)]
         }
-        val smoothed = median.indices.map { index ->
+        fun smoothProfile(profile: List<Double>, median: List<Double>): List<Double> = median.indices.map { index ->
             // Preserve profile endpoints so a 200 m ramp keeps its measured
             // total delta; only interior samples receive the moving average.
-            if (index == 0 || index == median.lastIndex) raw[index]
+            if (index == 0 || index == median.lastIndex) profile[index]
             else {
                 val from = max(0, index - 1)
                 val to = min(median.lastIndex, index + 1)
                 median.subList(from, to + 1).average()
             }
         }
-        val residual = raw.indices.maxOfOrNull { index -> abs(raw[index] - median[index]) } ?: 0.0
-        if (residual > config.elevationSpikeThresholdMeters) {
-            return ElevationClassification(false, "unstable", smoothed)
+        val originalMedian = medianProfile(raw)
+        val residuals = raw.indices.map { index -> abs(raw[index] - originalMedian[index]) }
+        val maxResidual = residuals.maxOrNull() ?: 0.0
+        val spikeIndices = residuals.indices.filter { residuals[it] > config.elevationSpikeThresholdMeters }
+        val baseRepair = ElevationRepair(
+            spikePoints = spikeIndices.size,
+            totalPoints = raw.size,
+            maxResidualMeters = maxResidual,
+            atMeters = spikeIndices.map { cumulative[it] },
+        )
+        val originalSmoothed = smoothProfile(raw, originalMedian)
+        if (spikeIndices.isEmpty()) {
+            return ElevationClassification(true, "ok", originalSmoothed, baseRepair)
         }
-        return ElevationClassification(true, "ok", smoothed)
+
+        if (spikeIndices.first() == 0 || spikeIndices.last() == raw.lastIndex ||
+            spikeIndices.size.toDouble() / raw.size > config.elevationSpikeMaxRatio
+        ) {
+            return ElevationClassification(false, "unstable", originalSmoothed, baseRepair)
+        }
+
+        val spikeSet = spikeIndices.toSet()
+        val repaired = raw.toMutableList()
+        for (index in spikeIndices) {
+            val before = (index - 1 downTo 0).firstOrNull { it !in spikeSet }
+                ?: return ElevationClassification(false, "unstable", originalSmoothed, baseRepair)
+            val after = (index + 1..raw.lastIndex).firstOrNull { it !in spikeSet }
+                ?: return ElevationClassification(false, "unstable", originalSmoothed, baseRepair)
+            val spanMeters = cumulative[after] - cumulative[before]
+            if (spanMeters <= 0.0) {
+                return ElevationClassification(false, "unstable", originalSmoothed, baseRepair)
+            }
+            val ratio = (cumulative[index] - cumulative[before]) / spanMeters
+            repaired[index] = raw[before] + (raw[after] - raw[before]) * ratio
+        }
+
+        val repairedMedian = medianProfile(repaired)
+        val repairedResidual = repaired.indices.maxOfOrNull { index ->
+            abs(repaired[index] - repairedMedian[index])
+        } ?: 0.0
+        val adoptedRepair = baseRepair.copy(interpolatedPoints = spikeIndices.size)
+        if (repairedResidual > config.elevationSpikeThresholdMeters) {
+            return ElevationClassification(false, "unstable", smoothProfile(repaired, repairedMedian), adoptedRepair)
+        }
+        return ElevationClassification(true, "ok", smoothProfile(repaired, repairedMedian), adoptedRepair)
     }
 
     private fun extractPeaks(

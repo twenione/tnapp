@@ -212,6 +212,9 @@ class TrailForegroundService : Service() {
             routeElevationUsed = parsedRoute.elevationUsed,
             routeElevationReason = parsedRoute.elevationReason,
             routeWaypointCount = parsedRoute.waypoints.size,
+            routeElevationRepair = parsedRoute.elevationRepair,
+            routeElevationSpikeRatioCap = config.elevationSpikeMaxRatio,
+            routeElevationSpikeThresholdMeters = config.elevationSpikeThresholdMeters,
         )
         tts = TtsController(
             context = this,
@@ -803,6 +806,8 @@ class TrailForegroundService : Service() {
                 .putExtra(EXTRA_RIBBON_REMAINING_METERS, ribbon.remainingDistanceMeters)
                 .putExtra(EXTRA_RIBBON_TARGET_KIND, ribbon.targetKind?.name.orEmpty())
                 .putExtra(EXTRA_RIBBON_TARGET_REMAINING_METERS, ribbon.targetRemainingMeters ?: -1.0)
+                .putExtra(EXTRA_RIBBON_TARGET_LABEL_KIND, ribbon.targetLabelKind?.name.orEmpty())
+                .putExtra(EXTRA_RIBBON_TARGET_NAME, ribbon.targetName.orEmpty())
                 .putExtra(EXTRA_RIBBON_NEXT_TURN_DISTANCE_METERS, ribbon.nextTurn?.distanceMeters ?: -1.0)
                 .putExtra(EXTRA_RIBBON_NEXT_TURN_SIDE, ribbon.nextTurn?.side?.name.orEmpty()),
         )
@@ -1076,6 +1081,8 @@ class TrailForegroundService : Service() {
         const val EXTRA_RIBBON_REMAINING_METERS = "ribbon_remaining_meters"
         const val EXTRA_RIBBON_TARGET_KIND = "ribbon_target_kind"
         const val EXTRA_RIBBON_TARGET_REMAINING_METERS = "ribbon_target_remaining_meters"
+        const val EXTRA_RIBBON_TARGET_LABEL_KIND = "ribbon_target_label_kind"
+        const val EXTRA_RIBBON_TARGET_NAME = "ribbon_target_name"
         const val EXTRA_RIBBON_NEXT_TURN_DISTANCE_METERS = "ribbon_next_turn_distance_meters"
         const val EXTRA_RIBBON_NEXT_TURN_SIDE = "ribbon_next_turn_side"
         private const val LOCATION_FIX_TIMEOUT_MILLIS = 15_000L

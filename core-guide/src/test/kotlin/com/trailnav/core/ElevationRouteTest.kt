@@ -225,4 +225,133 @@ class ElevationRouteTest {
         check(defaultRoute.peaks.isEmpty())
         check(tolerant.elevationReason == "ok")
     }
+
+    @Test
+    fun twoSpikesInA200PointSlopedProfileAreInterpolatedLocally() {
+        val elevations = List(200) { index -> 100.0 + index * 0.1 }.toMutableList()
+        elevations[80] += 16.0
+        elevations[81] += 16.0
+        val route = RouteModel.fromGpx(distanceProfileXml(List(200) { it * 5.0 }, elevations))
+        val expected = 100.0 + 80 * 0.1
+
+        check(route.elevationUse == ElevationUse(true, "ok"))
+        check(route.elevationRepair.spikePoints == 2)
+        check(route.elevationRepair.interpolatedPoints == 2)
+        check(route.elevationRepair.totalPoints == 200)
+        check(route.elevationRepair.maxResidualMeters in 15.0..17.0)
+        check(route.elevationRepair.atMeters == listOf(route.cumulativeMeters[80], route.cumulativeMeters[81]))
+        check(kotlin.math.abs(route.smoothedElevationMeters[80] - expected) <= 1e-6)
+        check(kotlin.math.abs(route.smoothedElevationMeters[81] - (expected + 0.1)) <= 1e-6)
+        val target = RouteEtaTracker(route).estimate(0.0, ProgressDirection.FORWARD, arrived = false)
+        check(target?.slopeSource == "tobler")
+    }
+
+    @Test
+    fun distanceWeightedInterpolationUsesCumulativeMetersNotIndexMidpoint() {
+        val distances = listOf(0.0, 10.0, 50.0, 140.0, 150.0, 300.0, 400.0)
+        val elevations = listOf(100.0, 100.2, 117.0, 102.8, 103.0, 106.0, 108.0)
+        val route = RouteModel.fromGpx(
+            distanceProfileXml(distances, elevations),
+            GuideConfig(elevationSpikeMaxRatio = 0.15),
+        )
+
+        check(route.elevationUse == ElevationUse(true, "ok"))
+        check(route.elevationRepair.spikePoints == 1)
+        check(route.elevationRepair.interpolatedPoints == 1)
+        // The repaired raw point is 101.0 m by distance ratio; the unchanged
+        // median/moving-average pipeline produces this value at the same index.
+        check(kotlin.math.abs(route.smoothedElevationMeters[2] - 101.33333333333333) <= 1e-6)
+    }
+
+    @Test
+    fun spikeRatioBoundaryAndConfigControl() {
+        fun routeWithSpikes(count: Int, config: GuideConfig = GuideConfig()): RouteModel {
+            val elevations = MutableList(100) { 100.0 }
+            listOf(20, 40, 60).take(count).forEach { index -> elevations[index] += 20.0 }
+            return RouteModel.fromGpx(distanceProfileXml(List(100) { it * 10.0 }, elevations), config)
+        }
+
+        val atBoundary = routeWithSpikes(2)
+        check(atBoundary.elevationUse == ElevationUse(true, "ok"))
+        check(atBoundary.elevationRepair.spikePoints == 2)
+        check(atBoundary.elevationRepair.interpolatedPoints == 2)
+
+        val aboveBoundary = routeWithSpikes(3)
+        check(aboveBoundary.elevationUse == ElevationUse(false, "unstable"))
+        check(aboveBoundary.elevationRepair.spikePoints == 3)
+        check(aboveBoundary.elevationRepair.interpolatedPoints == 0)
+
+        val increasedCap = routeWithSpikes(3, GuideConfig(elevationSpikeMaxRatio = 0.05))
+        check(increasedCap.elevationUse == ElevationUse(true, "ok"))
+        check(increasedCap.elevationRepair.interpolatedPoints == 3)
+        check(runCatching { GuideConfig(elevationSpikeMaxRatio = -0.01) }.isFailure)
+        check(runCatching { GuideConfig(elevationSpikeMaxRatio = 1.01) }.isFailure)
+    }
+
+    @Test
+    fun endpointSpikesAreNeverInterpolated() {
+        val elevations = MutableList(200) { 100.0 }
+        elevations[0] += 20.0
+        elevations[199] -= 20.0
+        val route = RouteModel.fromGpx(distanceProfileXml(List(200) { it * 5.0 }, elevations))
+
+        check(route.elevationUse == ElevationUse(false, "unstable"))
+        check(route.elevationRepair.spikePoints == 2)
+        check(route.elevationRepair.interpolatedPoints == 0)
+        check(route.elevationRepair.atMeters == listOf(route.cumulativeMeters.first(), route.cumulativeMeters.last()))
+    }
+
+    @Test
+    fun postInterpolationResidualCanKeepTheProfileUnstable() {
+        val distances = listOf(0.0, 0.2, 10.3, 16.7, 24.2, 24.4, 32.8, 43.6, 43.8, 44.0, 44.2, 47.6)
+        val elevations = listOf(-1.0, 1.0, 9.0, 19.0, 8.0, 36.0, 2.0, 6.0, 4.0, 21.0, 26.0, 25.0)
+        val route = RouteModel.fromGpx(
+            distanceProfileXml(distances, elevations),
+            GuideConfig(minimumPointSpacingMeters = 0.0, elevationSpikeMaxRatio = 0.1),
+        )
+
+        check(route.elevationUse == ElevationUse(false, "unstable"))
+        check(route.elevationRepair.spikePoints == 1)
+        check(route.elevationRepair.interpolatedPoints == 1)
+        check(route.elevationRepair.atMeters == listOf(route.cumulativeMeters[5]))
+    }
+
+    @Test
+    fun noSpikeProfileKeepsTheOriginalSmoothedValues() {
+        val elevations = List(40) { index -> 100.0 + index * 0.5 }
+        val route = RouteModel.fromGpx(distanceProfileXml(List(40) { it * 5.0 }, elevations))
+
+        check(route.elevationUse == ElevationUse(true, "ok"))
+        val expected = legacySmoothedProfile(elevations)
+        check(route.smoothedElevationMeters == expected)
+        check(route.elevationRepair.spikePoints == 0)
+        check(route.elevationRepair.interpolatedPoints == 0)
+        check(route.elevationRepair.totalPoints == 40)
+        check(route.elevationRepair.atMeters.isEmpty())
+    }
+
+    private fun distanceProfileXml(distances: List<Double>, elevations: List<Double>): String {
+        require(distances.size == elevations.size)
+        val points = distances.zip(elevations).joinToString("") { (distance, elevation) ->
+            val longitude = Math.toDegrees(distance / 6_371_008.8)
+            "<trkpt lat=\"0.0\" lon=\"$longitude\"><ele>$elevation</ele></trkpt>"
+        }
+        return "<gpx><trk><trkseg>$points</trkseg></trk></gpx>"
+    }
+
+    private fun legacySmoothedProfile(raw: List<Double>): List<Double> {
+        val median = raw.indices.map { index ->
+            val from = (index - 2).coerceAtLeast(0)
+            val to = (index + 2).coerceAtMost(raw.lastIndex)
+            raw.subList(from, to + 1).sorted()[(to - from) / 2]
+        }
+        return median.indices.map { index ->
+            if (index == 0 || index == median.lastIndex) raw[index]
+            else {
+                val from = (index - 1).coerceAtLeast(0)
+                val to = (index + 1).coerceAtMost(median.lastIndex)
+                median.subList(from, to + 1).average()
+            }
+        }
+    }
 }

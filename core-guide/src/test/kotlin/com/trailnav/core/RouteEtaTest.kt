@@ -125,6 +125,72 @@ class RouteEtaTest {
     }
 
     @Test
+    fun genericWaypointNamesMatchOnlyTheApprovedPattern() {
+        listOf("경유지 #7", "경유지 2", "경유지#12", "  경유지   #  4  ").forEach {
+            assertTrue(isGenericWaypointName(it), "expected generic waypoint name: '$it'")
+        }
+        listOf("바라산", "경유지 입구", "경유지 #7 쉼터", "").forEach {
+            assertFalse(isGenericWaypointName(it), "expected named waypoint: '$it'")
+        }
+    }
+
+    @Test
+    fun estimatesCarryWaypointAndPeakLabelsWithoutChangingTravelValues() {
+        val distances = listOf(0.0, 100.0, 200.0, 300.0, 400.0, 500.0, 600.0)
+        val expectedSecondsPerHundredMeters = 100.0 / toblerSpeedMetersPerSecond(0.0)
+        val namedRoute = route(
+            distances = distances,
+            waypoints = listOf(Waypoint("바라산", GeoPoint(0.0, 0.0), 300.0, 0.0)),
+        )
+        val named = estimate(namedRoute, 200.0)!!
+        assertEquals(TargetKind.NEXT_SUMMIT, named.kind)
+        assertEquals(TargetLabelKind.NAMED_WAYPOINT, named.labelKind)
+        assertEquals("바라산", named.name)
+        assertEquals(100.0, named.remainingMeters)
+        assertEquals(expectedSecondsPerHundredMeters, named.remainingSeconds!!, 1e-6)
+
+        val unnamedRoute = route(
+            distances = distances,
+            waypoints = listOf(Waypoint("경유지 #3", GeoPoint(0.0, 0.0), 300.0, 0.0)),
+        )
+        val unnamed = estimate(unnamedRoute, 200.0)!!
+        assertEquals(TargetKind.NEXT_SUMMIT, unnamed.kind)
+        assertEquals(TargetLabelKind.UNNAMED_WAYPOINT, unnamed.labelKind)
+        assertNull(unnamed.name)
+        assertEquals(named.remainingMeters, unnamed.remainingMeters)
+        assertEquals(named.remainingSeconds, unnamed.remainingSeconds)
+
+        val destinationWaypointRoute = route(
+            distances = distances,
+            waypoints = listOf(Waypoint("도착지", GeoPoint(0.0, 0.0), 590.0, 0.0)),
+        )
+        val destinationWaypoint = estimate(destinationWaypointRoute, 100.0)!!
+        assertEquals(TargetKind.NEXT_SUMMIT, destinationWaypoint.kind)
+        assertEquals(TargetLabelKind.DESTINATION, destinationWaypoint.labelKind)
+        assertNull(destinationWaypoint.name)
+        assertEquals(490.0, destinationWaypoint.remainingMeters)
+        assertEquals(490.0 / toblerSpeedMetersPerSecond(0.0), destinationWaypoint.remainingSeconds!!, 1e-6)
+
+        val peakRoute = route(
+            distances = distances,
+            peaks = listOf(Peak(300.0, 200.0, 100.0)),
+        )
+        val peak = estimate(peakRoute, 200.0)!!
+        assertEquals(TargetKind.NEXT_SUMMIT, peak.kind)
+        assertEquals(TargetLabelKind.ELEVATION_PEAK, peak.labelKind)
+        assertNull(peak.name)
+        assertEquals(named.remainingMeters, peak.remainingMeters)
+        assertEquals(named.remainingSeconds, peak.remainingSeconds)
+
+        val arrived = estimate(namedRoute, 590.0, arrived = true)!!
+        assertEquals(TargetKind.DESTINATION, arrived.kind)
+        assertEquals(TargetLabelKind.DESTINATION, arrived.labelKind)
+        assertNull(arrived.name)
+        assertEquals(0.0, arrived.remainingMeters)
+        assertEquals(0.0, arrived.remainingSeconds)
+    }
+
+    @Test
     fun reverseSilencesTargetAndArrivalHasZeroDestinationEta() {
         val route = route()
         assertNull(estimate(route, 100.0, direction = ProgressDirection.REVERSE))

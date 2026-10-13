@@ -96,6 +96,13 @@ class MainActivity : AppCompatActivity() {
                         intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_TARGET_KIND).orEmpty(),
                     )
                 }.getOrNull(),
+                targetLabelKind = runCatching {
+                    com.trailnav.core.TargetLabelKind.valueOf(
+                        intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_TARGET_LABEL_KIND).orEmpty(),
+                    )
+                }.getOrNull(),
+                targetName = intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_TARGET_NAME)
+                    ?.takeIf { it.isNotBlank() },
                 targetRemainingMeters = intent.getDoubleExtra(
                     TrailForegroundService.EXTRA_RIBBON_TARGET_REMAINING_METERS,
                     -1.0,

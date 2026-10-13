@@ -10,6 +10,13 @@ enum class TargetKind {
     DESTINATION,
 }
 
+enum class TargetLabelKind {
+    NAMED_WAYPOINT,
+    UNNAMED_WAYPOINT,
+    ELEVATION_PEAK,
+    DESTINATION,
+}
+
 data class RouteTargetEstimate(
     val kind: TargetKind,
     val source: String,
@@ -18,6 +25,12 @@ data class RouteTargetEstimate(
     val correction: Double,
     val correctionActive: Boolean,
     val slopeSource: String,
+    val name: String? = null,
+    val labelKind: TargetLabelKind = if (kind == TargetKind.DESTINATION) {
+        TargetLabelKind.DESTINATION
+    } else {
+        TargetLabelKind.ELEVATION_PEAK
+    },
 )
 
 private data class RouteEtaObservation(
@@ -42,6 +55,7 @@ class RouteEtaTracker(
     private data class TargetCandidate(
         val s: Double,
         val source: String,
+        val name: String?,
     )
 
     private val totalLengthMeters = route.totalLengthMeters.coerceAtLeast(0.0)
@@ -122,6 +136,15 @@ class RouteEtaTracker(
             return destinationEstimate(progressMeters, correction)
         }
 
+        val labelKind = when {
+            candidate.source == WAYPOINT_SOURCE &&
+                candidate.s >= totalLengthMeters - config.arriveRadiusMeters -> TargetLabelKind.DESTINATION
+            candidate.source == WAYPOINT_SOURCE && candidate.name != null && isGenericWaypointName(candidate.name) ->
+                TargetLabelKind.UNNAMED_WAYPOINT
+            candidate.source == WAYPOINT_SOURCE -> TargetLabelKind.NAMED_WAYPOINT
+            else -> TargetLabelKind.ELEVATION_PEAK
+        }
+
         return RouteTargetEstimate(
             kind = TargetKind.NEXT_SUMMIT,
             source = candidate.source,
@@ -130,6 +153,8 @@ class RouteEtaTracker(
             correction = correction.first,
             correctionActive = correction.second,
             slopeSource = slopeSource(),
+            name = if (labelKind == TargetLabelKind.NAMED_WAYPOINT) candidate.name else null,
+            labelKind = labelKind,
         )
     }
 
@@ -149,11 +174,11 @@ class RouteEtaTracker(
     private fun targetCandidates(): List<TargetCandidate> =
         if (route.waypoints.isNotEmpty()) {
             route.waypoints
-                .map { TargetCandidate(it.s, WAYPOINT_SOURCE) }
+                .map { TargetCandidate(it.s, WAYPOINT_SOURCE, it.name) }
                 .sortedBy { it.s }
         } else {
             route.peaks
-                .map { TargetCandidate(it.s, ELEVATION_PEAK_SOURCE) }
+                .map { TargetCandidate(it.s, ELEVATION_PEAK_SOURCE, null) }
                 .sortedBy { it.s }
         }
 
@@ -228,6 +253,11 @@ class RouteEtaTracker(
         const val DESTINATION_SOURCE = "destination"
     }
 }
+
+internal fun isGenericWaypointName(name: String): Boolean =
+    GENERIC_WAYPOINT_NAME.matches(name.trim())
+
+private val GENERIC_WAYPOINT_NAME = Regex("^경유지\\s*#?\\s*\\d+$")
 
 internal fun toblerSpeedMetersPerSecond(slope: Double): Double =
     (6.0 * exp(-3.5 * abs(slope + 0.05))) / 3.6

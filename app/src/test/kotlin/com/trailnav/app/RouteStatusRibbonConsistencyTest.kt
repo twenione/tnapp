@@ -9,10 +9,12 @@ import com.trailnav.core.RouteModel
 import com.trailnav.core.RouteStatus
 import com.trailnav.core.RouteTargetEstimate
 import com.trailnav.core.Side
+import com.trailnav.core.TargetLabelKind
 import com.trailnav.core.TargetKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** D-039/D-112 rows compare route facts that appear in both the ribbon and actual on-demand speech. */
@@ -26,7 +28,7 @@ class RouteStatusRibbonConsistencyTest {
                     direction = ProgressDirection.FORWARD,
                     remaining = 2_000.0,
                     nextTurn = NextTurn(2, Side.LEFT, 85.0, 90.0),
-                    target = target(TargetKind.NEXT_SUMMIT, 850.0, 600.0),
+                    target = target(TargetKind.NEXT_SUMMIT, 850.0, 600.0, TargetLabelKind.NAMED_WAYPOINT, "바라산"),
                 ),
                 ribbon = ribbon(
                     offRoute = false,
@@ -35,6 +37,8 @@ class RouteStatusRibbonConsistencyTest {
                     nextTurn = RibbonNextTurn(85.0, RibbonTurnSide.LEFT),
                     targetKind = TargetKind.NEXT_SUMMIT,
                     targetRemaining = 850.0,
+                    targetLabelKind = TargetLabelKind.NAMED_WAYPOINT,
+                    targetName = "바라산",
                 ),
             ),
             Row(
@@ -61,7 +65,7 @@ class RouteStatusRibbonConsistencyTest {
                     offRouteDistance = 42.0,
                     direction = ProgressDirection.FORWARD,
                     remaining = 1_234.0,
-                    target = target(TargetKind.NEXT_SUMMIT, 850.0, 600.0),
+                    target = target(TargetKind.NEXT_SUMMIT, 850.0, 600.0, TargetLabelKind.UNNAMED_WAYPOINT),
                 ),
                 ribbon = ribbon(
                     perpendicular = 42.0,
@@ -70,6 +74,7 @@ class RouteStatusRibbonConsistencyTest {
                     remaining = 1_234.0,
                     targetKind = TargetKind.NEXT_SUMMIT,
                     targetRemaining = 850.0,
+                    targetLabelKind = TargetLabelKind.UNNAMED_WAYPOINT,
                 ),
             ),
             Row(
@@ -88,13 +93,14 @@ class RouteStatusRibbonConsistencyTest {
                 status = status(
                     direction = ProgressDirection.STATIONARY,
                     remaining = 2_000.0,
-                    target = target(TargetKind.NEXT_SUMMIT, 1_234.0, 1_500.0),
+                    target = target(TargetKind.NEXT_SUMMIT, 1_234.0, 1_500.0, TargetLabelKind.ELEVATION_PEAK),
                 ),
                 ribbon = ribbon(
                     direction = ProgressDirection.STATIONARY,
                     remaining = 2_000.0,
                     targetKind = TargetKind.NEXT_SUMMIT,
                     targetRemaining = 1_234.0,
+                    targetLabelKind = TargetLabelKind.ELEVATION_PEAK,
                 ),
             ),
             Row(
@@ -181,8 +187,41 @@ class RouteStatusRibbonConsistencyTest {
         assertTrue(beforeSwitch.speech.contains("다음 정상까지는 "))
         assertEquals(TargetKind.DESTINATION, afterSwitch.statusKind)
         assertEquals(TargetKind.DESTINATION, afterSwitch.ribbonKind)
-        assertTrue(afterSwitch.label.startsWith("최종 목적지까지 "))
-        assertTrue(afterSwitch.speech.contains("최종 목적지까지는 "))
+        assertTrue(afterSwitch.label.startsWith("도착지까지 "))
+        assertTrue(afterSwitch.speech.contains("도착지까지는 "))
+    }
+
+    @Test
+    fun namedUnnamedAndDestinationWaypointSubjectsMatchOnEveryRouteFrame() {
+        val route = routeWithWaypointLabels()
+        val config = GuideConfig(minimumSessionSecondsBeforeArrival = 0.0)
+        val session = GuideSession(route, config)
+        val frames = listOf(0.0, 250.0, 600.0, 970.0, 1_000.0)
+
+        frames.forEachIndexed { index, progress ->
+            val location = location(progress, index * 1_000L)
+            val decision = session.accept(location)
+            val status = session.routeStatus()!!
+            val target = status.target
+            val ribbon = RouteRibbonCalculator.calculate(location, decision.result, route, config, target)!!
+            val label = ribbonDistanceLabel(ribbon)
+            DistanceTimeMode.values().forEach { mode ->
+                val speech = GuidancePhrases.onDemandResponse(status, mode, hasEnteredRoute = true)
+                val differences = compareRibbonAndVoice(Row("waypoint-frame-$progress", status, ribbon), mode, speech)
+                assertTrue(differences.isEmpty(), "frame=$progress/$mode: ${differences.joinToString()}")
+            }
+
+            when (progress) {
+                0.0 -> assertTrue(label.startsWith("바라산까지 "), label)
+                250.0 -> assertTrue(label.startsWith("다음 경유지까지 "), label)
+                600.0, 970.0 -> {
+                    assertTrue(label.startsWith("도착지까지 "), label)
+                    assertEquals(TargetLabelKind.DESTINATION, target?.labelKind)
+                    assertNull(target?.name)
+                }
+                1_000.0 -> assertEquals("목적지에 도착했습니다", GuidancePhrases.onDemandResponse(status, DistanceTimeMode.Both, true))
+            }
+        }
     }
 
     @Test
@@ -226,12 +265,51 @@ class RouteStatusRibbonConsistencyTest {
     }
 
     @Test
+    fun mismatchedWaypointAndDestinationSubjectsAreReported() {
+        val waypointMismatch = Row(
+            name = "named-speech-unnamed-ribbon",
+            status = status(
+                direction = ProgressDirection.FORWARD,
+                remaining = 2_000.0,
+                target = target(TargetKind.NEXT_SUMMIT, 850.0, 600.0, TargetLabelKind.NAMED_WAYPOINT, "바라산"),
+            ),
+            ribbon = ribbon(
+                direction = ProgressDirection.FORWARD,
+                remaining = 2_000.0,
+                targetKind = TargetKind.NEXT_SUMMIT,
+                targetRemaining = 850.0,
+                targetLabelKind = TargetLabelKind.UNNAMED_WAYPOINT,
+            ),
+        )
+        val waypointSpeech = GuidancePhrases.onDemandResponse(waypointMismatch.status, DistanceTimeMode.DistanceOnly, true)
+        assertTrue(compareRibbonAndVoice(waypointMismatch, DistanceTimeMode.DistanceOnly, waypointSpeech).isNotEmpty())
+
+        val destinationMismatch = Row(
+            name = "summit-ribbon-destination-speech",
+            status = status(
+                direction = ProgressDirection.FORWARD,
+                remaining = 200.0,
+                target = target(TargetKind.NEXT_SUMMIT, 100.0, 70.0, TargetLabelKind.DESTINATION),
+            ),
+            ribbon = ribbon(
+                direction = ProgressDirection.FORWARD,
+                remaining = 200.0,
+                targetKind = TargetKind.NEXT_SUMMIT,
+                targetRemaining = 100.0,
+                targetLabelKind = TargetLabelKind.ELEVATION_PEAK,
+            ),
+        )
+        val destinationSpeech = GuidancePhrases.onDemandResponse(destinationMismatch.status, DistanceTimeMode.DistanceOnly, true)
+        assertTrue(compareRibbonAndVoice(destinationMismatch, DistanceTimeMode.DistanceOnly, destinationSpeech).isNotEmpty())
+    }
+
+    @Test
     fun routeRibbonFieldStructureMatchesD039AndExcludesHiddenRouteDetails() {
         val fields = RouteRibbonState::class.java.declaredFields.map { it.name }.toSet()
         val expected = setOf(
             "perpendicularDistanceMeters", "signedOffsetMeters", "direction", "offRoute",
             "enterBandMeters", "exitBandMeters", "accuracyRadiusMeters", "remainingDistanceMeters", "nextTurn",
-            "targetKind", "targetRemainingMeters",
+            "targetKind", "targetRemainingMeters", "targetLabelKind", "targetName",
         )
         assertEquals(expected, fields)
         assertTrue(fields.none { it.contains("elevation", ignoreCase = true) || it.contains("waypoint", ignoreCase = true) })
@@ -264,7 +342,7 @@ class RouteStatusRibbonConsistencyTest {
         }
 
         if (status.direction == ProgressDirection.REVERSE) {
-            if (!label.startsWith("목적지까지 ")) differences += "reverse ribbon label is not destination distance"
+            if (!label.startsWith("도착지까지 ")) differences += "reverse ribbon label is not destination distance"
             if (Regex("\\d+(?:\\.\\d+)?(?:미터|킬로미터)").containsMatchIn(speech)) {
                 differences += "reverse voice includes a distance"
             }
@@ -272,18 +350,22 @@ class RouteStatusRibbonConsistencyTest {
         }
 
         status.target?.let { target ->
-            val expectedKind = target.kind
-            val labelKind = labelTargetKind(label)
-            val voiceKind = speechTargetKind(speech)
-            if (ribbon.targetKind != expectedKind || labelKind != expectedKind || voiceKind != expectedKind) {
-                differences += "target kind differs: state=${ribbon.targetKind} label=$labelKind voice=$voiceKind expected=$expectedKind"
+            val labelSubject = label.substringBefore("까지 ").takeIf { it != label }
+            val voiceSubject = Regex("(?:^|\\. )([^.]+?)까지는 ")
+                .findAll(speech)
+                .lastOrNull()
+                ?.groupValues
+                ?.get(1)
+                ?.trim()
+            if (labelSubject == null || voiceSubject == null || labelSubject != voiceSubject) {
+                differences += "target subject differs: ribbon=$labelSubject voice=$voiceSubject"
             }
 
             val includesDistance = mode != DistanceTimeMode.TimeOnly || GuidancePhrases.etaPhrase(target.remainingSeconds) == null
             if (includesDistance) {
                 val expectedDistance = GuidancePhrases.formatDistance(target.remainingMeters)
                 val actualRibbonDistance = ribbon.targetRemainingMeters?.let(GuidancePhrases::formatDistance)
-                val spokenTargetText = targetPhraseText(speech, expectedKind)
+                val spokenTargetText = voiceSubject?.let { targetPhraseText(speech, it) }
                 if (actualRibbonDistance != expectedDistance || spokenTargetText?.contains(expectedDistance) != true) {
                     differences += "target distance differs: ribbon=$actualRibbonDistance voice=$expectedDistance"
                 }
@@ -317,23 +399,8 @@ class RouteStatusRibbonConsistencyTest {
         return differences
     }
 
-    private fun labelTargetKind(label: String): TargetKind? = when {
-        label.startsWith("다음 정상까지 ") -> TargetKind.NEXT_SUMMIT
-        label.startsWith("최종 목적지까지 ") || label.startsWith("목적지까지 ") -> TargetKind.DESTINATION
-        else -> null
-    }
-
-    private fun speechTargetKind(speech: String): TargetKind? = when {
-        speech.contains("다음 정상까지는 ") -> TargetKind.NEXT_SUMMIT
-        speech.contains("최종 목적지까지는 ") -> TargetKind.DESTINATION
-        else -> null
-    }
-
-    private fun targetPhraseText(speech: String, kind: TargetKind): String? {
-        val prefix = when (kind) {
-            TargetKind.NEXT_SUMMIT -> "다음 정상까지는 "
-            TargetKind.DESTINATION -> "최종 목적지까지는 "
-        }
+    private fun targetPhraseText(speech: String, subject: String): String? {
+        val prefix = "${subject}까지는 "
         return speech.substringAfter(prefix, "").takeIf { it.isNotEmpty() }?.substringBefore("입니다")
     }
 
@@ -353,6 +420,18 @@ class RouteStatusRibbonConsistencyTest {
         )
     }
 
+    private fun routeWithWaypointLabels(): RouteModel {
+        val distances = listOf(0.0, 1_000.0)
+        val track = distances.joinToString("") { distance ->
+            "<trkpt lat=\"0.0\" lon=\"${Math.toDegrees(distance / EARTH_RADIUS_METERS)}\"/>"
+        }
+        val waypoints = listOf(250.0 to "바라산", 600.0 to "경유지 #2", 1_000.0 to "도착지")
+            .joinToString("") { (distance, name) ->
+                "<wpt lat=\"0.0\" lon=\"${Math.toDegrees(distance / EARTH_RADIUS_METERS)}\"><name>$name</name></wpt>"
+            }
+        return RouteModel.fromGpx("<gpx>$waypoints<trk><trkseg>$track</trkseg></trk></gpx>")
+    }
+
     private fun location(progressMeters: Double, timestampMillis: Long) = TrailLocation(
         timestampMillis = timestampMillis,
         latitude = 0.0,
@@ -363,7 +442,13 @@ class RouteStatusRibbonConsistencyTest {
         provider = "test",
     )
 
-    private fun target(kind: TargetKind, meters: Double, seconds: Double?) = RouteTargetEstimate(
+    private fun target(
+        kind: TargetKind,
+        meters: Double,
+        seconds: Double?,
+        labelKind: TargetLabelKind? = null,
+        name: String? = null,
+    ) = RouteTargetEstimate(
         kind = kind,
         source = "test",
         remainingMeters = meters,
@@ -371,6 +456,8 @@ class RouteStatusRibbonConsistencyTest {
         correction = 1.0,
         correctionActive = false,
         slopeSource = "flat",
+        name = name,
+        labelKind = labelKind ?: if (kind == TargetKind.DESTINATION) TargetLabelKind.DESTINATION else TargetLabelKind.ELEVATION_PEAK,
     )
 
     private fun status(
@@ -391,6 +478,8 @@ class RouteStatusRibbonConsistencyTest {
         nextTurn: RibbonNextTurn? = null,
         targetKind: TargetKind? = null,
         targetRemaining: Double? = null,
+        targetLabelKind: TargetLabelKind? = null,
+        targetName: String? = null,
     ) = RouteRibbonState(
         perpendicularDistanceMeters = perpendicular,
         signedOffsetMeters = 0.0,
@@ -403,6 +492,8 @@ class RouteStatusRibbonConsistencyTest {
         nextTurn = nextTurn,
         targetKind = targetKind,
         targetRemainingMeters = targetRemaining,
+        targetLabelKind = targetLabelKind,
+        targetName = targetName,
     )
 
     private data class Row(

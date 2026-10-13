@@ -1,6 +1,7 @@
 package com.trailnav.app
 
 import com.trailnav.core.GuideResult
+import com.trailnav.core.ElevationRepair
 import java.io.BufferedWriter
 import java.io.Closeable
 import java.io.File
@@ -9,6 +10,8 @@ import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.Locale
+import kotlin.math.roundToInt
 
 /** Structured event sink so the Android service can be exercised without Android in JVM tests. */
 interface SessionEventSink : Closeable {
@@ -34,6 +37,9 @@ class JsonlSessionLogger(
     private val routeElevationUsed: Boolean = false,
     private val routeElevationReason: String = "absent",
     private val routeWaypointCount: Int = 0,
+    private val routeElevationRepair: ElevationRepair = ElevationRepair(),
+    private val routeElevationSpikeRatioCap: Double = 0.02,
+    private val routeElevationSpikeThresholdMeters: Double = 10.0,
 ) : SessionEventSink {
     private val eventsFile = File(directory, "events.ndjson")
     private val writer: BufferedWriter
@@ -65,6 +71,9 @@ class JsonlSessionLogger(
         val eventsJson = GuideEvent.values().joinToString(separator = ",", prefix = "{", postfix = "}") { event ->
             "\"${event.id}\":${eventSettings.getValue(event.id)}"
         }
+        val spikeRatio = if (routeElevationRepair.totalPoints == 0) 0.0 else
+            routeElevationRepair.spikePoints.toDouble() / routeElevationRepair.totalPoints
+        val spikeAtMeters = routeElevationRepair.atMeters.take(50).joinToString(",") { it.roundToInt().toString() }
         File(directory, "manifest.json").writeText(
             """{
               "session_id":"${escape(sessionId)}",
@@ -72,7 +81,7 @@ class JsonlSessionLogger(
               "started_at_wall":"${java.time.Instant.now()}",
               "app":{"version":"${escape(appVersion)}","code_hash":"${escape(codeHash)}"},
               "engine":{"config":{"implementation":"core-guide","config_hash":"${escape(configHash)}","events":$eventsJson},"rng_seed":0},
-              "route":{"gpx_hash":"${escape(routeHash)}","elevation_used":$routeElevationUsed,"elevation_reason":"${escape(routeElevationReason)}","waypoint_count":$routeWaypointCount},
+              "route":{"gpx_hash":"${escape(routeHash)}","elevation_used":$routeElevationUsed,"elevation_reason":"${escape(routeElevationReason)}","waypoint_count":$routeWaypointCount,"elevation_spike_points":${routeElevationRepair.spikePoints},"elevation_interpolated_points":${routeElevationRepair.interpolatedPoints},"elevation_total_points":${routeElevationRepair.totalPoints},"elevation_spike_ratio":${String.format(Locale.US, "%.4f", spikeRatio)},"elevation_spike_ratio_cap":$routeElevationSpikeRatioCap,"elevation_max_residual_m":${String.format(Locale.US, "%.1f", routeElevationRepair.maxResidualMeters)},"elevation_spike_threshold_m":$routeElevationSpikeThresholdMeters,"elevation_spike_at_m":"${escape(spikeAtMeters)}"},
               "clock":{"monotonic_source":"location-frame-timestamp","timestamp_unit":"seconds","t_order":"per-stream","seq_order":"append"},
               "privacy":{"upload_default":false}
             }""".trimIndent() + "\n",

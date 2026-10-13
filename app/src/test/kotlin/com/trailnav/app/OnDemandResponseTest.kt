@@ -5,6 +5,7 @@ import com.trailnav.core.ProgressDirection
 import com.trailnav.core.RouteStatus
 import com.trailnav.core.RouteTargetEstimate
 import com.trailnav.core.Side
+import com.trailnav.core.TargetLabelKind
 import com.trailnav.core.TargetKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -56,24 +57,24 @@ class OnDemandResponseTest {
             target = target(TargetKind.DESTINATION, 2_000.0, 1_194.0),
         )
         assertEquals(
-            "최종 목적지까지는 2킬로미터, 약 20분입니다. 다음 꺾임 정보가 없습니다",
+            "도착지까지는 2킬로미터, 약 20분입니다. 다음 꺾임 정보가 없습니다",
             GuidancePhrases.onDemandResponse(destination, DistanceTimeMode.Both, hasEnteredRoute = true),
         )
         assertEquals(
-            "최종 목적지까지는 2킬로미터입니다. 다음 꺾임 정보가 없습니다",
+            "도착지까지는 2킬로미터입니다. 다음 꺾임 정보가 없습니다",
             GuidancePhrases.onDemandResponse(destination, DistanceTimeMode.DistanceOnly, hasEnteredRoute = true),
         )
         assertEquals(
-            "최종 목적지까지는 약 20분입니다. 다음 꺾임 정보가 없습니다",
+            "도착지까지는 약 20분입니다. 다음 꺾임 정보가 없습니다",
             GuidancePhrases.onDemandResponse(destination, DistanceTimeMode.TimeOnly, hasEnteredRoute = true),
         )
         val unknownEta = destination.copy(target = target(TargetKind.DESTINATION, 2_000.0, null))
         assertEquals(
-            "최종 목적지까지는 2킬로미터입니다. 다음 꺾임 정보가 없습니다",
+            "도착지까지는 2킬로미터입니다. 다음 꺾임 정보가 없습니다",
             GuidancePhrases.onDemandResponse(unknownEta, DistanceTimeMode.Both, hasEnteredRoute = true),
         )
         assertEquals(
-            "최종 목적지까지는 2킬로미터입니다. 다음 꺾임 정보가 없습니다",
+            "도착지까지는 2킬로미터입니다. 다음 꺾임 정보가 없습니다",
             GuidancePhrases.onDemandResponse(unknownEta, DistanceTimeMode.TimeOnly, hasEnteredRoute = true),
         )
     }
@@ -126,6 +127,18 @@ class OnDemandResponseTest {
     }
 
     @Test
+    fun missingTargetFallbackUsesDestinationLabel() {
+        assertEquals(
+            "도착지까지는 1.2킬로미터입니다. 다음 꺾임 정보가 없습니다",
+            GuidancePhrases.onDemandResponse(
+                status(direction = ProgressDirection.FORWARD, remainingMeters = 1_234.0),
+                DistanceTimeMode.DistanceOnly,
+                hasEnteredRoute = true,
+            ),
+        )
+    }
+
+    @Test
     fun stationaryAndUnknownDirectionSayOnlyTheTargetPhraseWithoutStatusWords() {
         listOf(ProgressDirection.STATIONARY, ProgressDirection.UNKNOWN).forEach { direction ->
             val response = GuidancePhrases.onDemandResponse(
@@ -144,7 +157,32 @@ class OnDemandResponseTest {
         }
     }
 
-    private fun target(kind: TargetKind, meters: Double, seconds: Double?) = RouteTargetEstimate(
+    @Test
+    fun namedUnnamedPeakAndDestinationTargetsUseTheirSharedSubjects() {
+        fun response(labelKind: TargetLabelKind, name: String? = null): String = GuidancePhrases.onDemandResponse(
+            status(
+                direction = ProgressDirection.STATIONARY,
+                target = target(TargetKind.NEXT_SUMMIT, 1_200.0, 1_500.0, labelKind, name),
+            ),
+            DistanceTimeMode.DistanceOnly,
+            hasEnteredRoute = true,
+        )
+
+        assertEquals("바라산까지는 1.2킬로미터입니다", response(TargetLabelKind.NAMED_WAYPOINT, "바라산"))
+        assertEquals("다음 경유지까지는 1.2킬로미터입니다", response(TargetLabelKind.UNNAMED_WAYPOINT))
+        assertEquals("다음 정상까지는 1.2킬로미터입니다", response(TargetLabelKind.ELEVATION_PEAK))
+        assertEquals("도착지까지는 1.2킬로미터입니다", response(TargetLabelKind.DESTINATION))
+        assertEquals("다음 경유지", GuidancePhrases.targetSubject(TargetLabelKind.NAMED_WAYPOINT, null))
+        assertEquals("다음 경유지", GuidancePhrases.targetSubject(TargetLabelKind.NAMED_WAYPOINT, "  "))
+    }
+
+    private fun target(
+        kind: TargetKind,
+        meters: Double,
+        seconds: Double?,
+        labelKind: TargetLabelKind? = null,
+        name: String? = null,
+    ) = RouteTargetEstimate(
         kind = kind,
         source = "test",
         remainingMeters = meters,
@@ -152,14 +190,17 @@ class OnDemandResponseTest {
         correction = 1.0,
         correctionActive = false,
         slopeSource = "flat",
+        labelKind = labelKind ?: if (kind == TargetKind.DESTINATION) TargetLabelKind.DESTINATION else TargetLabelKind.ELEVATION_PEAK,
+        name = name,
     )
 
     private fun status(
         onRoute: Boolean = true,
         offRouteDistanceMeters: Double? = null,
         direction: ProgressDirection,
+        remainingMeters: Double = 2_000.0,
         target: RouteTargetEstimate? = null,
         nextTurn: NextTurn? = null,
         arrived: Boolean = false,
-    ) = RouteStatus(onRoute, offRouteDistanceMeters, direction, 2_000.0, nextTurn, arrived, target)
+    ) = RouteStatus(onRoute, offRouteDistanceMeters, direction, remainingMeters, nextTurn, arrived, target)
 }

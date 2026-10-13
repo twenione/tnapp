@@ -70,9 +70,20 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         return GuideResult(null, sunriseState, Reason("matching.no-route-segment"))
     }
     val directedMatch = RouteMatcher.withDirection(initializedState, match, frame, config)
-    val ema = RouteMatcher.updatedEma(initializedState, directedMatch, config)
+    val ema = RouteMatcher.updatedEma(initializedState, directedMatch, frame, config)
     val stationary = frame.speed != null && frame.speed.toDouble() < config.stationarySpeedMps
-    val direction = if (stationary) ProgressDirection.STATIONARY else directedMatch.direction
+    val resumeSince = when {
+        stationary -> null
+        initializedState.stationary -> frame.timestamp
+        else -> initializedState.resumeSince
+    }
+    val resumeHoldActive = resumeSince != null &&
+        (frame.timestamp - resumeSince) / 1_000.0 < config.directionResumeHoldSeconds
+    val direction = when {
+        stationary -> ProgressDirection.STATIONARY
+        directedMatch.direction == ProgressDirection.REVERSE && resumeHoldActive -> ProgressDirection.STATIONARY
+        else -> directedMatch.direction
+    }
     val reverseSince = when {
         direction == ProgressDirection.REVERSE -> initializedState.reverseSince ?: frame.timestamp
         else -> null
@@ -83,6 +94,7 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         emaDeltaMeters = ema,
         direction = direction,
         stationary = stationary,
+        resumeSince = resumeSince,
         reverseSince = reverseSince,
         reverseStatusIssued = if (direction == ProgressDirection.REVERSE) {
             initializedState.reverseStatusIssued
@@ -652,7 +664,6 @@ private fun evaluateSunsetStandalone(
     config: GuideConfig,
     higherPriority: Boolean,
 ): StandaloneSunsetEvaluation {
-    if (!config.sunsetEnabled) return StandaloneSunsetEvaluation(state, null, Reason("event.none"))
     val intervalOpen = state.lastPeriodicEventAt == null ||
         elapsedSeconds(frame.timestamp, state.lastPeriodicEventAt) >= config.eventMinIntervalSeconds
     val evaluation = evaluateSunset(previous, state, frame, config, intervalOpen, higherPriority)
@@ -669,15 +680,14 @@ private fun evaluateSunsetStandalone(
 /** Build an E7 candidate, retaining pending thresholds until a frame can speak. */
 private fun evaluateSunset(
     previous: GuideState,
-    state: GuideState,
+    initialState: GuideState,
     frame: SensorFrame,
     config: GuideConfig,
     eventIntervalOpen: Boolean,
     higherPriority: Boolean,
 ): SunsetEvaluation {
-    if (!config.sunsetEnabled) return SunsetEvaluation(state, null)
     val sunset = sunsetEpochSeconds(frame.timestamp, frame.lat, frame.lon)
-        ?: return SunsetEvaluation(state.copy(sunsetEvaluated = true), null)
+        ?: return SunsetEvaluation(initialState.copy(sunsetEvaluated = true), null)
     val minutes = (sunset - frame.timestamp / 1000.0) / 60.0
     val oldMinutes = previous.lastTimestamp?.let { (sunset - it / 1000.0) / 60.0 } ?: minutes
     val firstEvaluation = !previous.sunsetEvaluated
@@ -688,6 +698,13 @@ private fun evaluateSunset(
     } else {
         config.sunsetAnnounceMinutes.filter { oldMinutes > it && minutes <= it && it !in previous.consumedSunsetThresholds }.toSet()
     }
+    val state = initialState.copy(
+        sunsetEvaluated = true,
+        consumedSunsetThresholds = initialState.consumedSunsetThresholds + newlyCrossed,
+        pendingSunsetThresholds = if (config.sunsetEnabled) initialState.pendingSunsetThresholds else emptySet(),
+        pendingSunsetDelayReason = if (config.sunsetEnabled) initialState.pendingSunsetDelayReason else null,
+    )
+    if (!config.sunsetEnabled) return SunsetEvaluation(state, null)
     val pendingReason = when {
         state.pendingSunsetThresholds.isNotEmpty() -> state.pendingSunsetDelayReason
         higherPriority -> "higher-priority-event"
