@@ -73,6 +73,7 @@ def build_notice(readme: str, records: list[dict]) -> str:
     invalid = data["invalid"]
     valid = data["valid"]
     total = len(records)
+    trigger_event_count = sum("trigger_event" in record for record in records)
     notice = "\n".join([
         HEADING,
         "",
@@ -84,7 +85,9 @@ def build_notice(readme: str, records: list[dict]) -> str:
         f"Last created_at: {data['last_created_at']}",
         "Invalid signatures selected a setup-gradle input echo line (dependency-graph-continue-on-failure: true); regex false positives and compiler-error lines did not match.",
         "Consumers must treat invalid signatures as invalid and recompute from log using tools/preserve_failure_record.py first_meaningful_line and the read-only tools/audit_failure_records.py.",
-        "Version history: failrec-2.0.1 preserves the priority-table extractor; failrec-2.0.2 adds the * What went wrong: rule; failrec-2.0.0 is a closed set. failrec-1.0.0 has 5 records in a separate legacy schema.",
+        f'Extractor defect: in failrec-2.0.2 and earlier, an empty agp value with source unavailable means the declaration id("com.android.application") version "X" was not matched; it does not mean the version was undeclared. failrec-2.0.3 matches it. Existing records are not modified.',
+        f"trigger_event is recorded from 2026-09-16 (commit aa7a72e), in the middle of failrec-2.0.0: {trigger_event_count} of {total} failrec-2.0.0 records have it, the earlier ones do not. Records of failrec-2.0.1 and later carry it.",
+        "Version history: failrec-2.0.1 preserves the priority-table extractor; failrec-2.0.2 adds the * What went wrong: rule; failrec-2.0.3 fixes the agp declaration extraction; failrec-2.0.0 is a closed set. failrec-1.0.0 has 5 records in a separate legacy schema.",
         "",
     ])
     result = prefix + notice

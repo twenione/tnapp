@@ -32,6 +32,17 @@ def main() -> int:
     assert "invalid for 1 records and valid for 1 records" in generated
     assert "2" in generated and "1" in generated
     assert build_notice(generated, records) == generated
+    trigger_records = [
+        {**record("event-1", "FAIL: one", "FAIL: one", "2026-09-20T00:00:01Z"), "trigger_event": "push"},
+        {**record("event-2", "FAIL: two", "FAIL: two", "2026-09-20T00:00:02Z"), "trigger_event": "pull_request"},
+        record("event-3", "FAIL: three", "FAIL: three", "2026-09-20T00:00:03Z"),
+    ]
+    trigger_notice = build_notice(current, trigger_records)
+    assert "2 of 3 failrec-2.0.0 records have it" in trigger_notice
+    assert "0 of 2 failrec-2.0.0 records have it" in build_notice(current, records)
+    assert build_notice(trigger_notice, trigger_records) == trigger_notice
+    assert "Extractor defect:" in trigger_notice
+    assert "failrec-2.0.3 fixes the agp declaration extraction" in trigger_notice
     actual_shape = prefix + HEADING + "\nold\x0c\x1b\n"
     generated_actual_shape = build_notice(actual_shape, records)
     assert generated_actual_shape.startswith(prefix)
@@ -70,7 +81,7 @@ def main() -> int:
         assert online("stub/repo", "token", apply=False) == 0
     assert "records=2" in output.getvalue()
     print("online_schema_filter=PASS fetched=4 accepted=2")
-    print("readme_notice cases=8 failures=0 actual_shape=PASS valid_key_value_signature=PASS idempotent=PASS")
+    print("readme_notice cases=12 failures=0 trigger_event_count=PASS extractor_notice=PASS actual_shape=PASS valid_key_value_signature=PASS idempotent=PASS")
     return 0
 
 
