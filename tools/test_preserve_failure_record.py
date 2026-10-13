@@ -13,9 +13,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from preserve_failure_record import (
+    AGP_DECLARED_PATTERNS,
     EMPTY_LOG_SHA256,
     ERROR_LINE,
     SCHEMA_VERSION,
+    agp_mismatches,
     empty_log_mismatches,
     failed_job_log_text,
     first_meaningful_line,
@@ -23,6 +25,7 @@ from preserve_failure_record import (
     log_is_empty,
     selection_rule_fingerprint,
     signature_is_run_echo,
+    toolchain,
 )
 
 
@@ -232,6 +235,44 @@ class FailureRecordGuardTest(unittest.TestCase):
         self.assertTrue(empty_log_mismatches(lambda _log, _digest: False))
         self.assertTrue(empty_log_mismatches(lambda _log, digest: digest == EMPTY_LOG_SHA256))
         self.assertTrue(empty_log_mismatches(lambda log, _digest: not log.strip()))
+
+    def test_agp_patterns_match_expected_declarations(self) -> None:
+        self.assertEqual(agp_mismatches(AGP_DECLARED_PATTERNS), [])
+        self.assertTrue(agp_mismatches(AGP_DECLARED_PATTERNS[1:]))
+
+    def test_toolchain_extracts_agp_from_synthetic_build_files(self) -> None:
+        cases = (
+            ('id("com.android.application") version "8.13.0" apply false', "8.13.0", "declared"),
+            ("id 'com.android.library' version '8.5.1'", "8.5.1", "declared"),
+            ('id "com.android.application" version "7.4.2" apply false', "7.4.2", "declared"),
+            ('com.android.application version "8.1.0"', "8.1.0", "declared"),
+            ('id("com.android.application")', "", "unavailable"),
+            ('id("com.android.application") version "abc"', "", "unavailable"),
+            ('classpath "com.android.tools.build:gradle:8.0.0"', "", "unavailable"),
+        )
+        for declaration, expected, source in cases:
+            with self.subTest(declaration=declaration), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / "build.gradle.kts").write_text(declaration, encoding="utf-8")
+                with patch("preserve_failure_record.run_version", return_value=""):
+                    fact = toolchain(root)["agp"]
+                self.assertEqual(fact, {"value": expected, "source": source})
+
+    def test_toolchain_uses_root_agp_when_module_only_has_plugin_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "app").mkdir()
+            (root / "app" / "build.gradle.kts").write_text('id("com.android.application")', encoding="utf-8")
+            (root / "build.gradle.kts").write_text('id("com.android.application") version "8.13.0" apply false', encoding="utf-8")
+            with patch("preserve_failure_record.run_version", return_value=""):
+                self.assertEqual(toolchain(root)["agp"], {"value": "8.13.0", "source": "declared"})
+
+    def test_toolchain_preserves_version_catalog_agp(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "libs.versions.toml").write_text('agp = "8.5.0"', encoding="utf-8")
+            with patch("preserve_failure_record.run_version", return_value=""):
+                self.assertEqual(toolchain(root)["agp"], {"value": "8.5.0", "source": "declared"})
 
 def run_legacy_negative_control() -> int:
     expected = json.loads((FIXTURES / "manifest.json").read_text(encoding="utf-8"))
