@@ -20,7 +20,7 @@ ERROR_LINE = re.compile(r"(?i)##\[error\]")
 GRADLE_FAILURE_LINE = re.compile(r"(?i)^\s*>\s*Task\s+\S+\s+FAILED\s*$")
 EXIT_FAILURE_LINE = re.compile(r"(?i)##\[error\]\s*Process completed with exit code\s+\d+\.")
 ACTION_INPUT_LINE = re.compile(r"^\s*[A-Za-z][A-Za-z0-9_.-]*:\s+\S")
-EMPTY_LOG_SHA256 = "sha256:e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855"
+EMPTY_LOG_SHA256 = "sha256:" + hashlib.sha256(b"").hexdigest()
 ALLOWED_SOURCES = {"runtime", "declared", "unavailable"}
 SCHEMA_VERSION = "failrec-2.0.2"
 SELECTION_PRIORITY_PATTERNS = (
@@ -209,6 +209,20 @@ def declared_version(repo_root: Path, patterns: list[str]) -> str:
     return ""
 
 
+def log_is_empty(sanitized_log: str, log_sha256: str) -> bool:
+    return not sanitized_log.strip() or log_sha256 == EMPTY_LOG_SHA256
+
+
+def empty_log_mismatches(is_empty) -> list[str]:
+    cases = (
+        ("empty_text", "", "sha256:" + "a" * 64, True),
+        ("empty_hash", "x", EMPTY_LOG_SHA256, True),
+        ("whitespace", "  \n", "sha256:" + "b" * 64, True),
+        ("nonempty", "x", "sha256:" + "c" * 64, False),
+    )
+    return [name for name, log, digest, expected in cases if is_empty(log, digest) != expected]
+
+
 def toolchain(repo_root: Path) -> dict[str, dict[str, str]]:
     """Collect runtime and declared toolchain facts with explicit provenance."""
     gradle_runtime = run_version(["./gradlew", "--version"], repo_root)
@@ -311,7 +325,7 @@ def main() -> int:
     signature_source = failed_job_log_text(args.logs)
     sanitized_log = sanitize(raw)
     log_sha256 = "sha256:" + hashlib.sha256(sanitized_log.encode()).hexdigest()
-    if not sanitized_log.strip() or log_sha256 == EMPTY_LOG_SHA256:
+    if log_is_empty(sanitized_log, log_sha256):
         print("FAIL: refusing to write an empty failure log", flush=True)
         return 1
     jobs = failed_jobs(args.logs)
