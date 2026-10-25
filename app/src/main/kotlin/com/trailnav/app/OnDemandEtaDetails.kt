@@ -12,4 +12,5 @@ internal fun RouteTargetEstimate?.toOnDemandEtaDetails(): Map<String, String> = 
     "eta_slope_source" to (this?.slopeSource ?: ""),
     "target_label_kind" to (this?.labelKind?.name ?: ""),
     "target_name" to (this?.name ?: ""),
+    "eta_unavailable_reason" to (this?.etaUnavailableReason ?: ""),
 )

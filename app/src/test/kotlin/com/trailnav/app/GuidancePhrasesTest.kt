@@ -2,8 +2,14 @@ package com.trailnav.app
 
 import java.text.DecimalFormatSymbols
 
+import com.trailnav.core.NextTurn
+import com.trailnav.core.ProgressDirection
+import com.trailnav.core.RouteStatus
+import com.trailnav.core.RouteTargetEstimate
 import com.trailnav.core.Side
 import com.trailnav.core.SlopeKind
+import com.trailnav.core.TargetLabelKind
+import com.trailnav.core.TargetKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -96,4 +102,77 @@ class GuidancePhrasesTest {
         assertEquals("일몰까지 30분입니다", GuidancePhrases.sunset(30, afterSunset = false))
         assertEquals("일출까지 10분입니다", GuidancePhrases.sunrise(10))
     }
+
+    @Test
+    fun unavailableEtaSpeaksDistanceOnlyInEveryMode() {
+        val targets = listOf(
+            unavailableTarget(TargetLabelKind.NAMED_WAYPOINT, "바라산") to "바라산까지는 1.2킬로미터입니다",
+            unavailableTarget(TargetLabelKind.UNNAMED_WAYPOINT) to "다음 경유지까지는 1.2킬로미터입니다",
+            unavailableTarget(TargetLabelKind.ELEVATION_PEAK) to "다음 정상까지는 1.2킬로미터입니다",
+            unavailableTarget(TargetLabelKind.DESTINATION) to "도착지까지는 1.2킬로미터입니다",
+        )
+
+        targets.forEach { (target, expected) ->
+            DistanceTimeMode.values().forEach { mode ->
+                val phrase = unavailableEtaResponse(target, mode)
+
+                assertEquals(expected, phrase, "label=${target.labelKind}/$mode")
+                assertFalse(phrase.contains("분"), "label=${target.labelKind}/$mode: $phrase")
+                assertFalse(phrase.contains("시간"), "label=${target.labelKind}/$mode: $phrase")
+            }
+        }
+    }
+
+    @Test
+    fun unavailableEtaNeverBecomesZeroMinutes() {
+        val phrase = unavailableEtaResponse(
+            unavailableTarget(TargetLabelKind.ELEVATION_PEAK),
+            DistanceTimeMode.Both,
+        )
+
+        assertFalse(phrase.contains("1분 미만"), phrase)
+    }
+
+    @Test
+    fun unavailableEtaKeepsNextTurnSuffixWhenForward() {
+        val phrase = unavailableEtaResponse(
+            unavailableTarget(TargetLabelKind.NAMED_WAYPOINT, "바라산"),
+            DistanceTimeMode.TimeOnly,
+            direction = ProgressDirection.FORWARD,
+            nextTurn = NextTurn(2, Side.LEFT, 85.0, 90.0),
+        )
+
+        assertEquals("바라산까지는 1.2킬로미터입니다. 다음 꺾임은 85미터 앞 왼쪽", phrase)
+    }
+
+    private fun unavailableTarget(labelKind: TargetLabelKind, name: String? = null) = RouteTargetEstimate(
+        kind = if (labelKind == TargetLabelKind.DESTINATION) TargetKind.DESTINATION else TargetKind.NEXT_SUMMIT,
+        source = "test",
+        remainingMeters = 1_234.0,
+        remainingSeconds = null,
+        correction = 1.0,
+        correctionActive = false,
+        slopeSource = "tobler",
+        labelKind = labelKind,
+        name = name,
+    )
+
+    private fun unavailableEtaResponse(
+        target: RouteTargetEstimate,
+        mode: DistanceTimeMode,
+        direction: ProgressDirection = ProgressDirection.STATIONARY,
+        nextTurn: NextTurn? = null,
+    ): String = GuidancePhrases.onDemandResponse(
+        status = RouteStatus(
+            onRoute = true,
+            offRouteDistanceMeters = null,
+            direction = direction,
+            remainingMeters = 2_000.0,
+            nextTurn = nextTurn,
+            arrived = false,
+            target = target,
+        ),
+        mode = mode,
+        hasEnteredRoute = true,
+    )
 }
