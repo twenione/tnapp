@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "fixture_kind": "anonymized-real-route-shape",
+  "source_distance_start_m": 0.0,
+  "source_distance_end_m": 698.86,
+  "requested_distance_start_m": 0,
+  "requested_distance_end_m": 700,
+  "point_count": 28,
+  "clipped_length_m": 698.86,
+  "output_length_m": 698.859503,
+  "route": {
+    "elevation_source": "synthetic",
+    "waypoint_names": "synthetic"
+  }
+}

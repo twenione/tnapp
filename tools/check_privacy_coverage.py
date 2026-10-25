@@ -6,11 +6,12 @@ import argparse
 import sys
 from collections import Counter
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 from privacy_scan import FIELD_KINDS, scan_session
 
 
-def coverage(root: Path) -> Counter[str]:
+def coverage(root: Path) -> tuple[Counter[str], int]:
     found: Counter[str] = Counter()
     for fixture in sorted(root.glob("privacy_*")):
         if not fixture.is_dir():
@@ -19,7 +20,16 @@ def coverage(root: Path) -> Counter[str]:
         if not counts:
             raise ValueError(f"privacy fixture produced no findings: {fixture.name}")
         found.update(counts.keys())
-    return found
+    # Walk every GPX under testdata, including nested route-shape fixtures and
+    # negative controls. This keeps the scanner contract tied to installed
+    # files instead of only the current privacy_* directory layout.
+    route_files = sorted(root.parent.rglob("*.gpx"))
+    for route in route_files:
+        try:
+            scan_session(route.parent, route=route)
+        except (OSError, ValueError, ET.ParseError) as exc:
+            raise ValueError("route GPX scan failed") from exc
+    return found, len(route_files)
 
 
 def main(argv: list[str]) -> int:
@@ -27,7 +37,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--violations-root", type=Path, default=Path("testdata/violations"))
     args = parser.parse_args(argv[1:])
     try:
-        found = coverage(args.violations_root)
+        found, route_count = coverage(args.violations_root)
     except (OSError, ValueError) as exc:
         print(f"FAIL: privacy coverage error: {exc}")
         return 1
@@ -36,6 +46,7 @@ def main(argv: list[str]) -> int:
         missing.append("unknown.<path>")
     for kind in sorted(found):
         print(f"{kind}: {found[kind]}")
+    print(f"route-gpx-enumerated: {route_count}")
     if missing:
         print("FAIL: missing privacy field-kind coverage: " + ", ".join(missing))
         return 1
