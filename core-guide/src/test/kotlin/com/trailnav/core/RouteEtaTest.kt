@@ -58,6 +58,165 @@ class RouteEtaTest {
     }
 
     @Test
+    fun shortSteepSegmentBetweenLongGapsDoesNotExplodeEta() {
+        val target = estimate(
+            route(
+                distances = listOf(0.0, 150.0, 153.0, 330.0),
+                elevations = listOf(0.0, 60.0, 40.0, 100.0),
+            ),
+            0.0,
+        )!!
+
+        val seconds = target.remainingSeconds!!
+        assertTrue(seconds.isFinite())
+        assertTrue(seconds < 86_400.0)
+        assertEquals(850.95597, seconds, 0.01)
+
+        val narrowWindow = estimate(
+            route(
+                distances = listOf(0.0, 150.0, 153.0, 330.0),
+                elevations = listOf(0.0, 60.0, 40.0, 100.0),
+            ),
+            0.0,
+            config = GuideConfig(etaSlopeWindowMeters = 1.0),
+        )!!.remainingSeconds!!
+        assertTrue(narrowWindow.isFinite())
+        assertTrue(narrowWindow < 86_400.0)
+    }
+
+    @Test
+    fun slopeWindowControlsSlopeAveraging() {
+        val route = route(
+            distances = listOf(0.0, 150.0, 153.0, 330.0),
+            elevations = listOf(0.0, 60.0, 40.0, 100.0),
+        )
+        val narrow = estimate(
+            route,
+            0.0,
+            config = GuideConfig(etaSlopeWindowMeters = 10.0),
+        )!!.remainingSeconds!!
+        val wide = estimate(
+            route,
+            0.0,
+            config = GuideConfig(etaSlopeWindowMeters = 100.0),
+        )!!.remainingSeconds!!
+
+        assertTrue(narrow.isFinite() && wide.isFinite())
+        assertTrue(kotlin.math.abs(narrow - wide) > 1.0)
+    }
+
+    @Test
+    fun segmentSpeedFloorBoundsPredictedSeconds() {
+        val route = route(distances = listOf(0.0, 1_000.0), elevations = listOf(0.0, 2_000.0))
+        val defaultFloor = estimate(route, 0.0)!!.remainingSeconds!!
+        val lowerFloor = estimate(
+            route,
+            0.0,
+            config = GuideConfig(
+                etaMinSegmentSpeedMps = 0.05,
+                etaMinAverageSpeedMps = 0.01,
+            ),
+        )!!.remainingSeconds!!
+
+        assertTrue(defaultFloor.isFinite())
+        assertTrue(lowerFloor > defaultFloor)
+        assertTrue(defaultFloor <= 1_000.0 / 0.15)
+        assertTrue(lowerFloor <= 1_000.0 / 0.05)
+    }
+
+    @Test
+    fun totalAboveCapIsUnavailable() {
+        val route = route()
+        val rawSeconds = estimate(route, 0.0)!!.remainingSeconds!!
+        val justBelow = estimate(
+            route,
+            0.0,
+            config = GuideConfig(etaMaxTotalSeconds = rawSeconds - 0.01),
+        )!!
+        val atLimit = estimate(
+            route,
+            0.0,
+            config = GuideConfig(etaMaxTotalSeconds = rawSeconds),
+        )!!
+        val justAbove = estimate(
+            route,
+            0.0,
+            config = GuideConfig(etaMaxTotalSeconds = rawSeconds + 0.01),
+        )!!
+
+        assertNull(justBelow.remainingSeconds)
+        assertEquals("total-exceeds-max", justBelow.etaUnavailableReason)
+        assertEquals(1_000.0, justBelow.remainingMeters)
+        assertEquals(rawSeconds, atLimit.remainingSeconds!!, 1e-6)
+        assertNull(atLimit.etaUnavailableReason)
+        assertEquals(rawSeconds, justAbove.remainingSeconds!!, 1e-6)
+        assertNull(justAbove.etaUnavailableReason)
+    }
+
+    @Test
+    fun averageSpeedBelowMinimumIsUnavailable() {
+        val route = route(distances = listOf(0.0, 1_000.0), elevations = listOf(0.0, 400.0))
+        val target = estimate(
+            route,
+            0.0,
+            config = GuideConfig(
+                etaMinSegmentSpeedMps = 0.01,
+                etaMinAverageSpeedMps = 0.5,
+            ),
+        )!!
+        val defaultSettingsTarget = estimate(route, 0.0)!!
+
+        assertNull(target.remainingSeconds)
+        assertEquals("average-speed-below-min", target.etaUnavailableReason)
+        assertEquals(1_000.0, target.remainingMeters)
+        assertTrue(defaultSettingsTarget.remainingSeconds!!.isFinite())
+        assertNull(defaultSettingsTarget.etaUnavailableReason)
+    }
+
+    @Test
+    fun observationOverClampedSegmentIsExcludedFromCorrection() {
+        val distances = listOf(
+            0.0, 10.0, 300.0, 300.6, 301.2, 301.8, 302.4, 303.0, 303.6, 304.2, 600.0,
+        )
+        val elevations = listOf(
+            0.0, 0.0, 0.0, 100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 700.0,
+        )
+        val tracker = RouteEtaTracker(
+            route(distances = distances, elevations = elevations),
+            GuideConfig(etaMinWindowMeters = 0.0, etaSlopeWindowMeters = 0.1),
+        )
+        tracker.observe(0L, 0.0, ProgressDirection.FORWARD, onRoute = true)
+        tracker.observe(10_000L, 10.0, ProgressDirection.FORWARD, onRoute = true)
+        tracker.observe(71_000L, 300.0, ProgressDirection.FORWARD, onRoute = true)
+        repeat(7) { index ->
+            tracker.observe(
+                72_000L + index * 1_000L,
+                300.6 + index * 0.6,
+                ProgressDirection.FORWARD,
+                onRoute = true,
+            )
+        }
+
+        val target = tracker.estimate(304.2, ProgressDirection.FORWARD, arrived = false)!!
+
+        assertTrue(target.correctionActive)
+        assertEquals(toblerSpeedMetersPerSecond(0.0), target.correction, 1e-6)
+        assertTrue(target.correction > 0.5)
+    }
+
+    @Test
+    fun nonFiniteTotalIsUnavailable() {
+        val target = estimate(
+            route(distances = listOf(0.0, 1_000.0), elevations = listOf(0.0, Double.NaN)),
+            0.0,
+        )!!
+
+        assertNull(target.remainingSeconds)
+        assertEquals("non-finite", target.etaUnavailableReason)
+        assertEquals(1_000.0, target.remainingMeters)
+    }
+
+    @Test
     fun nextSummitIsSelectedUntilRouteHighPointAndWaypointsTakePriority() {
         val summitRoute = route(
             distances = listOf(0.0, 100.0, 200.0, 300.0, 400.0, 500.0, 600.0),
@@ -317,6 +476,24 @@ class RouteEtaTest {
             tracker.observe(20_000L, 40.0, ProgressDirection.FORWARD, onRoute = true)
             tracker.observe(40_000L, 80.0, ProgressDirection.FORWARD, onRoute = true)
             return tracker.estimate(80.0, ProgressDirection.FORWARD, arrived = false)
+        }
+
+        assertEquals(run(), run())
+    }
+
+    @Test
+    fun etaIsIdenticalForIdenticalInputOrder() {
+        val route = route(
+            distances = listOf(0.0, 150.0, 153.0, 330.0),
+            elevations = listOf(0.0, 60.0, 40.0, 100.0),
+        )
+
+        fun run(): RouteTargetEstimate? {
+            val tracker = RouteEtaTracker(route, GuideConfig(etaMinWindowMeters = 0.0))
+            tracker.observe(0L, 0.0, ProgressDirection.FORWARD, onRoute = true)
+            tracker.observe(10_000L, 10.0, ProgressDirection.FORWARD, onRoute = true)
+            tracker.observe(20_000L, 20.0, ProgressDirection.FORWARD, onRoute = true)
+            return tracker.estimate(20.0, ProgressDirection.FORWARD, arrived = false)
         }
 
         assertEquals(run(), run())

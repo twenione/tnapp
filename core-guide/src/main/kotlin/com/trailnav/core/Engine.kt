@@ -22,7 +22,7 @@ object Engine {
 fun guide(state: GuideState, frame: SensorFrame, config: GuideConfig = GuideConfig()): GuideResult =
     Engine.guide(state, frame, config)
 
-private fun interpolateElevation(route: RouteModel, projectedMeters: Double): Double? {
+internal fun interpolateElevation(route: RouteModel, projectedMeters: Double): Double? {
     val profile = route.smoothedElevationMeters
     val cumulative = route.cumulativeMeters
     if (profile.isEmpty() || profile.size != cumulative.size) return null

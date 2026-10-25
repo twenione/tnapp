@@ -31,6 +31,7 @@ data class RouteTargetEstimate(
     } else {
         TargetLabelKind.ELEVATION_PEAK
     },
+    val etaUnavailableReason: String? = null,
 )
 
 private data class RouteEtaObservation(
@@ -56,6 +57,11 @@ class RouteEtaTracker(
         val s: Double,
         val source: String,
         val name: String?,
+    )
+
+    private data class PredictedTravel(
+        val seconds: Double,
+        val clampedAnySegment: Boolean,
     )
 
     private val totalLengthMeters = route.totalLengthMeters.coerceAtLeast(0.0)
@@ -95,12 +101,15 @@ class RouteEtaTracker(
             distanceMeters > 0.0 && distanceMeters / elapsedSeconds >= config.etaMinMovingSpeedMps
         if (!movingSegment) return
 
-        observations += RouteEtaObservation(
-            endTimestampMillis = timestampMillis,
-            elapsedSeconds = elapsedSeconds,
-            distanceMeters = distanceMeters,
-            predictedSeconds = predictTravelSeconds(previous.projectedMeters, current.projectedMeters),
-        )
+        val prediction = predictTravelSeconds(previous.projectedMeters, current.projectedMeters)
+        if (!prediction.clampedAnySegment) {
+            observations += RouteEtaObservation(
+                endTimestampMillis = timestampMillis,
+                elapsedSeconds = elapsedSeconds,
+                distanceMeters = distanceMeters,
+                predictedSeconds = prediction.seconds,
+            )
+        }
         trimWindow(timestampMillis)
     }
 
@@ -145,31 +154,41 @@ class RouteEtaTracker(
             else -> TargetLabelKind.ELEVATION_PEAK
         }
 
+        val remainingMeters = (candidate.s - progressMeters).coerceAtLeast(0.0)
+        val prediction = predictTravelSeconds(progressMeters, candidate.s)
+        val unavailableReason = etaUnavailableReason(prediction.seconds, remainingMeters)
         return RouteTargetEstimate(
             kind = TargetKind.NEXT_SUMMIT,
             source = candidate.source,
-            remainingMeters = (candidate.s - progressMeters).coerceAtLeast(0.0),
-            remainingSeconds = predictTravelSeconds(progressMeters, candidate.s) * correction.first,
+            remainingMeters = remainingMeters,
+            remainingSeconds = if (unavailableReason == null) prediction.seconds * correction.first else null,
             correction = correction.first,
             correctionActive = correction.second,
             slopeSource = slopeSource(),
             name = if (labelKind == TargetLabelKind.NAMED_WAYPOINT) candidate.name else null,
             labelKind = labelKind,
+            etaUnavailableReason = unavailableReason,
         )
     }
 
     private fun destinationEstimate(
         progressMeters: Double,
         correction: Pair<Double, Boolean>,
-    ): RouteTargetEstimate = RouteTargetEstimate(
-        kind = TargetKind.DESTINATION,
-        source = DESTINATION_SOURCE,
-        remainingMeters = (totalLengthMeters - progressMeters).coerceAtLeast(0.0),
-        remainingSeconds = predictTravelSeconds(progressMeters, totalLengthMeters) * correction.first,
-        correction = correction.first,
-        correctionActive = correction.second,
-        slopeSource = slopeSource(),
-    )
+    ): RouteTargetEstimate {
+        val remainingMeters = (totalLengthMeters - progressMeters).coerceAtLeast(0.0)
+        val prediction = predictTravelSeconds(progressMeters, totalLengthMeters)
+        val unavailableReason = etaUnavailableReason(prediction.seconds, remainingMeters)
+        return RouteTargetEstimate(
+            kind = TargetKind.DESTINATION,
+            source = DESTINATION_SOURCE,
+            remainingMeters = remainingMeters,
+            remainingSeconds = if (unavailableReason == null) prediction.seconds * correction.first else null,
+            correction = correction.first,
+            correctionActive = correction.second,
+            slopeSource = slopeSource(),
+            etaUnavailableReason = unavailableReason,
+        )
+    }
 
     private fun targetCandidates(): List<TargetCandidate> =
         if (route.waypoints.isNotEmpty()) {
@@ -212,14 +231,23 @@ class RouteEtaTracker(
 
     private fun slopeSource(): String = if (hasUsableElevation) "tobler" else "flat"
 
-    private fun predictTravelSeconds(fromMeters: Double, toMeters: Double): Double {
+    private fun etaUnavailableReason(rawSeconds: Double, remainingMeters: Double): String? = when {
+        !rawSeconds.isFinite() -> "non-finite"
+        rawSeconds > config.etaMaxTotalSeconds -> "total-exceeds-max"
+        remainingMeters > 0.0 && rawSeconds != 0.0 &&
+            remainingMeters / rawSeconds < config.etaMinAverageSpeedMps -> "average-speed-below-min"
+        else -> null
+    }
+
+    private fun predictTravelSeconds(fromMeters: Double, toMeters: Double): PredictedTravel {
         val startMeters = clampProgress(fromMeters)
         val endMeters = clampProgress(toMeters)
         if (endMeters <= startMeters || route.points.size < 2 || route.cumulativeMeters.size != route.points.size) {
-            return 0.0
+            return PredictedTravel(0.0, clampedAnySegment = false)
         }
 
         var seconds = 0.0
+        var clampedAnySegment = false
         for (index in 0 until route.points.lastIndex) {
             val segmentStartMeters = route.cumulativeMeters[index]
             val segmentEndMeters = route.cumulativeMeters[index + 1]
@@ -231,19 +259,26 @@ class RouteEtaTracker(
             val overlapMeters = overlapEnd - overlapStart
             if (overlapMeters <= 0.0) continue
 
-            val elevationDelta = if (hasUsableElevation) {
-                route.smoothedElevationMeters[index + 1] - route.smoothedElevationMeters[index]
-            } else {
-                0.0
+            val midpointMeters = (segmentStartMeters + segmentEndMeters) / 2.0
+            val slopeWindowStart = max(0.0, midpointMeters - config.etaSlopeWindowMeters / 2.0)
+            val slopeWindowEnd = min(totalLengthMeters, midpointMeters + config.etaSlopeWindowMeters / 2.0)
+            val slopeWindowMeters = slopeWindowEnd - slopeWindowStart
+            val startElevation = interpolateElevation(route, slopeWindowStart) ?: 0.0
+            val endElevation = interpolateElevation(route, slopeWindowEnd) ?: 0.0
+            val slope = if (hasUsableElevation && slopeWindowMeters > 0.0) {
+                (endElevation - startElevation) / slopeWindowMeters
+            } else 0.0
+            val rawSpeedMetersPerSecond = toblerSpeedMetersPerSecond(slope)
+            val speedMetersPerSecond = max(rawSpeedMetersPerSecond, config.etaMinSegmentSpeedMps)
+            if (rawSpeedMetersPerSecond < config.etaMinSegmentSpeedMps) {
+                clampedAnySegment = true
             }
-            val slope = elevationDelta / segmentLengthMeters
-            val speedMetersPerSecond = toblerSpeedMetersPerSecond(slope)
             if (speedMetersPerSecond <= 0.0 || !speedMetersPerSecond.isFinite()) {
-                return Double.POSITIVE_INFINITY
+                return PredictedTravel(Double.POSITIVE_INFINITY, clampedAnySegment)
             }
             seconds += overlapMeters / speedMetersPerSecond
         }
-        return seconds
+        return PredictedTravel(seconds, clampedAnySegment)
     }
 
     private companion object {

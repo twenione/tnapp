@@ -201,6 +201,10 @@ jobs:
         run: python tools/test_build_log_shape_fixture.py
       - name: Privacy field-kind coverage negative control
         run: python tools/test_check_privacy_coverage.py
+      - name: Route fixture anonymization negative controls
+        run: python tools/test_make_route_fixture.py
+      - name: Route GPX privacy scan negative controls
+        run: python tools/test_privacy_gpx_negative_controls.py
       - name: Failure rule-version negative controls
         run: python tools/test_failure_rule_versions.py
       - name: Failure metrics trigger denominator negative controls
