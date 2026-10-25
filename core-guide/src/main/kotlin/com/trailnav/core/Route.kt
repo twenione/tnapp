@@ -93,6 +93,7 @@ data class RouteModel(
     val peaks: List<Peak> = emptyList(),
     val waypoints: List<Waypoint> = emptyList(),
     val elevationRepair: ElevationRepair = ElevationRepair(),
+    val quality: RouteQuality = RouteQuality.EMPTY,
 ) {
     val totalLengthMeters: Double
         get() = cumulativeMeters.lastOrNull() ?: 0.0
@@ -337,7 +338,7 @@ internal object GpxRouteParser {
         } else {
             emptyList()
         }
-        return RouteModel(
+        val route = RouteModel(
             sourcePoints = sourcePoints,
             points = projected,
             cumulativeMeters = cumulative,
@@ -353,6 +354,7 @@ internal object GpxRouteParser {
             waypoints = eligibleWaypoints,
             elevationRepair = elevation.repair,
         )
+        return route.copy(quality = calculateRouteQuality(route, filtered.size, config))
     }
 
     private data class ParsedRoutePoint(val point: GeoPoint, val elevationMeters: Double?)

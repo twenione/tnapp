@@ -2,6 +2,7 @@ package com.trailnav.app
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class RouteCatalogTest {
     @Test
@@ -20,6 +21,24 @@ class RouteCatalogTest {
         assertEquals(10L, routes.single().addedAt)
         assertEquals("ok", routes.single().elevationReason)
         assertEquals(4, routes.single().waypointCount)
+    }
+
+    @Test
+    fun wideGapCountSurvivesSaveAndLoadAndLegacyRoutesLoadAsNull() {
+        val original = SavedRoute("content://route", "trail.gpx", "abc123", 1_000.0, 10L, "ok", 2, 3)
+        val stored = RouteCatalog.encodeStoredRoute(original)
+
+        assertEquals(original, RouteCatalog.decodeStoredRoute(stored))
+        assertNull(RouteCatalog.decodeStoredRoute(stored - "gap100")?.wideGapCount)
+
+        val routes = mutableListOf(original)
+        val refreshed = RouteCatalog.upsert(
+            routes,
+            original.copy(uri = "content://refreshed", wideGapCount = 5),
+        )
+        assertEquals(1, routes.size)
+        assertEquals(5, refreshed.wideGapCount)
+        assertEquals(5, routes.single().wideGapCount)
     }
 
     @Test
@@ -53,5 +72,12 @@ class RouteCatalogTest {
         assertEquals("위치+고도", RouteCatalog.infoLevelLabel("ok", 0))
         assertEquals("위치+고도", RouteCatalog.infoLevelLabel("ok", null))
         assertEquals("정보 확인 필요(다시 가져오기)", RouteCatalog.infoLevelLabel(null, 4))
+    }
+
+    @Test
+    fun wideGapLineShownOnlyWhenPositive() {
+        assertEquals("위치+고도\n점 간격 100m 초과 2곳", RouteCatalog.infoLevelLabel("ok", 0, 2))
+        assertEquals("위치+고도", RouteCatalog.infoLevelLabel("ok", 0, 0))
+        assertEquals("위치+고도", RouteCatalog.infoLevelLabel("ok", 0, null))
     }
 }

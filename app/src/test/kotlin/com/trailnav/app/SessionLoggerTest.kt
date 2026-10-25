@@ -4,6 +4,7 @@ import com.trailnav.core.GuideConfig
 import com.trailnav.core.GuideState
 import com.trailnav.core.ElevationRepair
 import com.trailnav.core.RouteModel
+import com.trailnav.core.RouteQuality
 import com.trailnav.core.guide
 import java.io.File
 import java.util.UUID
@@ -157,10 +158,55 @@ class SessionLoggerTest {
         assertTrue(absent.contains("\"elevation_spike_at_m\":\"\""))
     }
 
+    @Test
+    fun manifestRouteBlockCarriesQualityKeys() {
+        val quality = RouteQuality(
+            pointCount = 4,
+            meanSpacingMeters = 75.0,
+            maxSpacingMeters = 120.0,
+            shortSegmentRatio = 0.3333,
+            gapOver50Count = 2,
+            gapOver100Count = 1,
+            smoothedMaxAbsSlope = 0.12345,
+            etaMinSegmentSpeedMps = 0.4567,
+            etaClampedSegmentCount = 1,
+            etaClampedLengthRatio = 0.5000,
+            smoothingMaxDeltaMeters = 6.7,
+        )
+        val manifest = manifestFor(
+            elevationUsed = true,
+            elevationReason = "ok",
+            repair = ElevationRepair(),
+            quality = quality,
+        )
+        val routeBlock = manifest.substringAfter("\"route\":{").substringBefore("},\n")
+        val existingKeys = listOf(
+            "gpx_hash", "elevation_used", "elevation_reason", "waypoint_count",
+            "elevation_spike_points", "elevation_interpolated_points", "elevation_total_points",
+            "elevation_spike_ratio", "elevation_spike_ratio_cap", "elevation_max_residual_m",
+            "elevation_spike_threshold_m", "elevation_spike_at_m",
+        )
+        val qualityKeys = listOf(
+            "quality_point_count", "quality_mean_spacing_m", "quality_max_spacing_m",
+            "quality_short_segment_ratio", "quality_gap_over_50_count", "quality_gap_over_100_count",
+            "quality_smoothed_max_abs_slope", "quality_eta_min_segment_speed_mps",
+            "quality_eta_clamped_segment_count", "quality_eta_clamped_length_ratio",
+            "quality_smoothing_max_delta_m",
+        )
+        val allKeys = existingKeys + qualityKeys
+        val keyPositions = allKeys.map { routeBlock.indexOf("\"$it\":") }
+
+        assertEquals(allKeys.size, keyPositions.count { it >= 0 })
+        assertEquals(keyPositions.sorted(), keyPositions)
+        assertTrue(routeBlock.contains("\"quality_mean_spacing_m\":75.0"))
+        assertTrue(routeBlock.contains("\"quality_eta_min_segment_speed_mps\":0.4567"))
+    }
+
     private fun manifestFor(
         elevationUsed: Boolean,
         elevationReason: String,
         repair: ElevationRepair,
+        quality: RouteQuality = RouteQuality.EMPTY,
     ): String {
         val directory = createTempDir(prefix = "tnapp-elevation-repair-")
         JsonlSessionLogger(
@@ -176,6 +222,7 @@ class SessionLoggerTest {
             routeElevationRepair = repair,
             routeElevationSpikeRatioCap = 0.02,
             routeElevationSpikeThresholdMeters = 10.0,
+            routeQuality = quality,
         ).close()
         val manifest = File(directory, "manifest.json").readText()
         directory.deleteRecursively()

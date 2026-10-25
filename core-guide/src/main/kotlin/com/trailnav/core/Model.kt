@@ -122,6 +122,8 @@ data class GuideConfig(
     val etaMinAverageSpeedMps: Double = 0.10,
     val elevationSpikeMaxRatio: Double = 0.02,
     val directionResumeHoldSeconds: Double = 3.0,
+    val routeQualityGapWarnMeters: Double = 100.0,
+    val routeQualityShortSegmentMeters: Double = 6.0,
 ) {
     init {
         require(accuracyRejectMeters >= 0.0)
@@ -165,6 +167,8 @@ data class GuideConfig(
         require(etaCorrectionMax >= etaCorrectionMin)
         require(etaSlopeWindowMeters > 0.0)
         require(etaMinSegmentSpeedMps > 0.0)
+        require(routeQualityGapWarnMeters > 0.0)
+        require(routeQualityShortSegmentMeters > 0.0)
         require(etaMaxTotalSeconds > 0.0)
         require(etaMinAverageSpeedMps > 0.0)
     }
@@ -234,6 +238,8 @@ data class GuideConfig(
             "etaCorrectionMax" to "covered by RouteEtaTest.correctionClampsToConfiguredBounds",
             "etaSlopeWindowMeters" to "covered by RouteEtaTest.slopeWindowControlsSlopeAveraging",
             "etaMinSegmentSpeedMps" to "covered by RouteEtaTest.segmentSpeedFloorBoundsPredictedSeconds",
+            "routeQualityGapWarnMeters" to "covered by RouteQualityTest.gapWarnThresholdControlsCount",
+            "routeQualityShortSegmentMeters" to "covered by RouteQualityTest.shortSegmentThresholdControlsRatio",
             "etaMaxTotalSeconds" to "covered by RouteEtaTest.totalAboveCapIsUnavailable",
             "etaMinAverageSpeedMps" to "covered by RouteEtaTest.averageSpeedBelowMinimumIsUnavailable"
         )

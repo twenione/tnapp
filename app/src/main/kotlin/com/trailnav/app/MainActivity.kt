@@ -138,11 +138,13 @@ class MainActivity : AppCompatActivity() {
     private val openGpx = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
         try {
+            var importWarning: RouteImportWarning? = null
             val imported = contentResolver.openInputStream(uri)?.use { stream ->
                 val bytes = stream.readBytes()
                 val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 0xff) }
                 // Parse once at import time so malformed files are rejected before starting the service.
                 val route = com.trailnav.core.RouteModel.fromGpx(bytes.toString(Charsets.UTF_8))
+                importWarning = RouteImportWarning.from(route.quality)
                 val displayName = contentResolver.query(
                     uri,
                     arrayOf(OpenableColumns.DISPLAY_NAME),
@@ -163,6 +165,7 @@ class MainActivity : AppCompatActivity() {
                     addedAt = System.currentTimeMillis(),
                     elevationReason = route.elevationReason,
                     waypointCount = route.waypoints.size,
+                    wideGapCount = route.quality.gapOver100Count,
                 )
             } ?: throw IllegalStateException("GPX를 읽을 수 없습니다")
             try {
@@ -174,6 +177,13 @@ class MainActivity : AppCompatActivity() {
             RouteCatalog.save(this, savedRoutes, selected.uri)
             selectSavedRoute(selected)
             routeListAdapter.notifyDataSetChanged()
+            importWarning?.let { warning ->
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle(warning.title)
+                    .setMessage(warning.message)
+                    .setPositiveButton(warning.button, null)
+                    .show()
+            }
         } catch (_: Exception) {
             // The wildcard picker can show provider files whose MIME type is
             // generic or unknown. Keep the picker broad, then reject invalid
