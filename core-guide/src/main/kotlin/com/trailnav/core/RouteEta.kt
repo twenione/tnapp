@@ -65,10 +65,7 @@ class RouteEtaTracker(
     )
 
     private val totalLengthMeters = route.totalLengthMeters.coerceAtLeast(0.0)
-    private val hasUsableElevation =
-        route.elevationUse.used &&
-            route.points.size == route.cumulativeMeters.size &&
-            route.points.size == route.smoothedElevationMeters.size
+    private val hasUsableElevation = routeHasUsableEtaElevation(route)
     private val observations = mutableListOf<RouteEtaObservation>()
     private var previousFix: Fix? = null
 
@@ -259,16 +256,11 @@ class RouteEtaTracker(
             val overlapMeters = overlapEnd - overlapStart
             if (overlapMeters <= 0.0) continue
 
-            val midpointMeters = (segmentStartMeters + segmentEndMeters) / 2.0
-            val slopeWindowStart = max(0.0, midpointMeters - config.etaSlopeWindowMeters / 2.0)
-            val slopeWindowEnd = min(totalLengthMeters, midpointMeters + config.etaSlopeWindowMeters / 2.0)
-            val slopeWindowMeters = slopeWindowEnd - slopeWindowStart
-            val startElevation = interpolateElevation(route, slopeWindowStart) ?: 0.0
-            val endElevation = interpolateElevation(route, slopeWindowEnd) ?: 0.0
-            val slope = if (hasUsableElevation && slopeWindowMeters > 0.0) {
-                (endElevation - startElevation) / slopeWindowMeters
-            } else 0.0
-            val rawSpeedMetersPerSecond = toblerSpeedMetersPerSecond(slope)
+            val rawSpeedMetersPerSecond = etaSegmentRawSpeedMetersPerSecond(
+                route,
+                index,
+                config.etaSlopeWindowMeters,
+            )
             val speedMetersPerSecond = max(rawSpeedMetersPerSecond, config.etaMinSegmentSpeedMps)
             if (rawSpeedMetersPerSecond < config.etaMinSegmentSpeedMps) {
                 clampedAnySegment = true
@@ -296,3 +288,28 @@ private val GENERIC_WAYPOINT_NAME = Regex("^경유지\\s*#?\\s*\\d+$")
 
 internal fun toblerSpeedMetersPerSecond(slope: Double): Double =
     (6.0 * exp(-3.5 * abs(slope + 0.05))) / 3.6
+
+internal fun routeHasUsableEtaElevation(route: RouteModel): Boolean =
+    route.elevationUse.used &&
+        route.points.size == route.cumulativeMeters.size &&
+        route.points.size == route.smoothedElevationMeters.size
+
+/** Shared window slope used by ETA prediction and the route quality summary. */
+internal fun etaSegmentSlope(route: RouteModel, segmentIndex: Int, slopeWindowMeters: Double): Double {
+    if (!routeHasUsableEtaElevation(route) || segmentIndex !in 0 until route.points.lastIndex) return 0.0
+    val totalLengthMeters = route.cumulativeMeters.lastOrNull() ?: 0.0
+    val midpointMeters = (route.cumulativeMeters[segmentIndex] + route.cumulativeMeters[segmentIndex + 1]) / 2.0
+    val slopeWindowStart = max(0.0, midpointMeters - slopeWindowMeters / 2.0)
+    val slopeWindowEnd = min(totalLengthMeters, midpointMeters + slopeWindowMeters / 2.0)
+    val windowLengthMeters = slopeWindowEnd - slopeWindowStart
+    if (windowLengthMeters <= 0.0) return 0.0
+    val startElevation = interpolateElevation(route, slopeWindowStart) ?: 0.0
+    val endElevation = interpolateElevation(route, slopeWindowEnd) ?: 0.0
+    return (endElevation - startElevation) / windowLengthMeters
+}
+
+internal fun etaSegmentRawSpeedMetersPerSecond(
+    route: RouteModel,
+    segmentIndex: Int,
+    slopeWindowMeters: Double,
+): Double = toblerSpeedMetersPerSecond(etaSegmentSlope(route, segmentIndex, slopeWindowMeters))

@@ -2,6 +2,7 @@ package com.trailnav.app
 
 import com.trailnav.core.GuideResult
 import com.trailnav.core.ElevationRepair
+import com.trailnav.core.RouteQuality
 import java.io.BufferedWriter
 import java.io.Closeable
 import java.io.File
@@ -40,6 +41,7 @@ class JsonlSessionLogger(
     private val routeElevationRepair: ElevationRepair = ElevationRepair(),
     private val routeElevationSpikeRatioCap: Double = 0.02,
     private val routeElevationSpikeThresholdMeters: Double = 10.0,
+    private val routeQuality: RouteQuality = RouteQuality.EMPTY,
 ) : SessionEventSink {
     private val eventsFile = File(directory, "events.ndjson")
     private val writer: BufferedWriter
@@ -81,7 +83,7 @@ class JsonlSessionLogger(
               "started_at_wall":"${java.time.Instant.now()}",
               "app":{"version":"${escape(appVersion)}","code_hash":"${escape(codeHash)}"},
               "engine":{"config":{"implementation":"core-guide","config_hash":"${escape(configHash)}","events":$eventsJson},"rng_seed":0},
-              "route":{"gpx_hash":"${escape(routeHash)}","elevation_used":$routeElevationUsed,"elevation_reason":"${escape(routeElevationReason)}","waypoint_count":$routeWaypointCount,"elevation_spike_points":${routeElevationRepair.spikePoints},"elevation_interpolated_points":${routeElevationRepair.interpolatedPoints},"elevation_total_points":${routeElevationRepair.totalPoints},"elevation_spike_ratio":${String.format(Locale.US, "%.4f", spikeRatio)},"elevation_spike_ratio_cap":$routeElevationSpikeRatioCap,"elevation_max_residual_m":${String.format(Locale.US, "%.1f", routeElevationRepair.maxResidualMeters)},"elevation_spike_threshold_m":$routeElevationSpikeThresholdMeters,"elevation_spike_at_m":"${escape(spikeAtMeters)}"},
+              "route":{"gpx_hash":"${escape(routeHash)}","elevation_used":$routeElevationUsed,"elevation_reason":"${escape(routeElevationReason)}","waypoint_count":$routeWaypointCount,"elevation_spike_points":${routeElevationRepair.spikePoints},"elevation_interpolated_points":${routeElevationRepair.interpolatedPoints},"elevation_total_points":${routeElevationRepair.totalPoints},"elevation_spike_ratio":${String.format(Locale.US, "%.4f", spikeRatio)},"elevation_spike_ratio_cap":$routeElevationSpikeRatioCap,"elevation_max_residual_m":${String.format(Locale.US, "%.1f", routeElevationRepair.maxResidualMeters)},"elevation_spike_threshold_m":$routeElevationSpikeThresholdMeters,"elevation_spike_at_m":"${escape(spikeAtMeters)}","quality_point_count":${routeQuality.pointCount},"quality_mean_spacing_m":${String.format(Locale.US, "%.1f", routeQuality.meanSpacingMeters)},"quality_max_spacing_m":${String.format(Locale.US, "%.1f", routeQuality.maxSpacingMeters)},"quality_short_segment_ratio":${String.format(Locale.US, "%.4f", routeQuality.shortSegmentRatio)},"quality_gap_over_50_count":${routeQuality.gapOver50Count},"quality_gap_over_100_count":${routeQuality.gapOver100Count},"quality_smoothed_max_abs_slope":${String.format(Locale.US, "%.5f", routeQuality.smoothedMaxAbsSlope)},"quality_eta_min_segment_speed_mps":${String.format(Locale.US, "%.4f", routeQuality.etaMinSegmentSpeedMps)},"quality_eta_clamped_segment_count":${routeQuality.etaClampedSegmentCount},"quality_eta_clamped_length_ratio":${String.format(Locale.US, "%.4f", routeQuality.etaClampedLengthRatio)},"quality_smoothing_max_delta_m":${String.format(Locale.US, "%.1f", routeQuality.smoothingMaxDeltaMeters)}},
               "clock":{"monotonic_source":"location-frame-timestamp","timestamp_unit":"seconds","t_order":"per-stream","seq_order":"append"},
               "privacy":{"upload_default":false}
             }""".trimIndent() + "\n",

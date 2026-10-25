@@ -52,7 +52,7 @@ internal class RouteListAdapter(
         row.setBackgroundColor(if (selected) 0xffe3f2fd.toInt() else Color.TRANSPARENT)
         details.text = RouteCatalog.detailLine(route, readable)
         details.setTextColor(if (readable) Color.DKGRAY else 0xffb71c1c.toInt())
-        infoLevel.text = RouteCatalog.infoLevelLabel(route.elevationReason, route.waypointCount)
+        infoLevel.text = RouteCatalog.infoLevelLabel(route.elevationReason, route.waypointCount, route.wideGapCount)
         row.contentDescription = "${route.displayName}, ${details.text}, ${infoLevel.text}"
         return row
     }

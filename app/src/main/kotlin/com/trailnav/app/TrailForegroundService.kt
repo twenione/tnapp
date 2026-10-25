@@ -215,6 +215,7 @@ class TrailForegroundService : Service() {
             routeElevationRepair = parsedRoute.elevationRepair,
             routeElevationSpikeRatioCap = config.elevationSpikeMaxRatio,
             routeElevationSpikeThresholdMeters = config.elevationSpikeThresholdMeters,
+            routeQuality = parsedRoute.quality,
         )
         tts = TtsController(
             context = this,
