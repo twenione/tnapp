@@ -27,6 +27,14 @@ VARIANTS = {
                   'false /* D-033 summit switch ignored */'),
  'eta-correction-includes-stops': ('distanceMeters > 0.0 && distanceMeters / elapsedSeconds >= config.etaMinMovingSpeedMps',
                   'true /* D-033 stopped interval admitted */'),
+ 'eta-window-ignored': ('(endElevation - startElevation) / slopeWindowMeters',
+                  '(route.smoothedElevationMeters[index + 1] - route.smoothedElevationMeters[index]) / segmentLengthMeters'),
+ 'eta-floor-removed': ('val speedMetersPerSecond = max(rawSpeedMetersPerSecond, config.etaMinSegmentSpeedMps)',
+                  'val speedMetersPerSecond = rawSpeedMetersPerSecond /* D-033 segment speed floor removed */'),
+ 'eta-cap-removed': ('rawSeconds > config.etaMaxTotalSeconds -> "total-exceeds-max"',
+                  'false -> "total-exceeds-max" /* D-033 total ETA cap removed */'),
+ 'eta-clamped-observation-included': ('if (!prediction.clampedAnySegment) {',
+                  'if (true /* D-033 clamped observation included */) {'),
  'dwell-bypass': ('elapsedSeconds(timestamp, since) >= config.offRouteEnterDwellSeconds',
                   'true /* D-033 dwell bypass */'),
  'approach-gate-removed': ('if (!next.hasEnteredRoute) {',
@@ -302,6 +310,10 @@ VARIANT_SOURCE_PATHS = {
     "eta-no-grade": ETA_SOURCE,
     "eta-target-ignores-switch": ETA_SOURCE,
     "eta-correction-includes-stops": ETA_SOURCE,
+    "eta-window-ignored": ETA_SOURCE,
+    "eta-floor-removed": ETA_SOURCE,
+    "eta-cap-removed": ETA_SOURCE,
+    "eta-clamped-observation-included": ETA_SOURCE,
 }
 CORE_TEST = frozenset({"core-guide-test"})
 OFF_ROUTE_CONSUMERS = frozenset({"core-guide-test", "replay", "phase1-accuracy", "config-sensitivity"})
@@ -378,6 +390,10 @@ MUTATION_REQUIRED_CONSUMERS = {
     "eta-no-grade": CORE_TEST,
     "eta-target-ignores-switch": CORE_TEST,
     "eta-correction-includes-stops": CORE_TEST,
+    "eta-window-ignored": CORE_TEST,
+    "eta-floor-removed": CORE_TEST,
+    "eta-cap-removed": CORE_TEST,
+    "eta-clamped-observation-included": CORE_TEST,
 }
 
 CONSUMER_NAMES = ("replay", "replay-turn-session", "config-sensitivity", "phase1-accuracy")

@@ -116,6 +116,10 @@ data class GuideConfig(
     val etaMinMovingSpeedMps: Double = 0.3,
     val etaCorrectionMin: Double = 0.5,
     val etaCorrectionMax: Double = 2.0,
+    val etaSlopeWindowMeters: Double = 50.0,
+    val etaMinSegmentSpeedMps: Double = 0.15,
+    val etaMaxTotalSeconds: Double = 86_400.0,
+    val etaMinAverageSpeedMps: Double = 0.10,
     val elevationSpikeMaxRatio: Double = 0.02,
     val directionResumeHoldSeconds: Double = 3.0,
 ) {
@@ -159,6 +163,10 @@ data class GuideConfig(
         require(etaMinMovingSpeedMps >= 0.0)
         require(etaCorrectionMin > 0.0)
         require(etaCorrectionMax >= etaCorrectionMin)
+        require(etaSlopeWindowMeters > 0.0)
+        require(etaMinSegmentSpeedMps > 0.0)
+        require(etaMaxTotalSeconds > 0.0)
+        require(etaMinAverageSpeedMps > 0.0)
     }
 
     companion object {
@@ -223,7 +231,11 @@ data class GuideConfig(
             "etaMinWindowMeters" to "covered by RouteEtaTest.correctionActivationThreshold",
             "etaMinMovingSpeedMps" to "covered by RouteEtaTest.stoppedSegmentsDoNotAffectCorrection",
             "etaCorrectionMin" to "covered by RouteEtaTest.correctionClampsToConfiguredBounds",
-            "etaCorrectionMax" to "covered by RouteEtaTest.correctionClampsToConfiguredBounds"
+            "etaCorrectionMax" to "covered by RouteEtaTest.correctionClampsToConfiguredBounds",
+            "etaSlopeWindowMeters" to "covered by RouteEtaTest.slopeWindowControlsSlopeAveraging",
+            "etaMinSegmentSpeedMps" to "covered by RouteEtaTest.segmentSpeedFloorBoundsPredictedSeconds",
+            "etaMaxTotalSeconds" to "covered by RouteEtaTest.totalAboveCapIsUnavailable",
+            "etaMinAverageSpeedMps" to "covered by RouteEtaTest.averageSpeedBelowMinimumIsUnavailable"
         )
 
         fun sensitivityFieldNames(): Set<String> =
