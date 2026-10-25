@@ -32,6 +32,7 @@ class OnDemandEtaDetailsTest {
                 "eta_slope_source" to "tobler",
                 "target_label_kind" to "NAMED_WAYPOINT",
                 "target_name" to "바라산",
+                "eta_unavailable_reason" to "",
             ),
             target.toOnDemandEtaDetails(),
         )
@@ -50,8 +51,61 @@ class OnDemandEtaDetailsTest {
                 "eta_slope_source" to "",
                 "target_label_kind" to "",
                 "target_name" to "",
+                "eta_unavailable_reason" to "",
             ),
             null.toOnDemandEtaDetails(),
+        )
+    }
+
+    @Test
+    fun unavailableReasonIsLoggedAndEmptyWhenAvailable() {
+        val estimate = RouteTargetEstimate(
+            kind = TargetKind.NEXT_SUMMIT,
+            source = "waypoint",
+            remainingMeters = 123.4,
+            remainingSeconds = null,
+            correction = 1.0,
+            correctionActive = false,
+            slopeSource = "tobler",
+            labelKind = TargetLabelKind.NAMED_WAYPOINT,
+            name = "바라산",
+            etaUnavailableReason = "total-exceeds-max",
+        )
+        val available = estimate.copy(remainingSeconds = 60.0, etaUnavailableReason = null)
+
+        assertEquals("total-exceeds-max", estimate.toOnDemandEtaDetails()["eta_unavailable_reason"])
+        assertEquals("", available.toOnDemandEtaDetails()["eta_unavailable_reason"])
+        assertEquals("", null.toOnDemandEtaDetails()["eta_unavailable_reason"])
+    }
+
+    @Test
+    fun existingEtaDetailKeysKeepNamesAndOrder() {
+        val estimate = RouteTargetEstimate(
+            kind = TargetKind.NEXT_SUMMIT,
+            source = "waypoint",
+            remainingMeters = 123.4,
+            remainingSeconds = null,
+            correction = 1.0,
+            correctionActive = false,
+            slopeSource = "tobler",
+            labelKind = TargetLabelKind.NAMED_WAYPOINT,
+            name = "바라산",
+        )
+
+        assertEquals(
+            listOf(
+                "target_kind",
+                "target_source",
+                "target_remaining_m",
+                "target_remaining_s",
+                "eta_correction",
+                "eta_correction_active",
+                "eta_slope_source",
+                "target_label_kind",
+                "target_name",
+                "eta_unavailable_reason",
+            ),
+            estimate.toOnDemandEtaDetails().keys.toList(),
         )
     }
 }
