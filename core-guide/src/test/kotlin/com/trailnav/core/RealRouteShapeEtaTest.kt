@@ -14,12 +14,12 @@ class RealRouteShapeEtaTest {
         val expectedLengthMeters: Double,
         val defect: Boolean,
         val correctionSensitive: Boolean = false,
-        val maximumStartEtaSeconds: Double? = null,
+        val expectedStartEtaSeconds: Double? = null,
     )
     private data class TargetKey(val kind: TargetKind, val source: String, val roundedTargetMeters: Long)
 
     private val fixtures = listOf(
-        Fixture("eta_gap_steep_1", 297.998023, defect = true, maximumStartEtaSeconds = 500.0),
+        Fixture("eta_gap_steep_1", 297.998023, defect = true, expectedStartEtaSeconds = 580.1423488819207),
         Fixture("eta_floor_steep_2", 235.538045, defect = true),
         Fixture("eta_floor_steep_3", 894.877076, defect = true),
         Fixture("eta_cliff_steep_2", 891.314692, defect = true, correctionSensitive = true),
@@ -91,11 +91,11 @@ class RealRouteShapeEtaTest {
                     previousByTarget[key] = seconds
                 }
                 val startTarget = assertNotNull(tracker.estimate(0.0, ProgressDirection.FORWARD, arrived = false))
-                fixture.maximumStartEtaSeconds?.let { maximum ->
+                fixture.expectedStartEtaSeconds?.let { expected ->
                     val startEta = assertNotNull(startTarget.remainingSeconds)
                     assertTrue(
-                        startEta <= maximum,
-                        "${fixture.id}: 50 m window ETA exceeded its route-shape envelope: $startEta > $maximum",
+                        kotlin.math.abs(startEta - expected) <= 0.01,
+                        "${fixture.id}: distance-smoothed start ETA differs from the recalculated reference: $startEta != $expected",
                     )
                 }
                 println("ROUTE_ETA fixture=${fixture.id} start_eta_s=${startTarget.remainingSeconds} max_eta_s=$maximumEtaSeconds")

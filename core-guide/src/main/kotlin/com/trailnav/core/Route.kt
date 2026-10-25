@@ -41,6 +41,7 @@ data class ElevationUse(
     }
 }
 
+/** Spike counts, positions, and totals are measured on the configured elevation grid. */
 data class ElevationRepair(
     val spikePoints: Int = 0,
     val interpolatedPoints: Int = 0,
@@ -143,6 +144,24 @@ data class RouteModel(
         fun fromGpx(xml: String, config: GuideConfig = GuideConfig()): RouteModel =
             GpxRouteParser.parse(xml, config)
     }
+}
+
+/** Linearly interpolates a distance/value profile and clamps requests to its endpoints. */
+internal fun interpolateLinearProfile(
+    cumulativeMeters: List<Double>,
+    values: List<Double>,
+    requestedMeters: Double,
+): Double? {
+    if (values.isEmpty() || values.size != cumulativeMeters.size) return null
+    if (values.size == 1) return values.first()
+    val distance = requestedMeters.coerceIn(cumulativeMeters.first(), cumulativeMeters.last())
+    val index = cumulativeMeters.binarySearch(distance).let { found ->
+        if (found >= 0) found.coerceAtMost(values.lastIndex - 1)
+        else (-found - 2).coerceIn(0, values.lastIndex - 1)
+    }
+    val span = cumulativeMeters[index + 1] - cumulativeMeters[index]
+    val fraction = if (span <= 0.0) 0.0 else (distance - cumulativeMeters[index]) / span
+    return values[index] + (values[index + 1] - values[index]) * fraction
 }
 
 /** Grid index over route segments.  It stores segment indices, not mutable route state. */
@@ -250,6 +269,93 @@ internal data class SegmentProjection(
     val distanceMeters: Double
 )
 
+private fun elevationGridDistances(totalLengthMeters: Double, gridSpacingMeters: Double): List<Double> {
+    if (totalLengthMeters <= 0.0) return listOf(0.0)
+    val intervalCount = floor(totalLengthMeters / gridSpacingMeters).toInt()
+    val distances = (0..intervalCount)
+        .map { index -> min(index * gridSpacingMeters, totalLengthMeters) }
+        .toMutableList()
+    if (distances.last() < totalLengthMeters) {
+        if (totalLengthMeters - distances.last() <= Math.ulp(totalLengthMeters) * 2.0) {
+            distances[distances.lastIndex] = totalLengthMeters
+        } else {
+            distances += totalLengthMeters
+        }
+    }
+    return distances
+}
+
+private fun isWithinElevationDistanceWindow(
+    sampleIndex: Int,
+    centerIndex: Int,
+    cumulativeMeters: List<Double>,
+    halfWindowMeters: Double,
+): Boolean {
+    val sampleDistance = cumulativeMeters[sampleIndex]
+    val centerDistance = cumulativeMeters[centerIndex]
+    val distance = abs(sampleDistance - centerDistance)
+    val roundingTolerance = Math.ulp(max(abs(sampleDistance), abs(centerDistance))) * 2.0
+    return distance <= halfWindowMeters + roundingTolerance
+}
+
+private fun distanceWindowBounds(
+    cumulativeMeters: List<Double>,
+    centerIndex: Int,
+    halfWindowMeters: Double,
+): IntRange {
+    var first = centerIndex
+    while (first > 0 && isWithinElevationDistanceWindow(first - 1, centerIndex, cumulativeMeters, halfWindowMeters)) {
+        first -= 1
+    }
+    var last = centerIndex
+    while (last < cumulativeMeters.lastIndex &&
+        isWithinElevationDistanceWindow(last + 1, centerIndex, cumulativeMeters, halfWindowMeters)
+    ) {
+        last += 1
+    }
+    return first..last
+}
+
+private fun medianProfileByDistance(
+    cumulativeMeters: List<Double>,
+    profile: List<Double>,
+    halfWindowMeters: Double,
+): List<Double> {
+    require(cumulativeMeters.size == profile.size)
+    return profile.indices.map { index ->
+        val bounds = distanceWindowBounds(cumulativeMeters, index, halfWindowMeters)
+        val sorted = profile.subList(bounds.first, bounds.last + 1).sorted()
+        sorted[(sorted.size - 1) / 2]
+    }
+}
+
+private fun meanProfileByDistance(
+    cumulativeMeters: List<Double>,
+    profile: List<Double>,
+    halfWindowMeters: Double,
+): List<Double> {
+    require(cumulativeMeters.size == profile.size)
+    val prefix = DoubleArray(profile.size + 1)
+    profile.forEachIndexed { index, elevation -> prefix[index + 1] = prefix[index] + elevation }
+    return profile.indices.map { index ->
+        val bounds = distanceWindowBounds(cumulativeMeters, index, halfWindowMeters)
+        (prefix[bounds.last + 1] - prefix[bounds.first]) / (bounds.last - bounds.first + 1)
+    }
+}
+
+private fun smoothElevationProfile(
+    cumulativeMeters: List<Double>,
+    profile: List<Double>,
+    median: List<Double>,
+    meanHalfWindowMeters: Double,
+): List<Double> {
+    val means = meanProfileByDistance(cumulativeMeters, median, meanHalfWindowMeters)
+    return profile.indices.map { index ->
+        if (index == 0 || index == profile.lastIndex) profile[index]
+        else means[index]
+    }
+}
+
 internal object GpxRouteParser {
     private const val NAVER_MAP_EXTENSION_NAMESPACE = "https://map.naver.com/gpx/1"
 
@@ -330,7 +436,7 @@ internal object GpxRouteParser {
             } else null
         }
         val peaks = if (elevation.used) {
-            extractPeaks(cumulative, elevation.smoothed, config).filterNot { peak ->
+            extractPeaks(elevation.gridDistances, elevation.gridSmoothed, config).filterNot { peak ->
                 eligibleWaypoints.any { waypoint ->
                     abs(peak.s - waypoint.s) <= config.peakWaypointDedupeMeters
                 }
@@ -364,6 +470,8 @@ internal object GpxRouteParser {
         val reason: String,
         val smoothed: List<Double>,
         val repair: ElevationRepair,
+        val gridDistances: List<Double>,
+        val gridSmoothed: List<Double>,
     )
     private data class RouteProjection(val s: Double, val distanceMeters: Double)
 
@@ -395,72 +503,131 @@ internal object GpxRouteParser {
         config: GuideConfig,
     ): ElevationClassification {
         if (values.isEmpty() || values.none { it != null }) {
-            return ElevationClassification(false, "absent", emptyList(), ElevationRepair())
+            return ElevationClassification(false, "absent", emptyList(), ElevationRepair(), emptyList(), emptyList())
         }
         if (values.any { it == null }) {
-            return ElevationClassification(false, "partial", emptyList(), ElevationRepair())
+            return ElevationClassification(false, "partial", emptyList(), ElevationRepair(), emptyList(), emptyList())
         }
         val raw = values.map { requireNotNull(it) }
-        fun medianProfile(profile: List<Double>): List<Double> = profile.indices.map { index ->
-            val from = max(0, index - 2)
-            val to = min(profile.lastIndex, index + 2)
-            profile.subList(from, to + 1).sorted()[((to - from) / 2)]
+        require(raw.size == cumulative.size) { "elevation profile must align with route distances" }
+        val totalLengthMeters = cumulative.lastOrNull() ?: 0.0
+        val gridDistances = elevationGridDistances(totalLengthMeters, config.elevationGridMeters)
+        val gridElevations = gridDistances.map { distance ->
+            requireNotNull(interpolateLinearProfile(cumulative, raw, distance))
         }
-        fun smoothProfile(profile: List<Double>, median: List<Double>): List<Double> = median.indices.map { index ->
-            // Preserve profile endpoints so a 200 m ramp keeps its measured
-            // total delta; only interior samples receive the moving average.
-            if (index == 0 || index == median.lastIndex) profile[index]
-            else {
-                val from = max(0, index - 1)
-                val to = min(median.lastIndex, index + 1)
-                median.subList(from, to + 1).average()
-            }
+        fun pointProfile(gridProfile: List<Double>): List<Double> = cumulative.map { distance ->
+            requireNotNull(interpolateLinearProfile(gridDistances, gridProfile, distance))
         }
-        val originalMedian = medianProfile(raw)
-        val residuals = raw.indices.map { index -> abs(raw[index] - originalMedian[index]) }
+        val emptyRepair = ElevationRepair(totalPoints = gridDistances.size)
+        if (gridDistances.size < 5) {
+            return ElevationClassification(
+                true,
+                "ok",
+                raw,
+                emptyRepair,
+                gridDistances,
+                gridElevations,
+            )
+        }
+
+        val originalMedian = medianProfileByDistance(
+            gridDistances,
+            gridElevations,
+            config.elevationMedianHalfWindowMeters,
+        )
+        val residuals = gridElevations.indices.map { index -> abs(gridElevations[index] - originalMedian[index]) }
         val maxResidual = residuals.maxOrNull() ?: 0.0
         val spikeIndices = residuals.indices.filter { residuals[it] > config.elevationSpikeThresholdMeters }
         val baseRepair = ElevationRepair(
             spikePoints = spikeIndices.size,
-            totalPoints = raw.size,
+            totalPoints = gridDistances.size,
             maxResidualMeters = maxResidual,
-            atMeters = spikeIndices.map { cumulative[it] },
+            atMeters = spikeIndices.map { gridDistances[it] },
         )
-        val originalSmoothed = smoothProfile(raw, originalMedian)
+        val originalSmoothed = smoothElevationProfile(
+            gridDistances,
+            gridElevations,
+            originalMedian,
+            config.elevationMeanHalfWindowMeters,
+        )
         if (spikeIndices.isEmpty()) {
-            return ElevationClassification(true, "ok", originalSmoothed, baseRepair)
+            return ElevationClassification(
+                true,
+                "ok",
+                pointProfile(originalSmoothed),
+                baseRepair,
+                gridDistances,
+                originalSmoothed,
+            )
         }
 
-        if (spikeIndices.first() == 0 || spikeIndices.last() == raw.lastIndex ||
-            spikeIndices.size.toDouble() / raw.size > config.elevationSpikeMaxRatio
+        if (spikeIndices.first() == 0 || spikeIndices.last() == gridElevations.lastIndex ||
+            spikeIndices.size.toDouble() / gridDistances.size > config.elevationSpikeMaxRatio
         ) {
-            return ElevationClassification(false, "unstable", originalSmoothed, baseRepair)
+            return ElevationClassification(
+                false,
+                "unstable",
+                pointProfile(originalSmoothed),
+                baseRepair,
+                gridDistances,
+                originalSmoothed,
+            )
         }
 
         val spikeSet = spikeIndices.toSet()
-        val repaired = raw.toMutableList()
+        val repaired = gridElevations.toMutableList()
         for (index in spikeIndices) {
             val before = (index - 1 downTo 0).firstOrNull { it !in spikeSet }
-                ?: return ElevationClassification(false, "unstable", originalSmoothed, baseRepair)
-            val after = (index + 1..raw.lastIndex).firstOrNull { it !in spikeSet }
-                ?: return ElevationClassification(false, "unstable", originalSmoothed, baseRepair)
-            val spanMeters = cumulative[after] - cumulative[before]
+                ?: return ElevationClassification(
+                    false, "unstable", pointProfile(originalSmoothed), baseRepair, gridDistances, originalSmoothed,
+                )
+            val after = (index + 1..gridElevations.lastIndex).firstOrNull { it !in spikeSet }
+                ?: return ElevationClassification(
+                    false, "unstable", pointProfile(originalSmoothed), baseRepair, gridDistances, originalSmoothed,
+                )
+            val spanMeters = gridDistances[after] - gridDistances[before]
             if (spanMeters <= 0.0) {
-                return ElevationClassification(false, "unstable", originalSmoothed, baseRepair)
+                return ElevationClassification(
+                    false, "unstable", pointProfile(originalSmoothed), baseRepair, gridDistances, originalSmoothed,
+                )
             }
-            val ratio = (cumulative[index] - cumulative[before]) / spanMeters
-            repaired[index] = raw[before] + (raw[after] - raw[before]) * ratio
+            val ratio = (gridDistances[index] - gridDistances[before]) / spanMeters
+            repaired[index] = gridElevations[before] + (gridElevations[after] - gridElevations[before]) * ratio
         }
 
-        val repairedMedian = medianProfile(repaired)
+        val repairedMedian = medianProfileByDistance(
+            gridDistances,
+            repaired,
+            config.elevationMedianHalfWindowMeters,
+        )
         val repairedResidual = repaired.indices.maxOfOrNull { index ->
             abs(repaired[index] - repairedMedian[index])
         } ?: 0.0
         val adoptedRepair = baseRepair.copy(interpolatedPoints = spikeIndices.size)
+        val repairedSmoothed = smoothElevationProfile(
+            gridDistances,
+            repaired,
+            repairedMedian,
+            config.elevationMeanHalfWindowMeters,
+        )
         if (repairedResidual > config.elevationSpikeThresholdMeters) {
-            return ElevationClassification(false, "unstable", smoothProfile(repaired, repairedMedian), adoptedRepair)
+            return ElevationClassification(
+                false,
+                "unstable",
+                pointProfile(repairedSmoothed),
+                adoptedRepair,
+                gridDistances,
+                repairedSmoothed,
+            )
         }
-        return ElevationClassification(true, "ok", smoothProfile(repaired, repairedMedian), adoptedRepair)
+        return ElevationClassification(
+            true,
+            "ok",
+            pointProfile(repairedSmoothed),
+            adoptedRepair,
+            gridDistances,
+            repairedSmoothed,
+        )
     }
 
     private fun extractPeaks(

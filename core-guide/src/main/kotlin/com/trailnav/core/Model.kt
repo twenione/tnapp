@@ -107,6 +107,9 @@ data class GuideConfig(
     val waypointNameMaxLength: Int = 80,
     /** A residual above this value marks an elevation profile unstable. */
     val elevationSpikeThresholdMeters: Double = 10.0,
+    val elevationGridMeters: Double = 5.0,
+    val elevationMedianHalfWindowMeters: Double = 10.0,
+    val elevationMeanHalfWindowMeters: Double = 5.0,
     val spatialGridSizeMeters: Double = 100.0,
     val taggingOffRouteDistanceMeters: Double = 30.0,
     val taggingOffRouteDwellSeconds: Double = 60.0,
@@ -158,6 +161,9 @@ data class GuideConfig(
         require(waypointNearRouteMeters >= 0.0)
         require(waypointNameMaxLength > 0)
         require(elevationSpikeThresholdMeters > 0.0)
+        require(elevationGridMeters > 0.0)
+        require(elevationMedianHalfWindowMeters > 0.0)
+        require(elevationMeanHalfWindowMeters > 0.0)
         require(elevationSpikeMaxRatio in 0.0..1.0)
         require(directionResumeHoldSeconds >= 0.0)
         require(etaWindowSeconds > 0.0)
@@ -208,6 +214,9 @@ data class GuideConfig(
             "waypointNameMaxLength" to "covered by ElevationRouteTest.waypointNameIsSanitized",
             "elevationSpikeThresholdMeters" to "covered by ElevationRouteTest.spikeIsUnstable",
             "elevationSpikeMaxRatio" to "covered by ElevationRouteTest.spikeRatioBoundaryAndConfigControl",
+            "elevationGridMeters" to "covered by ElevationSmoothingTest.gridSpacingControlsSampleCount",
+            "elevationMedianHalfWindowMeters" to "covered by ElevationSmoothingTest.medianWindowControlsSpikeRemoval",
+            "elevationMeanHalfWindowMeters" to "covered by ElevationSmoothingTest.meanWindowControlsSmoothing",
             "directionResumeHoldSeconds" to "covered by MatchingTest.stopResumeR1DoesNotReportReverseDuringGpsNoise",
             "eventMinIntervalSeconds" to "covered by DynamicGuidanceTest.minimumEventInterval",
             "milestoneIntervalMeters" to "covered by DynamicGuidanceTest.milestoneThreshold",

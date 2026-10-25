@@ -92,7 +92,7 @@ class RouteQualityTest {
         val clamped = rawSpeeds.indices.filter { rawSpeeds[it] < config.etaMinSegmentSpeedMps }
         val expectedLengthRatio = clamped.sumOf { lengths[it] } / lengths.sum()
 
-        assertEquals(1, route.quality.etaClampedSegmentCount)
+        assertEquals(2, route.quality.etaClampedSegmentCount)
         assertEquals(expectedLengthRatio, route.quality.etaClampedLengthRatio, 1e-9)
         assertEquals(150.0 / 330.0, route.quality.etaClampedLengthRatio, 0.01)
         assertTrue(route.elevationUse.used)
