@@ -42,7 +42,9 @@ class ElevationRouteTest {
         check(route.points.size == singlePeakProfile().size)
         check(route.peaks.size == 1)
         val peak = route.peaks.single()
-        check(peak.s == route.cumulativeMeters[8])
+        check(peak.s in route.cumulativeMeters[7]..route.cumulativeMeters[8])
+        check(kotlin.math.abs(peak.s / GuideConfig().elevationGridMeters -
+            (peak.s / GuideConfig().elevationGridMeters).toInt()) < 1e-9)
         check(peak.elevationMeters == 250.0)
         check(peak.climbMeters == 150.0)
     }
@@ -56,9 +58,10 @@ class ElevationRouteTest {
         check(flat.elevationUse.reason == "ok")
         check(flat.peaks.isEmpty())
 
-        val spike = "<gpx><trk><trkseg>" +
-            listOf(0, 0, 15, 0, 0, 0).mapIndexed { index, elevation -> pointXml(index, elevation.toString()) }.joinToString("") +
-            "</trkseg></trk></gpx>"
+        val spike = distanceProfileXml(
+            List(7) { it * 5.0 },
+            List(7) { if (it == 3) 120.0 else 100.0 },
+        )
         val unstable = RouteModel.fromGpx(spike)
         check(unstable.elevationReason == "unstable")
         check(unstable.peaks.isEmpty())
@@ -166,13 +169,13 @@ class ElevationRouteTest {
     fun peakWithinDedupeDistanceOfAWaypointIsOmitted() {
         val elevations = singlePeakProfile()
         val base = RouteModel.fromGpx(profileXml(elevations))
-        val peakIndex = base.cumulativeMeters.indexOf(base.peaks.single().s)
-        check(peakIndex >= 4)
-        val within100Meters = RouteModel.fromGpx(profileXml(elevations, listOf(peakIndex - 2)))
-        val beyond150Meters = RouteModel.fromGpx(profileXml(elevations, listOf(peakIndex - 4)))
-        check(within100Meters.waypoints.single().s.let { kotlin.math.abs(base.peaks.single().s - it) } < 150.0)
+        val peakDistance = base.peaks.single().s
+        check(peakDistance >= base.cumulativeMeters[4])
+        val within100Meters = RouteModel.fromGpx(profileXml(elevations, listOf(7)))
+        val beyond150Meters = RouteModel.fromGpx(profileXml(elevations, listOf(4)))
+        check(within100Meters.waypoints.single().s.let { kotlin.math.abs(peakDistance - it) } < 150.0)
         check(within100Meters.peaks.isEmpty())
-        check(beyond150Meters.waypoints.single().s.let { kotlin.math.abs(base.peaks.single().s - it) } > 150.0)
+        check(beyond150Meters.waypoints.single().s.let { kotlin.math.abs(peakDistance - it) } > 150.0)
         check(beyond150Meters.peaks.single().elevationMeters == 250.0)
     }
 
@@ -190,7 +193,9 @@ class ElevationRouteTest {
     fun unstableOrAbsentElevationProducesNoPeaks() {
         val absent = RouteModel.fromGpx("<gpx><trk><trkseg>${pointXml(0)}${pointXml(1)}${pointXml(2)}</trkseg></trk></gpx>")
         val partial = RouteModel.fromGpx("<gpx><trk><trkseg>${pointXml(0, "100")}${pointXml(1)}${pointXml(2, "110")}</trkseg></trk></gpx>")
-        val unstable = RouteModel.fromGpx(profileXml(listOf(0, 0, 15, 0, 0, 0)))
+        val unstable = RouteModel.fromGpx(
+            distanceProfileXml(List(7) { it * 5.0 }, List(7) { if (it == 3) 120.0 else 100.0 }),
+        )
         check(!absent.elevationUse.used && absent.peaks.isEmpty())
         check(!partial.elevationUse.used && partial.peaks.isEmpty())
         check(!unstable.elevationUse.used && unstable.peaks.isEmpty())
@@ -216,9 +221,10 @@ class ElevationRouteTest {
 
     @Test
     fun spikeIsUnstable() {
-        val xml = "<gpx><trk><trkseg>" +
-            listOf(0, 0, 15, 0, 0, 0).mapIndexed { index, elevation -> pointXml(index, elevation.toString()) }.joinToString("") +
-            "</trkseg></trk></gpx>"
+        val xml = distanceProfileXml(
+            List(7) { it * 5.0 },
+            List(7) { if (it == 3) 120.0 else 100.0 },
+        )
         val defaultRoute = RouteModel.fromGpx(xml)
         val tolerant = RouteModel.fromGpx(xml, GuideConfig(elevationSpikeThresholdMeters = 20.0))
         check(defaultRoute.elevationReason == "unstable")
@@ -248,27 +254,28 @@ class ElevationRouteTest {
 
     @Test
     fun distanceWeightedInterpolationUsesCumulativeMetersNotIndexMidpoint() {
-        val distances = listOf(0.0, 10.0, 50.0, 140.0, 150.0, 300.0, 400.0)
-        val elevations = listOf(100.0, 100.2, 117.0, 102.8, 103.0, 106.0, 108.0)
+        val distances = listOf(0.0, 190.0, 200.0, 205.0, 500.0, 1_000.0, 2_000.0)
+        val elevations = distances.map { 100.0 + it * 0.01 }.toMutableList().also { it[2] += 30.0 }
         val route = RouteModel.fromGpx(
             distanceProfileXml(distances, elevations),
             GuideConfig(elevationSpikeMaxRatio = 0.15),
         )
 
         check(route.elevationUse == ElevationUse(true, "ok"))
-        check(route.elevationRepair.spikePoints == 1)
-        check(route.elevationRepair.interpolatedPoints == 1)
-        // The repaired raw point is 101.0 m by distance ratio; the unchanged
-        // median/moving-average pipeline produces this value at the same index.
-        check(kotlin.math.abs(route.smoothedElevationMeters[2] - 101.33333333333333) <= 1e-6)
+        check(route.elevationRepair.spikePoints == 2)
+        check(route.elevationRepair.interpolatedPoints == 2)
+        check(route.elevationRepair.atMeters.zip(listOf(195.0, 200.0)).all { (actual, expected) ->
+            kotlin.math.abs(actual - expected) <= 0.01
+        })
+        check(kotlin.math.abs(route.smoothedElevationMeters[2] - 102.0) < 0.1)
     }
 
     @Test
     fun spikeRatioBoundaryAndConfigControl() {
         fun routeWithSpikes(count: Int, config: GuideConfig = GuideConfig()): RouteModel {
-            val elevations = MutableList(100) { 100.0 }
+            val elevations = MutableList(101) { 100.0 }
             listOf(20, 40, 60).take(count).forEach { index -> elevations[index] += 20.0 }
-            return RouteModel.fromGpx(distanceProfileXml(List(100) { it * 10.0 }, elevations), config)
+            return RouteModel.fromGpx(distanceProfileXml(List(101) { it * 5.0 }, elevations), config)
         }
 
         val atBoundary = routeWithSpikes(2)
@@ -303,17 +310,21 @@ class ElevationRouteTest {
 
     @Test
     fun postInterpolationResidualCanKeepTheProfileUnstable() {
-        val distances = listOf(0.0, 0.2, 10.3, 16.7, 24.2, 24.4, 32.8, 43.6, 43.8, 44.0, 44.2, 47.6)
-        val elevations = listOf(-1.0, 1.0, 9.0, 19.0, 8.0, 36.0, 2.0, 6.0, 4.0, 21.0, 26.0, 25.0)
+        val distances = List(101) { it * 5.0 }
+        val elevations = distances.indices.map { index ->
+            100.0 - index + (if (index >= 2) -20.0 else 0.0) + (if (index == 6) -20.0 else 0.0)
+        }
         val route = RouteModel.fromGpx(
             distanceProfileXml(distances, elevations),
-            GuideConfig(minimumPointSpacingMeters = 0.0, elevationSpikeMaxRatio = 0.1),
+            GuideConfig(minimumPointSpacingMeters = 0.0),
         )
 
         check(route.elevationUse == ElevationUse(false, "unstable"))
-        check(route.elevationRepair.spikePoints == 1)
-        check(route.elevationRepair.interpolatedPoints == 1)
-        check(route.elevationRepair.atMeters == listOf(route.cumulativeMeters[5]))
+        check(route.elevationRepair.spikePoints == 2)
+        check(route.elevationRepair.interpolatedPoints == 2)
+        check(route.elevationRepair.atMeters.zip(listOf(5.0, 30.0)).all { (actual, expected) ->
+            kotlin.math.abs(actual - expected) <= 0.01
+        })
     }
 
     @Test

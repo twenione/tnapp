@@ -23,17 +23,7 @@ fun guide(state: GuideState, frame: SensorFrame, config: GuideConfig = GuideConf
     Engine.guide(state, frame, config)
 
 internal fun interpolateElevation(route: RouteModel, projectedMeters: Double): Double? {
-    val profile = route.smoothedElevationMeters
-    val cumulative = route.cumulativeMeters
-    if (profile.isEmpty() || profile.size != cumulative.size) return null
-    if (profile.size == 1) return profile.first()
-    val distance = projectedMeters.coerceIn(0.0, cumulative.last())
-    val index = cumulative.binarySearch(distance).let { found ->
-        if (found >= 0) found.coerceAtMost(profile.lastIndex - 1) else (-found - 2).coerceIn(0, profile.lastIndex - 1)
-    }
-    val span = cumulative[index + 1] - cumulative[index]
-    val fraction = if (span <= 0.0) 0.0 else (distance - cumulative[index]) / span
-    return profile[index] + (profile[index + 1] - profile[index]) * fraction
+    return interpolateLinearProfile(route.cumulativeMeters, route.smoothedElevationMeters, projectedMeters)
 }
 
 private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfig): GuideResult {

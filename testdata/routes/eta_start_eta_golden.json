@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "start_eta_seconds": {
+    "eta_gap_steep_1": 580.1423488819207,
+    "eta_floor_steep_2": 531.6942488695654,
+    "eta_floor_steep_3": 1752.770843191833,
+    "eta_cliff_steep_2": 875.9653836119285,
+    "eta_control_uneven_1": 622.2593803550326,
+    "eta_control_uneven_2": 752.1456159308296
+  }
+}
