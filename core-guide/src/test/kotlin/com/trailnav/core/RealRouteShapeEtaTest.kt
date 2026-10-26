@@ -14,12 +14,11 @@ class RealRouteShapeEtaTest {
         val expectedLengthMeters: Double,
         val defect: Boolean,
         val correctionSensitive: Boolean = false,
-        val expectedStartEtaSeconds: Double? = null,
     )
     private data class TargetKey(val kind: TargetKind, val source: String, val roundedTargetMeters: Long)
 
     private val fixtures = listOf(
-        Fixture("eta_gap_steep_1", 297.998023, defect = true, expectedStartEtaSeconds = 580.1423488819207),
+        Fixture("eta_gap_steep_1", 297.998023, defect = true),
         Fixture("eta_floor_steep_2", 235.538045, defect = true),
         Fixture("eta_floor_steep_3", 894.877076, defect = true),
         Fixture("eta_cliff_steep_2", 891.314692, defect = true, correctionSensitive = true),
@@ -47,9 +46,14 @@ class RealRouteShapeEtaTest {
         return samples
     }
 
+    private fun maximumToblerSpeedMetersPerSecond(): Double =
+        (0..20_000).maxOf { sample -> toblerSpeedMetersPerSecond(-1.0 + sample * 1e-4) }
+
     @Test
     fun realRouteEtaPropertiesHoldAtFiveMeterSamples() {
         val failures = mutableListOf<String>()
+        val config = GuideConfig()
+        val maximumSpeed = maximumToblerSpeedMetersPerSecond()
         for (fixture in fixtures) {
             runCatching {
                 val route = route(fixture.id)
@@ -58,7 +62,7 @@ class RealRouteShapeEtaTest {
                     "${fixture.id}: Python clip distance differs from RouteModel.fromGpx",
                 )
                 assertTrue(route.elevationUse.used, "${fixture.id}: fixture elevation profile was rejected")
-                val tracker = RouteEtaTracker(route)
+                val tracker = RouteEtaTracker(route, config)
                 val previousByTarget = mutableMapOf<TargetKey, Double>()
                 var maximumEtaSeconds = 0.0
                 for (position in positions(route.totalLengthMeters)) {
@@ -73,13 +77,14 @@ class RealRouteShapeEtaTest {
                     assertTrue(seconds.isFinite(), "${fixture.id}: ETA is non-finite at ${position.toInt()}m: $seconds")
                     assertTrue(seconds <= 86_400.0 + 1e-6, "${fixture.id}: ETA exceeds one day at ${position.toInt()}m: $seconds")
                     maximumEtaSeconds = maxOf(maximumEtaSeconds, seconds)
-                    if (target.remainingMeters > 0.0 && seconds > 0.0) {
-                        val averageSpeed = target.remainingMeters / seconds
-                        assertTrue(
-                            averageSpeed + 1e-9 >= 0.15,
-                            "${fixture.id}: ETA speed floor violated at ${position.toInt()}m: $averageSpeed m/s",
-                        )
-                    }
+                    val minimumSeconds = target.remainingMeters / maximumSpeed
+                    val maximumSeconds = target.remainingMeters / config.etaMinSegmentSpeedMps
+                    assertTrue(
+                        seconds + 1e-6 >= minimumSeconds && seconds <= maximumSeconds + 1e-6,
+                        "${fixture.id}: ETA outside physical range at ${position.toInt()}m: " +
+                            "R=${target.remainingMeters}, ETA=$seconds, range=[$minimumSeconds,$maximumSeconds] " +
+                            "(vMax=$maximumSpeed, vMin=${config.etaMinSegmentSpeedMps})",
+                    )
                     val key = TargetKey(target.kind, target.source, (position + target.remainingMeters).roundToLong())
                     val previous = previousByTarget[key]
                     if (previous != null) {
@@ -91,14 +96,71 @@ class RealRouteShapeEtaTest {
                     previousByTarget[key] = seconds
                 }
                 val startTarget = assertNotNull(tracker.estimate(0.0, ProgressDirection.FORWARD, arrived = false))
-                fixture.expectedStartEtaSeconds?.let { expected ->
-                    val startEta = assertNotNull(startTarget.remainingSeconds)
-                    assertTrue(
-                        kotlin.math.abs(startEta - expected) <= 0.01,
-                        "${fixture.id}: distance-smoothed start ETA differs from the recalculated reference: $startEta != $expected",
-                    )
-                }
-                println("ROUTE_ETA fixture=${fixture.id} start_eta_s=${startTarget.remainingSeconds} max_eta_s=$maximumEtaSeconds")
+                val startRemainingMeters = startTarget.remainingMeters
+                println(
+                    "ROUTE_ETA fixture=${fixture.id} start_eta_s=${startTarget.remainingSeconds} " +
+                        "max_eta_s=$maximumEtaSeconds physical_range_s=" +
+                        "[${startRemainingMeters / maximumSpeed},${startRemainingMeters / config.etaMinSegmentSpeedMps}] " +
+                        "v_max_mps=$maximumSpeed v_min_mps=${config.etaMinSegmentSpeedMps}",
+                )
+            }.onFailure { failure -> failures += failure.message ?: failure::class.simpleName.orEmpty() }
+        }
+
+        val floorProbeRoutes = steepWindowRoutes(route("eta_floor_steep_3"), config.etaMinSegmentSpeedMps)
+        assertTrue(floorProbeRoutes.isNotEmpty(), "floor counterexample has no segment below etaMinSegmentSpeedMps")
+        for ((probeIndex, probeRoute) in floorProbeRoutes.withIndex()) {
+            val tracker = RouteEtaTracker(probeRoute, config)
+            for (position in positions(probeRoute.totalLengthMeters)) {
+                val target = assertNotNull(
+                    tracker.estimate(position, ProgressDirection.FORWARD, arrived = false),
+                    "floor probe $probeIndex: estimate missing at ${position.toInt()}m",
+                )
+                val seconds = assertNotNull(
+                    target.remainingSeconds,
+                    "floor probe $probeIndex: ETA unavailable at ${position.toInt()}m",
+                )
+                val minimumSeconds = target.remainingMeters / maximumSpeed
+                val maximumSeconds = target.remainingMeters / config.etaMinSegmentSpeedMps
+                assertTrue(
+                    seconds + 1e-6 >= minimumSeconds && seconds <= maximumSeconds + 1e-6,
+                    "floor probe $probeIndex: ETA outside physical range at ${position.toInt()}m: " +
+                        "R=${target.remainingMeters}, ETA=$seconds, range=[$minimumSeconds,$maximumSeconds] " +
+                        "(vMax=$maximumSpeed, vMin=${config.etaMinSegmentSpeedMps})",
+                )
+            }
+        }
+        assertTrue(failures.isEmpty(), failures.joinToString("; "))
+    }
+
+    @Test
+    fun etaStartGoldenMatches() {
+        val goldenPath = repositoryRoot().resolve("testdata/routes/eta_start_eta_golden.json")
+        val content = Files.readString(goldenPath)
+        assertTrue(content.contains("\"schema_version\": 1"), "ETA golden schema_version must be 1")
+        val startEtaSection = content.substringAfter("\"start_eta_seconds\"").substringAfter("{").substringBefore("}")
+        val entryPattern = Regex("\"([^\"]+)\"\\s*:\\s*([-+]?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)")
+        val entries = entryPattern.findAll(startEtaSection).map { match ->
+            match.groupValues[1] to match.groupValues[2].toDouble()
+        }.toList()
+        val goldens = entries.toMap()
+        val expectedIds = fixtures.map { it.id }.toSet()
+        assertTrue(entries.size == 6 && goldens.keys == expectedIds, "ETA golden fixture keys differ: ${goldens.keys}")
+
+        val config = GuideConfig()
+        val failures = mutableListOf<String>()
+        for (fixture in fixtures) {
+            runCatching {
+                val target = assertNotNull(
+                    RouteEtaTracker(route(fixture.id), config).estimate(0.0, ProgressDirection.FORWARD, arrived = false),
+                    "${fixture.id}: start estimate missing",
+                )
+                val actual = assertNotNull(target.remainingSeconds, "${fixture.id}: start ETA unavailable")
+                val expected = requireNotNull(goldens[fixture.id])
+                val changePercent = (actual - expected) / expected * 100.0
+                assertTrue(
+                    kotlin.math.abs(changePercent) <= 1e-7,
+                    "${fixture.id}: golden=$expected actual=$actual change=${changePercent}%",
+                )
             }.onFailure { failure -> failures += failure.message ?: failure::class.simpleName.orEmpty() }
         }
         assertTrue(failures.isEmpty(), failures.joinToString("; "))
@@ -132,29 +194,31 @@ class RealRouteShapeEtaTest {
 
     @Test
     fun steepWindowsTakenFromRealRouteKeepTheSegmentSpeedFloor() {
+        val config = GuideConfig()
         val sourceRoute = route("eta_floor_steep_3")
-        val isolatedRoutes = steepWindowRoutes(sourceRoute)
+        val isolatedRoutes = steepWindowRoutes(sourceRoute, config.etaMinSegmentSpeedMps)
         assertTrue(isolatedRoutes.isNotEmpty(), "selected real-route fixture contains no 50 m window below the speed floor")
         for (isolatedRoute in isolatedRoutes) {
             val target = assertNotNull(
-                RouteEtaTracker(isolatedRoute).estimate(0.0, ProgressDirection.FORWARD, arrived = false),
+                RouteEtaTracker(isolatedRoute, config).estimate(0.0, ProgressDirection.FORWARD, arrived = false),
                 "isolated steep segment estimate missing",
             )
             val seconds = assertNotNull(target.remainingSeconds, "isolated steep segment ETA unavailable")
             val speed = target.remainingMeters / seconds
-            assertTrue(speed + 1e-9 >= 0.15, "real route slope window violated the 0.15 m/s floor: $speed m/s")
+            assertTrue(
+                speed + 1e-9 >= config.etaMinSegmentSpeedMps,
+                "real route slope window violated the ${config.etaMinSegmentSpeedMps} m/s floor: $speed m/s",
+            )
         }
     }
 
     @Test
     fun clampedRealRouteObservationsDoNotPinCorrectionAtMinimum() {
-        val isolatedRoutes = steepWindowRoutes(route("eta_floor_steep_3"))
+        val config = GuideConfig(etaMinWindowMeters = 0.0, etaWindowSeconds = 3_600.0)
+        val isolatedRoutes = steepWindowRoutes(route("eta_floor_steep_3"), config.etaMinSegmentSpeedMps)
         assertTrue(isolatedRoutes.isNotEmpty(), "selected real-route fixture contains no clamped 50 m window")
         for (isolatedRoute in isolatedRoutes) {
-            val tracker = RouteEtaTracker(
-                isolatedRoute,
-                GuideConfig(etaMinWindowMeters = 0.0, etaWindowSeconds = 3_600.0),
-            )
+            val tracker = RouteEtaTracker(isolatedRoute, config)
             var timestampMillis = 0L
             var positionMeters = 0.0
             tracker.observe(timestampMillis, positionMeters, ProgressDirection.FORWARD, onRoute = true)
@@ -171,7 +235,10 @@ class RealRouteShapeEtaTest {
         }
     }
 
-    private fun steepWindowRoutes(sourceRoute: RouteModel): List<RouteModel> {
+    private fun steepWindowRoutes(
+        sourceRoute: RouteModel,
+        minimumSegmentSpeedMetersPerSecond: Double,
+    ): List<RouteModel> {
         if (!sourceRoute.elevationUse.used) return emptyList()
         val windowMeters = 50.0
         return (0 until sourceRoute.cumulativeMeters.lastIndex).mapNotNull { index ->
@@ -183,7 +250,7 @@ class RealRouteShapeEtaTest {
             val startElevation = elevationAt(sourceRoute, start)
             val endElevation = elevationAt(sourceRoute, end)
             val slope = (endElevation - startElevation) / span
-            if (toblerSpeedMetersPerSecond(slope) >= 0.15) return@mapNotNull null
+            if (toblerSpeedMetersPerSecond(slope) >= minimumSegmentSpeedMetersPerSecond) return@mapNotNull null
 
             val isolatedPoints = listOf(EnuPoint(0.0, 0.0), EnuPoint(span, 0.0))
             RouteModel(
