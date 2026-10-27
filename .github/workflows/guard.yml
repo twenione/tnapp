@@ -116,6 +116,7 @@ jobs:
             # This retained historical fixture verifies log shape and privacy,
             # not current guide output. Its recorded decisions predate the
             # first-entry approach state machine.
+            # Exclusion recorded in docs/DECISIONS.md (D-140).
             if [[ "$session" == "testdata/sessions/golden/log_shape_fixture" ]]; then
               continue
             fi

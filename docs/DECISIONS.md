@@ -4126,3 +4126,24 @@ TASK-024        (A)·(B) 가 Phase 3 엔진 변경의 선행 조건
   D-027  trigger_event
   "CI 가 못 잡은 결함" 기록 체계 — TASK-023·024 완료 후 별도 결정 요청
 ```
+
+## D-140 (저장소 기록). log_shape_fixture 의 replay 제외
+
+**상태**: 확정 | **일자**: 2026-10-27
+**근거**: `TRAILNAV_DECISIONS_41_2026-10-26.md` D-138, `TRAILNAV_DECISIONS_42_2026-10-26.md` D-140
+
+### 제외 대상과 위치
+
+`testdata/sessions/golden/log_shape_fixture`는 `.github/workflows/guard.yml`의 `replay` 잡, `Replay verified golden engine fixtures` 단계에서 `log_shape_fixture` 경로와 일치하면 `continue`하여 strict 안내 출력 재생에서 제외한다.
+
+이 fixture는 과거에 보존된 기록이다. 목적은 현재 안내 출력 검증이 아니라 로그 형식과 개인정보 검증이며, `fixture_purpose: log-shape-regression`으로 표시한다. `golden_status: temporary-unverified-engine-output-P3-2`는 manifest에 적힌 값으로, 현재 엔진 출력이 검증되지 않았다는 임시 표기다. 이 상태 표기는 안내 출력 검증 대상으로 삼는다는 뜻이 아니다.
+
+이 제외는 `golden_engine`의 31개 비교와 `turn_contract`의 7개 비교를 strict replay로 보장하는 것과 구분한다. 두 fixture는 위 golden replay 루프에서 제외되지 않는다.
+
+### 저장소 결정 기록의 범위
+
+이 파일은 D-057에서 끝나 있었고, D-058부터 D-139까지는 Drive 결정문에 기록되어 있다. 이 항목은 과거 결정을 소급 작성하지 않고 D-140의 저장소 기록만 추가한다.
+
+### 재활성 조건
+
+이 fixture를 안내 출력 검증에 쓰려는 필요가 생길 때 다시 활성화한다. 이는 날짜가 아니라 사용 조건이다.
