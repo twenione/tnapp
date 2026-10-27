@@ -258,6 +258,21 @@ data class GuideConfig(
     }
 }
 
+/** An E4 peak retained until it can be announced or passed. */
+data class PendingSlopePeak(
+    val index: Int,
+    val peakS: Double,
+    val delayReason: String,
+)
+
+/** A retained E4 peak that was passed before it could be announced. */
+data class DiscardedSlopePeak(
+    val index: Int,
+    val peakS: Double,
+    val passedProjectedMeters: Double,
+    val delayReason: String,
+)
+
 data class MatchResult(
     val distanceMeters: Double,
     val projectedMeters: Double,
@@ -295,6 +310,8 @@ data class GuideState(
     val pendingRemainingDelayReason: String? = null,
     val consumedElapsedIndices: Set<Int> = emptySet(),
     val consumedSlopeIndices: Set<Int> = emptySet(),
+    val pendingSlopePeaks: Map<Int, PendingSlopePeak> = emptyMap(),
+    val discardedSlopePeaks: List<DiscardedSlopePeak> = emptyList(),
     val consumedWaypointIndices: Set<Int> = emptySet(),
     val consumedSunsetThresholds: Set<Int> = emptySet(),
     val pendingSunsetThresholds: Set<Int> = emptySet(),

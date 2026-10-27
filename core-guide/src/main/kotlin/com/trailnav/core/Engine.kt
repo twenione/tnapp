@@ -231,7 +231,7 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
     val turnEvaluation = evaluateTurnGuidance(next, directedMatch, direction, config)
     next = turnEvaluation.state
     turnEvaluation.guidance?.let { guidance ->
-        next = evaluateDynamicGuidance(initializedState, next, directedMatch, frame, config, suppressAnnouncements = true).state
+        next = evaluateDynamicGuidance(initializedState, next, directedMatch, frame, config, suppressAnnouncements = true, suppressionReason = "priority-${turnEvaluation.reason.rule}").state
         val sunset = evaluateSunsetStandalone(next, frame, config, higherPriority = true)
         return GuideResult(guidance, sunset.state, turnEvaluation.reason)
     }
@@ -266,6 +266,7 @@ private data class DynamicCandidate(
     val reason: Reason,
     val sunsetThresholds: Set<Int> = emptySet(),
     val remainingThresholds: Set<Double> = emptySet(),
+    val slopeIndices: Set<Int> = emptySet(),
 )
 
 /** Single arbitration table for simultaneous periodic events (R14). */
@@ -288,6 +289,7 @@ private fun evaluateDynamicGuidance(
     frame: SensorFrame,
     config: GuideConfig,
     suppressAnnouncements: Boolean = false,
+    suppressionReason: String? = null,
 ): DynamicEvaluation {
     var next = state
     val oldProgress = previous.lastMatch?.projectedMeters
@@ -381,32 +383,62 @@ private fun evaluateDynamicGuidance(
         )
     }
 
-    // E4: a confirmed summit is consumed when its arrival lead window opens.
+    // E4: retain a speakable peak until it is announced or passed.
+    val pendingSlopePeaks = next.pendingSlopePeaks.toMutableMap()
+    val consumedSlopeIndices = next.consumedSlopeIndices.toMutableSet()
+    val discardedSlopePeaks = next.discardedSlopePeaks.toMutableList()
     state.route.peaks.forEachIndexed { index, peak ->
+        if (index in consumedSlopeIndices) return@forEachIndexed
         val distance = peak.s - match.projectedMeters
-        if (distance < 0.0) {
-            next = next.copy(consumedSlopeIndices = next.consumedSlopeIndices + index)
-        } else if (distance <= config.peakAnnounceLeadMeters) {
-            next = next.copy(consumedSlopeIndices = next.consumedSlopeIndices + index)
-            if (config.slopeEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedSlopeIndices) {
-                candidates += DynamicCandidate(
-                    EventPriority.SLOPE,
-                    "event.slope",
-                    Guidance.Slope(SlopeKind.ASCENT, peak.climbMeters),
-                    reason(
-                        "event.slope",
-                        "E4",
-                        mapOf(
-                            "peakIndex" to index.toString(),
-                            "peakS" to peak.s.toString(),
-                            "elevationMeters" to peak.elevationMeters.toString(),
-                            "climbMeters" to peak.climbMeters.toString(),
-                        ),
-                    ),
+        val alreadyPending = index in pendingSlopePeaks
+        if (!config.slopeEnabled || !forward) {
+            if (distance < 0.0 || distance <= config.peakAnnounceLeadMeters || alreadyPending) {
+                consumedSlopeIndices += index
+                pendingSlopePeaks.remove(index)
+            }
+        } else if (distance < 0.0) {
+            val pending = pendingSlopePeaks.remove(index)
+            consumedSlopeIndices += index
+            if (pending != null) {
+                discardedSlopePeaks += DiscardedSlopePeak(
+                    index = index,
+                    peakS = pending.peakS,
+                    passedProjectedMeters = match.projectedMeters,
+                    delayReason = pending.delayReason,
                 )
+            }
+        } else if (distance <= config.peakAnnounceLeadMeters) {
+            val pending = pendingSlopePeaks[index]
+            when {
+                !onRoute -> pendingSlopePeaks.putIfAbsent(index, PendingSlopePeak(index, peak.s, "off-route"))
+                !eventIntervalOpen -> pendingSlopePeaks.putIfAbsent(index, PendingSlopePeak(index, peak.s, "event-min-interval"))
+                else -> {
+                    val details = linkedMapOf(
+                        "peakIndex" to index.toString(),
+                        "peakS" to peak.s.toString(),
+                        "elevationMeters" to peak.elevationMeters.toString(),
+                        "climbMeters" to peak.climbMeters.toString(),
+                    )
+                    if (pending != null) {
+                        details["delayed"] = "true"
+                        details["delayReason"] = pending.delayReason
+                    }
+                    candidates += DynamicCandidate(
+                        EventPriority.SLOPE,
+                        "event.slope",
+                        Guidance.Slope(SlopeKind.ASCENT, peak.climbMeters),
+                        reason("event.slope", "E4", details),
+                        slopeIndices = setOf(index),
+                    )
+                }
             }
         }
     }
+    next = next.copy(
+        consumedSlopeIndices = consumedSlopeIndices,
+        pendingSlopePeaks = pendingSlopePeaks,
+        discardedSlopePeaks = discardedSlopePeaks,
+    )
 
     // E6: eligible waypoints are approached once; their names were sanitized at load time.
     state.route.waypoints.forEachIndexed { index, waypoint ->
@@ -458,10 +490,29 @@ private fun evaluateDynamicGuidance(
     if (selected == null) {
         return DynamicEvaluation(next, null, reason("event.none", "none"))
     }
+    val slopeCandidateIndices = candidates.flatMap { it.slopeIndices }.toSet()
     if (suppressAnnouncements) {
-        return DynamicEvaluation(next, null, selected.reason)
+        slopeCandidateIndices.forEach { index ->
+            val peak = state.route.peaks[index]
+            pendingSlopePeaks.putIfAbsent(
+                index,
+                PendingSlopePeak(index, peak.s, suppressionReason ?: "priority-higher"),
+            )
+        }
+        return DynamicEvaluation(next.copy(pendingSlopePeaks = pendingSlopePeaks), null, selected.reason)
     }
-    // A higher-priority candidate delays E7; all other candidates are consumed.
+    val selectedSlopeIndices = selected.slopeIndices
+    val slopeLosers = slopeCandidateIndices - selectedSlopeIndices
+    slopeLosers.forEach { index ->
+        val peak = state.route.peaks[index]
+        pendingSlopePeaks.putIfAbsent(
+            index,
+            PendingSlopePeak(index, peak.s, "priority-${selected.kind.removePrefix("event.")}"),
+        )
+    }
+    // E4 peaks that lose arbitration remain pending; the selected one is consumed.
+    val remainingSlopePending = pendingSlopePeaks - selectedSlopeIndices
+    val consumedSlope = next.consumedSlopeIndices + selectedSlopeIndices
     val pending = next.pendingSunsetThresholds - selected.sunsetThresholds
     val remainingPendingAfterSelection = next.pendingRemainingThresholds - selected.remainingThresholds
     next = next.copy(
@@ -469,6 +520,8 @@ private fun evaluateDynamicGuidance(
         pendingSunsetDelayReason = if (selected.sunsetThresholds.isNotEmpty()) null else next.pendingSunsetDelayReason,
         pendingRemainingThresholds = remainingPendingAfterSelection,
         pendingRemainingDelayReason = if (selected.remainingThresholds.isNotEmpty()) null else next.pendingRemainingDelayReason,
+        consumedSlopeIndices = consumedSlope,
+        pendingSlopePeaks = remainingSlopePending,
         lastPeriodicEventAt = frame.timestamp,
     )
     return DynamicEvaluation(next, selected.guidance, selected.reason)

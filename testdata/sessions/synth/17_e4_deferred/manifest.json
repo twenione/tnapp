@@ -1,0 +1,66 @@
+{
+  "session_id": "a84e1b70-5001-5a6a-a061-29fca09beb8d",
+  "schema_version": "0.1.0-draft",
+  "started_at_wall": "2026-01-01T00:00:00Z",
+  "app": {
+    "version": "0.1.0",
+    "build": 0,
+    "code_hash": "sha256:5e0ad31472ef348fe2631d529517b3d2a93c5060c3a0606bea59933653caee35"
+  },
+  "engine": {
+    "config": {
+      "stub": false,
+      "variant": "17_e4_deferred",
+      "implementation": "core-guide",
+      "events": {
+        "E1": false,
+        "E2": false,
+        "E3": false,
+        "E4": true,
+        "E5": false,
+        "E6": false,
+        "E7": false,
+        "E8": false
+      }
+    },
+    "rng_seed": 3067
+  },
+  "route": {
+    "gpx_id": "synthetic-e4-deferred",
+    "gpx_hash": "sha256:3753ca3490ec1992b849178b4cf51ec8bfc0deaa90d030b59cacf1897c259326",
+    "point_count": 141,
+    "elevation_use": {
+      "used": true,
+      "reason": "ok"
+    },
+    "waypoint_count": 0,
+    "elevation_source": "synthetic"
+  },
+  "clock": {
+    "monotonic_source": "synthetic-sequence",
+    "timestamp_unit": "seconds",
+    "frame_intervals_seconds": [
+      20.0,
+      20.0,
+      10.0,
+      10.0,
+      10.0,
+      10.0,
+      30.0
+    ]
+  },
+  "privacy": {
+    "upload_default": false
+  },
+  "device": {
+    "model": "synthetic",
+    "os": "test",
+    "sensors": [
+      "gps"
+    ]
+  },
+  "scenario": {
+    "family": "e4-deferred",
+    "description": "Synthetic E4 peak enters the lead while the event interval is closed, then speaks before the peak after it opens"
+  }
+}

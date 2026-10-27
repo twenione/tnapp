@@ -84,6 +84,85 @@ class SessionLoggerTest {
     }
 
     @Test
+    fun deferredSlopeDiscardIsReturnedOnceAndLoggedWithoutRawLocation() {
+        val elevations = listOf(0, 0, 0, 10, 20, 30, 40, 50, 60, 70, 80, 80, 80, 80, 80, 70, 60, 50, 40, 30, 20, 20, 20)
+        val track = elevations.mapIndexed { index, elevation ->
+            "<trkpt lat=\"${10.0 + index * 0.00045}\" lon=\"20.0\"><ele>$elevation</ele></trkpt>"
+        }.joinToString("")
+        val route = RouteModel.fromGpx("<gpx><trk><trkseg>$track</trkseg></trk></gpx>")
+        val peak = route.peaks.first()
+        val config = GuideConfig(
+            milestoneEnabled = true,
+            milestoneIntervalMeters = 100.0,
+            slopeEnabled = true,
+            peakAnnounceLeadMeters = 100.0,
+            eventMinIntervalSeconds = 60.0,
+            minimumSessionSecondsBeforeArrival = 600.0,
+            sunsetEnabled = false,
+        )
+        val session = GuideSession(route, config)
+        fun location(progress: Double, timestamp: Long) = TrailLocation(
+            timestamp, 10.0 + progress / 111_195.0, 20.0, 5f, 1f, null, "synthetic",
+        )
+        session.accept(location(0.0, 0L))
+        for (step in 1..((peak.s - 50.0) / 50.0).toInt()) {
+            val progress = step * 50.0
+            session.accept(location(progress, step * 1_000L))
+        }
+        val pending = session.accept(location(peak.s - 50.0, 30_000L))
+        assertTrue(pending.result.nextState.pendingSlopePeaks.keys == setOf(0), "secondPeriodic=${session.snapshot().lastPeriodicEventAt}, direction=${pending.result.nextState.direction}, progress=${pending.result.nextState.lastMatch?.projectedMeters}, offRoute=${pending.result.nextState.offRoute}, peaks=${route.peaks}, reason=${pending.result.reason}")
+        assertTrue(pending.newlyDiscardedSlopePeaks.isEmpty())
+
+        val passed = session.accept(location(peak.s + 20.0, 62_000L))
+        val discard = passed.newlyDiscardedSlopePeaks.single()
+        assertEquals(0, discard.index)
+        assertEquals(peak.s, discard.peakS)
+        assertEquals("event-min-interval", discard.delayReason)
+        val later = session.accept(location(peak.s + 30.0, 63_000L))
+        assertTrue(later.newlyDiscardedSlopePeaks.isEmpty())
+
+        val directory = createTempDir(prefix = "tnapp-e4-discard-")
+        JsonlSessionLogger(
+            directory = directory,
+            sessionId = UUID.randomUUID().toString(),
+            codeHash = "sha256:test",
+            configHash = "sha256:config",
+            eventSettings = EventSettings.defaults().toWireMap(),
+            routeHash = "sha256:route",
+            appVersion = "test",
+        ).use { logger ->
+            logger.appendDiscardedSlopePeaks(passed.newlyDiscardedSlopePeaks)
+            logger.appendDiscardedSlopePeaks(later.newlyDiscardedSlopePeaks)
+        }
+        val events = File(directory, "events.ndjson").readLines().filter { it.contains("\"kind\":\"event.discarded\"") }
+        assertEquals(1, events.size)
+        val event = events.single()
+        assertTrue(event.contains("\"event\":\"E4\""))
+        assertTrue(event.contains("\"peak_index\":\"0\""))
+        assertTrue(event.contains("\"peak_s\":\"${peak.s}\""))
+        assertTrue(event.contains("\"passed_projected_meters\":"))
+        assertTrue(event.contains("\"delay_reason\":\"event-min-interval\""))
+        assertTrue(!event.contains("\"lat\"") && !event.contains("\"lon\"") && !event.contains("\"timestamp\""))
+        directory.deleteRecursively()
+    }
+
+    @Test
+    fun failedDiscardLogDoesNotPropagateIntoGuideCall() {
+        val sink = object : SessionEventSink {
+            override fun appendEnvelope(location: TrailLocation, eventStream: String, eventType: String) = Unit
+            override fun appendLocation(location: TrailLocation): Long = 0L
+            override fun appendGuide(location: TrailLocation, result: com.trailnav.core.GuideResult, spokenText: String?, sourceSeq: Long, trigger: String?) = Unit
+            override fun appendSystem(kind: String, details: Map<String, String>) { error("synthetic logger failure") }
+            override fun appendError(kind: String, message: String) = Unit
+            override fun close() = Unit
+        }
+        sink.appendDiscardedSlopePeaks(
+            listOf(com.trailnav.core.DiscardedSlopePeak(0, 510.0, 520.0, "event-min-interval")),
+        )
+        assertTrue(true)
+    }
+
+    @Test
     fun eventSelectionChangesSessionConfigHash() {
         val defaults = EventSettings.defaults()
         val allOff = GuideEvent.values().fold(defaults) { settings, event -> settings.withEnabled(event, false) }

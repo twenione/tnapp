@@ -114,10 +114,8 @@ VARIANTS = {
                          '        next = evaluateDynamicGuidance(initializedState, next.copy(offRoute = '
                          'false), directedMatch, frame, config, suppressAnnouncements = false).state /* '
                          'D-033 off-route event gate removed */'),
- 'event-reverse-gate': ('config.slopeEnabled && onRoute && forward && eventIntervalOpen && index !in '
-                        'previous.consumedSlopeIndices',
-                        'config.slopeEnabled && onRoute && eventIntervalOpen && index !in '
-                        'previous.consumedSlopeIndices /* D-033 reverse event gate removed */'),
+ 'event-reverse-gate': ('if (!config.slopeEnabled || !forward) {',
+                        'if (!config.slopeEnabled) { /* D-033 reverse E4 gate removed */'),
  'event-min-interval': ('config.milestoneEnabled && onRoute && forward && eventIntervalOpen && '
                         'freshCrossed.isNotEmpty()',
                         'config.milestoneEnabled && onRoute && forward && freshCrossed.isNotEmpty() /* D-033 '
@@ -126,8 +124,8 @@ VARIANTS = {
                              'crossed)',
                              'next = next.copy(consumedMilestoneIndices = next.consumedMilestoneIndices) /* '
                              'D-033 E1 consumption removed */'),
- 'event-threshold-refire': ('index !in previous.consumedSlopeIndices',
-                            'true /* D-033 consumed E4 threshold refires */'),
+ 'event-threshold-refire': ('if (index in consumedSlopeIndices) return@forEachIndexed',
+                            'if (false /* D-033 consumed E4 threshold refires */) return@forEachIndexed'),
  'reverse-sunset-drop': ('if (reverseWarning) {\n'
                          '        val dynamic = evaluateDynamicGuidance(initializedState, next, '
                          'directedMatch, frame, config)\n'
@@ -223,10 +221,37 @@ VARIANTS = {
                                'val retainCrossedRemaining = config.remainingEnabled && crossedRemaining.isNotEmpty() /* D-071 reverse retained */'),
  'remaining-toggle-ignored': ('val retainCrossedRemaining = config.remainingEnabled && forward && crossedRemaining.isNotEmpty()',
                               'val retainCrossedRemaining = forward && crossedRemaining.isNotEmpty() /* TASK-040 E3 toggle ignored */'),
- 'slope-toggle-ignored': ('if (config.slopeEnabled && onRoute && forward && eventIntervalOpen && index !in '
-                          'previous.consumedSlopeIndices) {',
-                          'if (onRoute && forward && eventIntervalOpen && index !in '
-                          'previous.consumedSlopeIndices) { /* TASK-040 E4 toggle ignored */'),
+ 'slope-toggle-ignored': ('if (!config.slopeEnabled || !forward) {',
+                          'if (!forward) { /* TASK-040 E4 toggle ignored */'),
+ 'slope-defer-ignored': ('val pendingSlopePeaks = next.pendingSlopePeaks.toMutableMap()\n'
+                         '    val consumedSlopeIndices = next.consumedSlopeIndices.toMutableSet()',
+                         'val consumedSlopeIndices = next.consumedSlopeIndices.toMutableSet().apply {\n'
+                         '        addAll(next.pendingSlopePeaks.keys)\n'
+                         '    }\n'
+                         '    val pendingSlopePeaks = mutableMapOf<Int, PendingSlopePeak>() /* D-033 E4 pending consumed */'),
+ 'slope-discard-ignored': ('val pending = pendingSlopePeaks.remove(index)',
+                           'val pending = pendingSlopePeaks.remove(index)\n'
+                           '            if (pending != null) {\n'
+                           '                val details = linkedMapOf(\n'
+                           '                    "peakIndex" to index.toString(),\n'
+                           '                    "peakS" to pending.peakS.toString(),\n'
+                           '                    "delayed" to "true",\n'
+                           '                    "delayReason" to pending.delayReason,\n'
+                           '                )\n'
+                           '                candidates += DynamicCandidate(\n'
+                           '                    EventPriority.SLOPE, "event.slope",\n'
+                           '                    Guidance.Slope(SlopeKind.ASCENT, peak.climbMeters),\n'
+                           '                    reason("event.slope", "E4", details),\n'
+                           '                    slopeIndices = setOf(index),\n'
+                           '                ) /* D-033 E4 speaks after passing peak */\n'
+                           '            }'),
+ 'slope-discard-unrecorded': ('                discardedSlopePeaks += DiscardedSlopePeak(\n'
+                               '                    index = index,\n'
+                               '                    peakS = pending.peakS,\n'
+                               '                    passedProjectedMeters = match.projectedMeters,\n'
+                               '                    delayReason = pending.delayReason,\n'
+                               '                )',
+                               '                // D-033 E4 discard record omitted'),
  'waypoint-toggle-ignored': ('if (config.waypointEnabled && onRoute && forward && eventIntervalOpen && index '
                              '!in previous.consumedWaypointIndices) {',
                              'if (onRoute && forward && eventIntervalOpen && index !in '
@@ -394,6 +419,9 @@ MUTATION_REQUIRED_CONSUMERS = {
     "remaining-reverse-pending": CORE_TEST,
     "remaining-toggle-ignored": CORE_TEST,
     "slope-toggle-ignored": CORE_TEST,
+    "slope-defer-ignored": CORE_TEST,
+    "slope-discard-ignored": CORE_TEST,
+    "slope-discard-unrecorded": CORE_TEST,
     "waypoint-toggle-ignored": CORE_TEST,
     "sunset-toggle-ignored": CORE_TEST,
     "sunrise-toggle-ignored": CORE_TEST,
@@ -497,7 +525,7 @@ def run(command: list[str], cwd: Path) -> tuple[int, str]:
 
 
 def copy_repo(source: Path, destination: Path) -> None:
-    ignored = shutil.ignore_patterns(".git", ".gradle", "build", "*.jar", "*.log", ".task005-evidence")
+    ignored = shutil.ignore_patterns(".git", ".gradle", ".gradle-home", "build", "*.jar", "*.log", ".task005-evidence")
     shutil.copytree(source, destination, ignore=ignored)
 
 
