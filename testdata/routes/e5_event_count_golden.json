@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "canonical_procedure": {
+    "step_m": 5.0,
+    "speed_mps": 1.0,
+    "frame_time_ms_per_position_m": 1000,
+    "config_overrides": {
+      "milestoneEnabled": false,
+      "elapsedEnabled": false,
+      "remainingEnabled": false,
+      "slopeEnabled": false,
+      "elevationEnabled": true,
+      "waypointEnabled": false,
+      "sunsetEnabled": false,
+      "sunriseEnabled": false,
+      "elevationBoundaryMeters": 100.0,
+      "elevationHysteresisMeters": 10.0,
+      "eventMinIntervalSeconds": 0.0,
+      "minimumSessionSecondsBeforeArrival": 1000000.0
+    },
+    "all_other_fields": "GuideConfig defaults at baseline d537d1b46dd1852cbe8bcdc973571eec7864058a"
+  },
+  "position_match_tolerance_m": 2.5,
+  "local_routes": [
+    {"alias":"광교_형제_시루_고기리","ordinal":1,"gpx_sha256_prefix":"36bceb3cfa6a8260","expected_count":10,"expected_positions_m":[750,2100,3035,3960,4225,5880,6820,7210,7790,8170]},
+    {"alias":"구미_불곡산_정자.gp","ordinal":1,"gpx_sha256_prefix":"31d363d4f07813af","expected_count":8,"expected_positions_m":[220,1285,1680,2595,3460,4205,4720,5740]},
+    {"alias":"구성_법화산_죽전.gp","ordinal":1,"gpx_sha256_prefix":"9b511ca9059056be","expected_count":7,"expected_positions_m":[65,1370,2500,5070,5865,6030,6435]},
+    {"alias":"내변산_내소사_관음봉_","ordinal":1,"gpx_sha256_prefix":"00165e389a2c179d","expected_count":10,"expected_positions_m":[1220,1570,1860,2495,2665,3430,3660,4100,4865,5395]},
+    {"alias":"내변산_내소사_관음봉_","ordinal":2,"gpx_sha256_prefix":"eca0dbb4795a9e39","expected_count":10,"expected_positions_m":[1220,1570,1860,2495,2665,3430,3660,4100,4865,5395]},
+    {"alias":"청계_매봉_국사봉_바라","ordinal":1,"gpx_sha256_prefix":"1b72a4cd24fb7510","expected_count":21,"expected_positions_m":[495,910,1265,1800,2210,3950,4300,4955,5820,6090,6445,7125,7780,9550,9945,10445,10960,11130,11350,12110,12585]},
+    {"alias":"청계_매봉_망경_이수_","ordinal":1,"gpx_sha256_prefix":"4080b5f88f23d2dd","expected_count":21,"expected_positions_m":[490,905,1260,1775,2185,3925,4285,4940,5800,6070,6430,7110,7765,9540,9930,10435,10955,11120,11225,12145,13375]}
+  ],
+  "fixtures": [
+    {"path":"testdata/routes/eta_cliff_steep_2/route.gpx","expected_count":2,"expected_positions_m":[245,510]},
+    {"path":"testdata/routes/eta_control_uneven_1/route.gpx","expected_count":0,"expected_positions_m":[]},
+    {"path":"testdata/routes/eta_control_uneven_2/route.gpx","expected_count":1,"expected_positions_m":[115]},
+    {"path":"testdata/routes/eta_floor_steep_2/route.gpx","expected_count":1,"expected_positions_m":[90]},
+    {"path":"testdata/routes/eta_floor_steep_3/route.gpx","expected_count":2,"expected_positions_m":[430,605]},
+    {"path":"testdata/routes/eta_gap_steep_1/route.gpx","expected_count":1,"expected_positions_m":[35]}
+  ]
+}
