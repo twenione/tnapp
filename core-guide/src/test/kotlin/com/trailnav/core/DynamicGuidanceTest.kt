@@ -332,7 +332,7 @@ class DynamicGuidanceTest {
             ),
         )
         check(slope.guidance !is Guidance.Slope)
-        check(0 in slope.nextState.consumedSlopeIndices)
+        check(0 !in slope.nextState.consumedSlopeIndices)
         assertNoRemainingPending(slope)
 
         val elevationRoute = peakEventRoute()
@@ -538,8 +538,8 @@ class DynamicGuidanceTest {
         )
     }
 
-    private fun frameAtProgress(progressMeters: Double, timestamp: Long) =
-        SensorFrame(timestamp, 10.0 + progressMeters / 111_195.0, 20.0, 5f, 1f, null)
+    private fun frameAtProgress(progressMeters: Double, timestamp: Long, lateralMeters: Double = 0.0) =
+        SensorFrame(timestamp, 10.0 + progressMeters / 111_195.0, 20.0 + lateralMeters / (111_195.0 * kotlin.math.cos(Math.toRadians(10.0))), 5f, 1f, null)
 
     private fun remainingEventRoute(): RouteModel = RouteModel.fromGpx(
         "<gpx><trk><trkseg><trkpt lat=\"10.0\" lon=\"20.0\"/>" +
@@ -619,6 +619,173 @@ class DynamicGuidanceTest {
     }
 
     @Test
+    fun slopeDefersWhenIntervalIsClosedThenSpeaksBeforePeak() {
+        val route = peakEventRoute()
+        val peak = route.peaks.first()
+        val config = GuideConfig(
+            slopeEnabled = true,
+            peakAnnounceLeadMeters = 100.0,
+            eventMinIntervalSeconds = 60.0,
+            sunsetEnabled = false,
+        )
+        val initial = peakStateAt(route, peak.s - 120.0).copy(lastPeriodicEventAt = 0L)
+        val blocked = guide(initial, frameAtProgress(peak.s - 50.0, 30_000L), config)
+        check(blocked.guidance !is Guidance.Slope)
+        check(blocked.nextState.pendingSlopePeaks.keys == setOf(0))
+        check(0 !in blocked.nextState.consumedSlopeIndices)
+
+        val opened = guide(blocked.nextState, frameAtProgress(peak.s - 40.0, 60_000L), config)
+        check(opened.guidance is Guidance.Slope)
+        check(opened.reason.details["delayed"] == "true")
+        check(opened.reason.details["delayReason"] == "event-min-interval")
+        check(opened.nextState.pendingSlopePeaks.isEmpty())
+        check(0 in opened.nextState.consumedSlopeIndices)
+    }
+
+    @Test
+    fun passedPendingSlopeIsDiscardedExactlyOnce() {
+        val route = peakEventRoute()
+        val peak = route.peaks.first()
+        val config = GuideConfig(
+            slopeEnabled = true,
+            peakAnnounceLeadMeters = 100.0,
+            eventMinIntervalSeconds = 60.0,
+            sunsetEnabled = false,
+        )
+        val initial = peakStateAt(route, peak.s - 120.0).copy(lastPeriodicEventAt = 0L)
+        val pending = guide(initial, frameAtProgress(peak.s - 50.0, 30_000L), config)
+        check(pending.nextState.pendingSlopePeaks.keys == setOf(0))
+        val passed = guide(pending.nextState, frameAtProgress(peak.s + 20.0, 60_000L), config)
+        check(passed.guidance !is Guidance.Slope)
+        val discarded = passed.nextState.discardedSlopePeaks.single()
+        check(discarded.index == 0)
+        check(discarded.peakS == peak.s)
+        check(discarded.passedProjectedMeters == passed.nextState.lastMatch!!.projectedMeters)
+        check(discarded.passedProjectedMeters > peak.s)
+        check(passed.nextState.pendingSlopePeaks.isEmpty())
+        check(0 in passed.nextState.consumedSlopeIndices)
+
+        val later = guide(passed.nextState, frameAtProgress(peak.s + 30.0, 61_000L), config)
+        check(later.guidance !is Guidance.Slope)
+        check(later.nextState.discardedSlopePeaks.size == 1)
+    }
+
+    @Test
+    fun slopeDisabledAndReverseFramesConsumeWithoutDeferralOrDiscard() {
+        val route = peakEventRoute()
+        val peak = route.peaks.first()
+        val disabled = guide(
+            peakStateAt(route, peak.s - 50.0),
+            frameAtProgress(peak.s - 40.0, 1_000L),
+            GuideConfig(slopeEnabled = false, peakAnnounceLeadMeters = 100.0, eventMinIntervalSeconds = 0.0, sunsetEnabled = false),
+        )
+        check(disabled.guidance !is Guidance.Slope)
+        check(disabled.nextState.pendingSlopePeaks.isEmpty())
+        check(disabled.nextState.discardedSlopePeaks.isEmpty())
+        check(0 in disabled.nextState.consumedSlopeIndices)
+
+        val reverse = guide(
+            peakStateAt(route, peak.s + 20.0).copy(
+                direction = ProgressDirection.REVERSE,
+                emaDeltaMeters = -40.0,
+                reverseSince = 0L,
+            ),
+            frameAtProgress(peak.s - 10.0, 1_000L),
+            GuideConfig(slopeEnabled = true, peakAnnounceLeadMeters = 100.0, reverseWarningDwellSeconds = 0.0, eventMinIntervalSeconds = 0.0, sunsetEnabled = false),
+        )
+        check(reverse.nextState.direction == ProgressDirection.REVERSE)
+        check(reverse.guidance !is Guidance.Slope)
+        check(reverse.nextState.pendingSlopePeaks.isEmpty())
+        check(reverse.nextState.discardedSlopePeaks.isEmpty())
+        check(0 in reverse.nextState.consumedSlopeIndices)
+    }
+
+    @Test
+    fun offRouteSlopeDefersBeforePeakAndDiscardsAfterPeak() {
+        val route = peakEventRoute()
+        val peak = route.peaks.first()
+        val config = GuideConfig(
+            slopeEnabled = true,
+            peakAnnounceLeadMeters = 100.0,
+            eventMinIntervalSeconds = 0.0,
+            offRouteEnterDistMeters = 20.0,
+            offRouteExitDistMeters = 15.0,
+            offRouteExitDwellSeconds = 0.0,
+            sunsetEnabled = false,
+        )
+        val initial = peakStateAt(route, peak.s - 120.0).copy(hasEnteredRoute = true, offRoute = true, offRouteSince = 0L)
+        val offRoute = guide(initial, frameAtProgress(peak.s - 50.0, 1_000L, lateralMeters = 35.0), config)
+        check(offRoute.nextState.offRoute)
+        check(offRoute.nextState.pendingSlopePeaks.keys == setOf(0)) { "enabled=${config.slopeEnabled}, offRoute=${offRoute.nextState.offRoute}, direction=${offRoute.nextState.direction}, progress=${offRoute.nextState.lastMatch?.projectedMeters}, peak=${peak.s}, peaks=${route.peaks}, consumed=${offRoute.nextState.consumedSlopeIndices}, state=${offRoute.nextState.pendingSlopePeaks}" }
+        check(offRoute.nextState.pendingSlopePeaks[0]?.delayReason == "off-route")
+
+        val recovered = guide(offRoute.nextState, frameAtProgress(peak.s - 20.0, 2_000L), config)
+        check(!recovered.nextState.offRoute)
+        check(recovered.guidance is Guidance.Slope)
+        check(recovered.reason.details["delayed"] == "true")
+        check(recovered.reason.details["delayReason"] == "off-route")
+
+        val offRouteAgain = guide(initial, frameAtProgress(peak.s - 50.0, 1_000L, lateralMeters = 35.0), config)
+        val passed = guide(offRouteAgain.nextState, frameAtProgress(peak.s + 20.0, 2_000L, lateralMeters = 35.0), config)
+        check(passed.guidance !is Guidance.Slope)
+        check(passed.nextState.discardedSlopePeaks.single().peakS == peak.s)
+    }
+
+    @Test
+    fun peakAtZeroDistanceRemainsAnnounceable() {
+        val route = peakEventRoute()
+        val peak = route.peaks.first()
+        val latitude = 10.0 + peak.s / 6_371_008.8 * 180.0 / Math.PI
+        val frame = SensorFrame(1_000L, latitude, 20.0, 5f, 1f, null)
+        val probe = guide(
+            peakStateAt(route, peak.s - 1.0),
+            frame,
+            GuideConfig(slopeEnabled = false, peakAnnounceLeadMeters = 0.0, eventMinIntervalSeconds = 0.0, sunsetEnabled = false),
+        )
+        val exactProgress = probe.nextState.lastMatch!!.projectedMeters
+        val exactRoute = route.copy(peaks = route.peaks.mapIndexed { index, item ->
+            if (index == 0) item.copy(s = exactProgress) else item
+        })
+        val result = guide(
+            peakStateAt(exactRoute, exactProgress - 1.0),
+            frame,
+            GuideConfig(slopeEnabled = true, peakAnnounceLeadMeters = 0.0, eventMinIntervalSeconds = 0.0, sunsetEnabled = false),
+        )
+        check(result.nextState.lastMatch!!.projectedMeters == exactRoute.peaks.first().s)
+        check(result.guidance is Guidance.Slope)
+    }
+
+    @Test
+    fun threeSlopePeaksCanRemainPendingIndependently() {
+        val elevations = (0..48).map { index ->
+            listOf(8, 24, 40).maxOf { center -> (80 - kotlin.math.abs(index - center) * 20).coerceAtLeast(0) }
+        }
+        val track = elevations.mapIndexed { index, elevation ->
+            "<trkpt lat=\"${10.0 + index * 0.00045}\" lon=\"20.0\"><ele>$elevation</ele></trkpt>"
+        }.joinToString("")
+        val route = RouteModel.fromGpx("<gpx><trk><trkseg>$track</trkseg></trk></gpx>")
+        check(route.peaks.size >= 3) { "test route must contain at least three peaks: ${route.peaks}" }
+        val peaks = route.peaks.take(3)
+        val lead = peaks.last().s - (peaks.first().s - 50.0) + 1.0
+        val config = GuideConfig(slopeEnabled = true, peakAnnounceLeadMeters = lead, eventMinIntervalSeconds = 60.0, sunsetEnabled = false)
+        val initial = peakStateAt(route, peaks.first().s - 120.0).copy(lastPeriodicEventAt = 0L)
+        val pending = guide(initial, frameAtProgress(peaks.first().s - 50.0, 30_000L), config)
+        check(pending.nextState.pendingSlopePeaks.keys.containsAll(setOf(0, 1, 2))) {
+            "all three peaks should be tracked independently: ${pending.nextState.pendingSlopePeaks}"
+        }
+
+        val first = guide(pending.nextState, frameAtProgress(peaks.first().s - 40.0, 60_000L), config)
+        check(first.guidance is Guidance.Slope)
+        check(first.nextState.pendingSlopePeaks.keys.containsAll(setOf(1, 2)))
+        val second = guide(first.nextState, frameAtProgress(peaks.first().s - 30.0, 120_000L), config)
+        check(second.guidance is Guidance.Slope)
+        check(second.nextState.pendingSlopePeaks.keys.contains(2))
+        val third = guide(second.nextState, frameAtProgress(peaks.first().s - 20.0, 180_000L), config)
+        check(third.guidance is Guidance.Slope)
+        check(third.nextState.pendingSlopePeaks.isEmpty())
+    }
+
+    @Test
     fun waypointWindow() {
         val xml = "<gpx><wpt lat=\"10.001\" lon=\"20.0\"><name>View</name></wpt>" +
             "<trk><trkseg>${pointXml(0)}${pointXml(1)}${pointXml(2)}</trkseg></trk></gpx>"
@@ -656,9 +823,13 @@ class DynamicGuidanceTest {
                 " target=" + targetProgress + " threshold=" + remainingThreshold
         }
         check(result.reason.details["event"] == "E3")
-        check(0 in result.nextState.consumedSlopeIndices) {
-            "E4 is consumed even when the higher-priority E3 cue wins"
-        }
+        check(result.nextState.pendingSlopePeaks.keys == setOf(0))
+        check(0 !in result.nextState.consumedSlopeIndices)
+
+        val delayed = guide(result.nextState, frameAtProgress(targetProgress + 5.0, 2_000L), config)
+        check(delayed.guidance is Guidance.Slope)
+        check(delayed.reason.details["delayed"] == "true")
+        check(delayed.reason.details["delayReason"] == "priority-remaining")
     }
 
     @Test

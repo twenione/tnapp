@@ -232,6 +232,99 @@ def make_turn_contract_session(root: Path) -> None:
     (session / "events.ndjson").write_text("\n".join(json.dumps(item, sort_keys=True) for item in events) + "\n", encoding="utf-8")
 
 
+def make_e4_deferred_session(root: Path) -> None:
+    """Create a synthetic route whose second peak is gated, then deferred."""
+    name = "17_e4_deferred"
+    session = root / name
+    session.mkdir(parents=True, exist_ok=True)
+    radius = 6_371_008.8
+    origin_latitude, origin_longitude = 10.0, 20.0
+    points = [
+        (origin_latitude + index * 10.0 / radius * 180.0 / math.pi, origin_longitude)
+        for index in range(141)
+    ]
+    centers = (30, 45)
+    elevations = [
+        max(0.0, *(100.0 - 20.0 * abs(index - center) for center in centers))
+        for index in range(len(points))
+    ]
+    write_gpx(session / "route.gpx", points, elevation=elevations)
+    route_bytes = "\n".join(f"{lat:.8f},{lon:.8f}" for lat, lon in points).encode()
+    route_hash = "sha256:" + hashlib.sha256(route_bytes).hexdigest()
+    seed = 3067
+    manifest = {
+        "session_id": str(uuid.uuid5(SYNTH_NAMESPACE, name)),
+        "schema_version": "0.1.0-draft",
+        "started_at_wall": "2026-01-01T00:00:00Z",
+        "app": {"version": "0.1.0", "build": 0, "code_hash": "git:unknown"},
+        "engine": {
+            "config": {
+                "stub": False,
+                "variant": name,
+                "implementation": "core-guide",
+                "events": {f"E{index}": index == 4 for index in range(1, 9)},
+            },
+            "rng_seed": seed,
+        },
+        "route": {
+            "gpx_id": "synthetic-e4-deferred",
+            "gpx_hash": route_hash,
+            "point_count": len(points),
+            "elevation_use": {"used": True, "reason": "ok"},
+            "waypoint_count": 0,
+            "elevation_source": "synthetic",
+        },
+        "clock": {
+            "monotonic_source": "synthetic-sequence",
+            "timestamp_unit": "seconds",
+            "frame_intervals_seconds": [20.0, 20.0, 10.0, 10.0, 10.0, 10.0, 30.0],
+        },
+        "privacy": {"upload_default": False},
+        "device": {"model": "synthetic", "os": "test", "sensors": ["gps"]},
+        "scenario": {
+            "family": "e4-deferred",
+            "description": "Synthetic E4 peak enters the lead while the event interval is closed, then speaks before the peak after it opens",
+        },
+    }
+    (session / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    distances_and_times = (
+        (0.0, 0.0),
+        (100.0, 20.0),
+        (200.0, 40.0),
+        (250.0, 50.0),
+        (300.0, 60.0),
+        (350.0, 70.0),
+        (360.0, 80.0),
+        (400.0, 110.0),
+    )
+    events = []
+    for index, (distance, timestamp) in enumerate(distances_and_times):
+        latitude = origin_latitude + distance / radius * 180.0 / math.pi
+        loc_seq = index * 2
+        events.append(event(
+            loc_seq,
+            timestamp,
+            "loc",
+            lat=round(latitude, 8),
+            lon=origin_longitude,
+            accuracy=5.0,
+            provider="synthetic",
+            speed_mps=1.0,
+            bearing_deg=0.0,
+        ))
+        events.append(event(
+            loc_seq + 1,
+            timestamp + 0.1,
+            "guide",
+            decision="CONTINUE",
+            src_seq=loc_seq,
+            inputs={"frame_count": index + 1, "rng_seed": seed},
+            reason={"rule": "synthetic.pending-engine-output", "details": {}},
+            state_hash="sha256:synthetic",
+        ))
+    (session / "events.ndjson").write_text("\n".join(json.dumps(item, sort_keys=True) for item in events) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", type=Path, default=Path("testdata/routes/base.gpx"))
@@ -262,9 +355,10 @@ def main() -> int:
     elevation_profile = [120.0 + (index * 1.5 if index < len(points) // 2 else (len(points) - index) * 1.5) for index in range(len(points))]
     make_session(synth, "15_elevation_profile", points, "elevation_profile", 3015, elevation=elevation_profile)
     make_session(synth, "16_waypoint_profile", points, "waypoint_profile", 3016, waypoint_name="Synthetic Summit")
+    make_e4_deferred_session(synth)
     print(f"base={args.base}")
     print("generated_golden=1")
-    print(f"generated_synth={len(variants) + 5}")
+    print(f"generated_synth={len(variants) + 8}")
     print(f"source={source}; original measured GPX and offset are not retained")
     return 0
 

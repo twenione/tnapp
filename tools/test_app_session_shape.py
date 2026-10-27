@@ -22,6 +22,15 @@ def manifest() -> dict:
     }
 
 
+def discarded_event() -> dict:
+    return {
+        "seq": 4, "t": 1.0, "stream": "sys", "kind": "event.discarded", "battery_pct": None,
+        "details": {
+            "event": "E4", "peak_index": "0", "peak_s": "510.0",
+            "passed_projected_meters": "520.0", "delay_reason": "event-min-interval",
+        },
+    }
+
 def event_stream(include_frame: bool = True) -> list[dict]:
     events: list[dict] = [
         {"seq": 0, "t": 1.0, "stream": "envelope", "event_stream": "loc", "event_type": "location"},
@@ -36,6 +45,7 @@ def event_stream(include_frame: bool = True) -> list[dict]:
         "seq": 3 if include_frame else 2, "t": 1.0, "stream": "guide", "src_seq": 1, "trigger": "slot",
         "decision": "CONTINUE", "inputs": {}, "reason": {"rule": "matching.on-route", "details": {}}, "state_hash": "sha256:test", "output_text": "경로 위입니다",
     })
+    events.append(discarded_event())
     return events
 
 
@@ -54,7 +64,12 @@ def main() -> int:
         write_session(root, include_frame=True)
         errors, warnings, count = validate(root)
         assert not errors, errors
-        assert count == 4
+        assert count == 5
+        emitted = [json.loads(raw) for raw in (root / "events.ndjson").read_text(encoding="utf-8").splitlines()]
+        discard = next(event for event in emitted if event.get("kind") == "event.discarded")
+        assert discard["stream"] == "sys" and discard["details"]["event"] == "E4"
+        assert set(discard["details"]) == {"event", "peak_index", "peak_s", "passed_projected_meters", "delay_reason"}
+        assert not ({"lat", "lon", "timestamp", "t"} & set(discard["details"]))
 
         invalid = root_dir / "missing-frame"
         invalid.mkdir()

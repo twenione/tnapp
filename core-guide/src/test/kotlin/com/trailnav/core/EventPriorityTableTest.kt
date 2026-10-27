@@ -81,7 +81,7 @@ class EventPriorityTableTest {
     }
 
     @Test
-    fun sunriseConsumesSameFrameSlope() {
+    fun sunriseDefersSameFrameSlopeUntilItCanSpeak() {
         val route = longSlopeRoute()
         val peak = route.peaks.firstOrNull() ?: error("fixture must contain a confirmed peak")
         val config = GuideConfig(
@@ -110,8 +110,19 @@ class EventPriorityTableTest {
             config,
         )
         check(crossing.guidance is Guidance.Sunrise)
-        check(0 in crossing.nextState.consumedSlopeIndices)
+        check(0 !in crossing.nextState.consumedSlopeIndices)
+        check(crossing.nextState.pendingSlopePeaks[0]?.delayReason == "priority-sunrise")
         check(crossing.reason.details["event"] == "E8")
+
+        val beforePeakLat = 37.5665 + (peak.s - 20.0) / 111_195.0
+        val deferred = guide(
+            crossing.nextState,
+            SensorFrame(startTimestamp + 241_000L, beforePeakLat, 126.9780, 5f, 1f, null),
+            config,
+        )
+        check(deferred.guidance is Guidance.Slope)
+        check(deferred.reason.details["delayed"] == "true")
+        check(deferred.reason.details["delayReason"] == "priority-sunrise")
     }
 
     @Test

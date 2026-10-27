@@ -1,6 +1,7 @@
 package com.trailnav.app
 
 import com.trailnav.core.GuideConfig
+import com.trailnav.core.DiscardedSlopePeak
 import com.trailnav.core.GuideState
 import com.trailnav.core.RouteEtaTracker
 import com.trailnav.core.RouteModel
@@ -23,7 +24,9 @@ class GuideSession(route: RouteModel, private val config: GuideConfig = GuideCon
 
     fun accept(location: TrailLocation): SessionDecision {
         val frame = location.toSensorFrame()
+        val previousDiscardCount = state.discardedSlopePeaks.size
         val result = guide(state, frame, config)
+        val newlyDiscardedSlopePeaks = result.nextState.discardedSlopePeaks.drop(previousDiscardCount)
         state = result.nextState
         state.lastMatch?.let { match ->
             etaTracker.observe(
@@ -33,11 +36,32 @@ class GuideSession(route: RouteModel, private val config: GuideConfig = GuideCon
                 onRoute = !state.offRoute,
             )
         }
-        return SessionDecision(location, result)
+        return SessionDecision(location, result, newlyDiscardedSlopePeaks)
+    }
+}
+
+internal fun SessionEventSink?.appendDiscardedSlopePeaks(records: Iterable<DiscardedSlopePeak>) {
+    val sink = this ?: return
+    records.forEach { record ->
+        try {
+            sink.appendSystem(
+                "event.discarded",
+                mapOf(
+                    "event" to "E4",
+                    "peak_index" to record.index.toString(),
+                    "peak_s" to record.peakS.toString(),
+                    "passed_projected_meters" to record.passedProjectedMeters.toString(),
+                    "delay_reason" to record.delayReason,
+                ),
+            )
+        } catch (_: Exception) {
+            // A failed diagnostic write must not change guidance behavior.
+        }
     }
 }
 
 data class SessionDecision(
     val location: TrailLocation,
     val result: com.trailnav.core.GuideResult,
+    val newlyDiscardedSlopePeaks: List<DiscardedSlopePeak> = emptyList(),
 )

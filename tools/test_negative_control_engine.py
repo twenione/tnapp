@@ -44,6 +44,12 @@ def test_required_mutation_consumers() -> None:
     assert d033.MUTATION_REQUIRED_CONSUMERS["turn-pass-always-false"] == d033.CORE_TEST
     assert d033.MUTATION_REQUIRED_CONSUMERS["turn-identity-zero"] == d033.CORE_TEST
     for mutation in (
+        "slope-defer-ignored",
+        "slope-discard-ignored",
+        "slope-discard-unrecorded",
+    ):
+        assert d033.MUTATION_REQUIRED_CONSUMERS[mutation] == d033.CORE_TEST
+    for mutation in (
         "eta-window-ignored",
         "eta-floor-removed",
         "eta-cap-removed",
