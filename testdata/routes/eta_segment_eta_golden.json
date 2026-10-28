@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "fixture": "testdata/routes/eta_gap_steep_1/route.gpx",
+  "point_count": 10,
+  "segment_count": 9,
+  "relative_tolerance": 1.0e-9,
+  "config": "GuideConfig() defaults",
+  "measurement": "RouteEtaTracker.estimate at each original RouteModel point; segment ETA is remainingSeconds(i) minus remainingSeconds(i+1) for a stable target",
+  "points": [
+    {"index":0,"distance_m":0.0,"target_kind":"DESTINATION","target_source":"destination","target_m":297.9980234496923,"remaining_seconds":580.1423488819207},
+    {"index":1,"distance_m":12.547813068232777,"target_kind":"DESTINATION","target_source":"destination","target_m":297.9980234496923,"remaining_seconds":549.781725138178},
+    {"index":2,"distance_m":41.855207806823145,"target_kind":"DESTINATION","target_source":"destination","target_m":297.9980234496923,"remaining_seconds":487.6834602810778},
+    {"index":3,"distance_m":56.01194310598147,"target_kind":"DESTINATION","target_source":"destination","target_m":297.9980234496923,"remaining_seconds":460.2025609526178},
+    {"index":4,"distance_m":59.189048287790264,"target_kind":"DESTINATION","target_source":"destination","target_m":297.9980234496923,"remaining_seconds":454.03879328131154},
+    {"index":5,"distance_m":210.39852873747697,"target_kind":"DESTINATION","target_source":"destination","target_m":297.9980234496923,"remaining_seconds":92.92327287027393},
+    {"index":6,"distance_m":228.84831293767863,"target_kind":"DESTINATION","target_source":"destination","target_m":297.9980234496923,"remaining_seconds":67.83430949480021},
+    {"index":7,"distance_m":233.43182826134034,"target_kind":"DESTINATION","target_source":"destination","target_m":297.9980234496923,"remaining_seconds":62.696785729183745},
+    {"index":8,"distance_m":285.9870933613091,"target_kind":"DESTINATION","target_source":"destination","target_m":297.9980234496923,"remaining_seconds":8.46290815307281},
+    {"index":9,"distance_m":297.9980234496923,"target_kind":"DESTINATION","target_source":"destination","target_m":297.9980234496923,"remaining_seconds":0.0}
+  ],
+  "segments": [
+    {"from_index":0,"to_index":1,"distance_m":12.547813068232777,"goal_transition":false,"eta_seconds":30.360623743742735},
+    {"from_index":1,"to_index":2,"distance_m":29.307394738590368,"goal_transition":false,"eta_seconds":62.09826485710016},
+    {"from_index":2,"to_index":3,"distance_m":14.156735299158328,"goal_transition":false,"eta_seconds":27.480899328460055},
+    {"from_index":3,"to_index":4,"distance_m":3.177105181808791,"goal_transition":false,"eta_seconds":6.163767671306232},
+    {"from_index":4,"to_index":5,"distance_m":151.2094804496867,"goal_transition":false,"eta_seconds":361.1155204110376},
+    {"from_index":5,"to_index":6,"distance_m":18.449784200201663,"goal_transition":false,"eta_seconds":25.088963375473725},
+    {"from_index":6,"to_index":7,"distance_m":4.5835153236617145,"goal_transition":false,"eta_seconds":5.137523765616464},
+    {"from_index":7,"to_index":8,"distance_m":52.55526509996878,"goal_transition":false,"eta_seconds":54.233877576110935},
+    {"from_index":8,"to_index":9,"distance_m":12.01093008838319,"goal_transition":false,"eta_seconds":8.46290815307281}
+  ]
+}
