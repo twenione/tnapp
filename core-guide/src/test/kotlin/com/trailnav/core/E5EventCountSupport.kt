@@ -140,16 +140,32 @@ internal object E5EventCountSupport {
         return rows
     }
 
-    fun assertExpectedPositionsRetained(label: String, expected: List<Double>, actual: List<Double>) {
+    fun assertMatchesGolden(
+        label: String,
+        expectedCount: Int,
+        expectedPositions: List<Double>,
+        actualPositions: List<Double>,
+    ) {
+        check(expectedPositions.size == expectedCount) {
+            "$label: E5 golden is inconsistent; expected count=$expectedCount, " +
+                "golden positions=${formatPositions(expectedPositions)}"
+        }
+        check(actualPositions.size == expectedCount) {
+            "$label: E5 개수 정확 일치 실패; 기대 개수=$expectedCount, 실제 개수=${actualPositions.size}, " +
+                "실제 위치(m)=${formatPositions(actualPositions)}"
+        }
         val tolerance = Regex(""""position_match_tolerance_m"\s*:\s*([0-9.]+)""")
             .find(goldenText())?.groupValues?.get(1)?.toDouble()
             ?: error("E5 golden position tolerance is missing")
-        expected.forEachIndexed { index, position ->
-            val nearest = actual.minByOrNull { abs(it - position) }
-            val deviation = nearest?.let { abs(it - position) }
-            check(deviation != null && deviation <= tolerance) {
-                "$label: golden E5 position #${index + 1} at ${formatPositions(listOf(position))}m " +
-                    "has no actual event within ${tolerance}m; nearest=${nearest?.let { formatPositions(listOf(it)) } ?: "none"}"
+        val sortedExpected = expectedPositions.sorted()
+        val sortedActual = actualPositions.sorted()
+        sortedExpected.forEachIndexed { index, expected ->
+            val actual = sortedActual[index]
+            val deviation = abs(actual - expected)
+            check(deviation <= tolerance) {
+                "$label: E5 position #${index + 1} differs by ${formatPositions(listOf(deviation))}m; " +
+                    "tolerance=${tolerance}m, expected=${formatPositions(listOf(expected))}m, " +
+                    "actual count=${actualPositions.size}, actual positions(m)=${formatPositions(actualPositions)}"
             }
         }
     }

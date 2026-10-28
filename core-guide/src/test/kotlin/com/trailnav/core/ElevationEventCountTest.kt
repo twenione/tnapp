@@ -2,9 +2,7 @@ package com.trailnav.core
 
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.math.abs
 import kotlin.test.Test
-import kotlin.test.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeTrue
 
 /** Canonical E5 event-count replay over the seven local routes, when supplied by the operator. */
@@ -47,13 +45,9 @@ class ElevationEventCountTest {
                     "length_m=${"%.1f".format(java.util.Locale.ROOT, measured.route.totalLengthMeters)} " +
                     "events=$actualCount positions_m=${E5EventCountSupport.formatPositions(measured.eventPositionsMeters)}",
             )
-            assertTrue(
-                abs(actualCount - golden.expectedCount) <= 1,
-                "$alias#$ordinal: expected ${golden.expectedCount} ±1 E5 events, actual $actualCount " +
-                    "at ${E5EventCountSupport.formatPositions(measured.eventPositionsMeters)}",
-            )
-            E5EventCountSupport.assertExpectedPositionsRetained(
+            E5EventCountSupport.assertMatchesGolden(
                 "$alias#$ordinal",
+                golden.expectedCount,
                 golden.expectedPositionsMeters,
                 measured.eventPositionsMeters,
             )
