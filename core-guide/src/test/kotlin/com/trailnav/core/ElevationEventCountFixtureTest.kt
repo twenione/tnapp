@@ -1,8 +1,6 @@
 package com.trailnav.core
 
-import kotlin.math.abs
 import kotlin.test.Test
-import kotlin.test.assertTrue
 
 /** CI-visible E5 count assertions for all checked-in ETA route fixtures. */
 class ElevationEventCountFixtureTest {
@@ -26,13 +24,9 @@ class ElevationEventCountFixtureTest {
                     "length_m=${"%.1f".format(java.util.Locale.ROOT, measured.route.totalLengthMeters)} " +
                     "events=$actualCount positions_m=${E5EventCountSupport.formatPositions(measured.eventPositionsMeters)}",
             )
-            assertTrue(
-                abs(actualCount - golden.expectedCount) <= 1,
-                "$path: expected ${golden.expectedCount} ±1 E5 events, actual $actualCount " +
-                    "at ${E5EventCountSupport.formatPositions(measured.eventPositionsMeters)}",
-            )
-            E5EventCountSupport.assertExpectedPositionsRetained(
+            E5EventCountSupport.assertMatchesGolden(
                 path,
+                golden.expectedCount,
                 golden.expectedPositionsMeters,
                 measured.eventPositionsMeters,
             )
