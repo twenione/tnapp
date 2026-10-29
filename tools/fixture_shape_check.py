@@ -28,6 +28,7 @@ SHAPE_CHECKS = (
 
 def _valid_coordinate(value: object, *, lower: float, upper: float) -> bool:
     if isinstance(value, bool) or value is None:
+        # SCOPE: Boolean and null values are not numeric coordinates.
         return False
     try:
         number = float(value)
@@ -41,6 +42,7 @@ def _coordinates_valid(events: list[dict], route: Path | None) -> bool:
         if event.get("stream") == "loc":
             if not (_valid_coordinate(event.get("lat"), lower=-90.0, upper=90.0)
                     and _valid_coordinate(event.get("lon"), lower=-180.0, upper=180.0)):
+                # SCOPE: Invalid event coordinates fail the shape check rather than being scanned further.
                 return False
         if event.get("stream") == "guide":
             inputs = event.get("inputs")
@@ -48,6 +50,7 @@ def _coordinates_valid(events: list[dict], route: Path | None) -> bool:
                 _valid_coordinate(inputs.get("lat"), lower=-90.0, upper=90.0)
                 and _valid_coordinate(inputs.get("lon"), lower=-180.0, upper=180.0)
             ):
+                # SCOPE: A missing or invalid route input has no route shape to inspect.
                 return False
     if route is None or not route.is_file():
         return True
@@ -57,11 +60,13 @@ def _coordinates_valid(events: list[dict], route: Path | None) -> bool:
         return False
     for point in root.iter():
         if point.tag.rsplit("}", 1)[-1] not in {"trkpt", "rtept", "wpt"}:
+            # SCOPE: GPX coordinate-bearing targets are track, route, and waypoint points only.
             continue
         if not (
             _valid_coordinate(point.attrib.get("lat"), lower=-90.0, upper=90.0)
             and _valid_coordinate(point.attrib.get("lon"), lower=-180.0, upper=180.0)
         ):
+            # SCOPE: Invalid coordinates on a selected GPX point fail the shape check.
             return False
     return True
 
@@ -87,6 +92,7 @@ def check_shape(events: list[dict], route: Path | None = None) -> tuple[dict[str
     if entered_index is not None:
         was_off_route = False
         for rule in guide_rules[entered_index:]:
+            # SCOPE: Only off-route rule prefixes participate in the enter/recovery state transition.
             if rule.startswith("off-route."):
                 was_off_route = True
             elif was_off_route:

@@ -26,6 +26,7 @@ def validate(path: Path) -> bool:
 def base_values(base_ref: str, path: Path) -> dict[str, str] | None:
     result = subprocess.run(["git", "show", f"{base_ref}:{path.as_posix()}"], capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode:
+        # SCOPE: An unreadable base revision has no version map to compare.
         return None
     value = json.loads(result.stdout)
     return value if isinstance(value, dict) else None

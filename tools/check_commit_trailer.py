@@ -42,6 +42,7 @@ def github_run_lookup(repository: str, token: str) -> RunLookup:
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
+                # SCOPE: A 404 response means the run is absent; the caller records it as undetermined.
                 return None
             raise RunLookupError(f"GitHub returned HTTP {exc.code}") from exc
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError) as exc:
@@ -66,18 +67,22 @@ def check_messages(
     for commit, message in messages:
         subject = message.splitlines()[0] if message.splitlines() else ""
         trailers = ALL_TRAILERS.findall(message)
+        # SCOPE: The rule applies to this subject prefix; D-120 §3 records the bypass gap.
         if subject.startswith("fix(build):") and not trailers:
             failures.append(f"{commit or '<message>'}: missing Failed-Run trailer")
         print(f"COMMIT {commit or '<message>'}")
         print(message.rstrip())
+        # SCOPE: The rule applies to this subject prefix; D-120 §3 records the bypass gap.
         if subject.startswith("fix(build):"):
             print("TRAILER " + ("present" if trailers else "missing"))
 
         for run_id in trailers:
             if not RUN_ID_FORMAT.fullmatch(run_id):
                 failures.append(f"{commit or '<message>'}: invalid Failed-Run value {run_id!r}")
+                # SCOPE: Invalid run identifiers are reported before any lookup is attempted.
                 continue
             if run_lookup is None or run_id in run_results:
+                # SCOPE: No lookup is needed when lookup is unavailable or the run was already cached.
                 continue
             try:
                 run_results[run_id] = run_lookup(run_id)

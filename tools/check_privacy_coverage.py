@@ -15,6 +15,7 @@ def coverage(root: Path) -> tuple[Counter[str], int]:
     found: Counter[str] = Counter()
     for fixture in sorted(root.glob("privacy_*")):
         if not fixture.is_dir():
+            # SCOPE: Only directories represent privacy session fixtures; matching files are not sessions.
             continue
         counts = scan_session(fixture)
         if not counts:
@@ -42,6 +43,7 @@ def main(argv: list[str]) -> int:
         print(f"FAIL: privacy coverage error: {exc}")
         return 1
     missing = sorted(kind for kind in FIELD_KINDS if not found.get(kind))
+    # SCOPE: The unknown.* kind is the explicit negative-control coverage category.
     if not any(kind.startswith("unknown.") for kind in found):
         missing.append("unknown.<path>")
     for kind in sorted(found):

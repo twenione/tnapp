@@ -69,6 +69,8 @@ jobs:
         run: |
           python tools/privacy_scan.py testdata/sessions/golden/log_shape_fixture
           python tools/fixture_shape_check.py testdata/sessions/golden/log_shape_fixture
+      - name: Check exclusion references
+        run: python tools/check_exclusion_references.py
 
   core-guide-build:
     runs-on: ubuntu-latest
@@ -118,7 +120,7 @@ jobs:
             # first-entry approach state machine.
             # Exclusion recorded in docs/DECISIONS.md (D-140).
             if [[ "$session" == "testdata/sessions/golden/log_shape_fixture" ]]; then
-              continue
+              continue # EXCLUDE: D-140
             fi
             python tools/replay.py "$session" --cli replay/build/install/replay/bin/replay --strict
           done
@@ -218,6 +220,8 @@ jobs:
         run: python tools/test_replace_failure_log_notice.py
       - name: Failure signature extractor legacy mutation must fail
         run: python tools/test_preserve_failure_record.py --legacy-negative-control
+      - name: Exclusion reference negative controls
+        run: python tools/test_check_exclusion_references.py
 
   negative-control-engine:
     runs-on: ubuntu-latest

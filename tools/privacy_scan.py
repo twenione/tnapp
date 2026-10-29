@@ -43,6 +43,7 @@ STREAM_FIELDS = {
 
 def _numeric(value: object) -> float | None:
     if isinstance(value, bool):
+        # SCOPE: Boolean values are not numeric coordinate or timestamp values.
         return None
     if isinstance(value, (int, float)):
         return float(value)
@@ -52,6 +53,7 @@ def _numeric(value: object) -> float | None:
 def _in_2026(value: object, *, milliseconds: bool = False) -> bool:
     number = _numeric(value)
     if number is None:
+        # SCOPE: Non-numeric values cannot match the numeric privacy-time rule.
         return False
     low, high = YEAR_2026_MILLIS if milliseconds else YEAR_2026_SECONDS
     return low <= number <= high
@@ -116,11 +118,13 @@ def scan_session(session: Path, route: Path | None = None) -> Counter[str]:
         for point in root.iter():
             tag = point.tag.rsplit("}", 1)[-1]
             if tag not in {"trkpt", "rtept", "wpt"}:
+                # SCOPE: Only GPX track, route, and waypoint points carry coordinate targets.
                 continue
             try:
                 lat = float(point.attrib["lat"])
                 lon = float(point.attrib["lon"])
             except (KeyError, TypeError, ValueError):
+                # SCOPE: A point without parseable coordinates has no coordinate pair to scan.
                 continue
             if lat is not None and lon is not None and KOREA_LAT[0] <= lat <= KOREA_LAT[1] and KOREA_LON[0] <= lon <= KOREA_LON[1]:
                 counts["route.gpx.coordinate"] += 1

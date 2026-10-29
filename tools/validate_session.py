@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 from session_events import manifest_events
 
+# SCOPE: This tuple defines supported session schema versions, not omitted input targets.
 ALLOWED_SCHEMA_VERSIONS = ("0.1.0-draft", "1.0.0")
 MANIFEST_REQUIRED = ("session_id", "schema_version", "started_at_wall", "app", "engine", "route", "clock")
 STREAM_REQUIRED = {
@@ -39,6 +40,7 @@ def get(obj: Any, dotted: str) -> Any:
     cur = obj
     for key in dotted.split("."):
         if not isinstance(cur, dict) or key not in cur:
+            # SCOPE: Missing nested values are represented as None so required-field validation can report them.
             return None
         cur = cur[key]
     return cur
@@ -90,6 +92,7 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
     if manifest.get("privacy", {}).get("upload_default") not in (False, None):
         errors.append("manifest.json: upload_default must be false")
     code_hash = get(manifest, "app.code_hash")
+    # SCOPE: Code hashes are accepted only in the declared session hash formats.
     if isinstance(code_hash, str) and not code_hash.startswith("sha256:") and not GIT_CODE_HASH.fullmatch(code_hash):
         errors.append("manifest.json: app.code_hash must use sha256: or git: prefix")
     for hit in forbidden(manifest):
@@ -112,15 +115,18 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
     guide_count = 0
     for line_number, raw in enumerate(lines, 1):
         if not raw.strip():
+            # SCOPE: Blank NDJSON lines are treated as framing whitespace.
             continue
         count += 1
         try:
             event = json.loads(raw)
         except json.JSONDecodeError as exc:
             errors.append(f"events.ndjson:{line_number}: invalid JSON: {exc.msg}")
+            # SCOPE: After recording malformed JSON, validation continues to collect later errors.
             continue
         if not isinstance(event, dict):
             errors.append(f"events.ndjson:{line_number}: event must be an object")
+            # SCOPE: After recording a non-object event, validation continues to collect later errors.
             continue
         seq = event.get("seq")
         timestamp = event.get("t")
@@ -217,6 +223,7 @@ def main(argv: list[str]) -> int:
         if not root.is_dir():
             print(f"FAIL: session directory missing: {root}")
             failed = True
+            # SCOPE: A missing requested session is reported, then remaining requested sessions are checked.
             continue
         errors, warnings, count = validate(root)
         total += count

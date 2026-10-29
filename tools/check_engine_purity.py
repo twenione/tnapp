@@ -32,8 +32,10 @@ COMMENT = re.compile(r"^\s*(?://|/\*|\*|\*/)")
 def files(root: Path):
     if root.is_file():
         yield root
+        # SCOPE: A single file input is scanned directly instead of walking a directory.
         return
     if not root.exists():
+        # SCOPE: A missing root has no in-scope source files to enumerate.
         return
     for path in sorted(root.rglob("*")):
         if path.is_file() and path.suffix in EXTENSIONS:
@@ -59,12 +61,14 @@ def main(argv: list[str]) -> int:
                 return 2
             for number, line in enumerate(lines, 1):
                 if COMMENT.match(line):
+                    # SCOPE: Comment lines are not executable engine source for this purity rule.
                     continue
                 for pattern, reason in FORBIDDEN:
                     if pattern.search(line):
                         violations.append((path, number, line.strip(), reason))
     if not violations:
         print("OK: core-guide purity scan found 0 forbidden symbol(s)")
+        # SCOPE: Zero violations is the successful result after all in-scope files were scanned.
         return 0
     print(f"FAIL: core-guide purity scan found {len(violations)} violation(s)")
     for path, number, line, reason in violations:
