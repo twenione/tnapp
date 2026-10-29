@@ -48,6 +48,7 @@ def _text(path: Path) -> str | None:
     except OSError:
         return None
     if b"\0" in data:
+        # SCOPE: NUL-containing binary input is not decoded as text.
         return None
     try:
         return data.decode("utf-8")
@@ -60,6 +61,7 @@ def _relative(root: Path, path: Path) -> str:
 
 
 def _is_privacy_fixture(relative: str) -> bool:
+    # EXCLUDE: D-147
     return relative.startswith("testdata/violations/privacy_")
 
 
@@ -71,6 +73,7 @@ def _numeric_hits(relative: str, lines: list[str]) -> list[tuple[str, int]]:
             try:
                 number = float(token)
             except ValueError:
+                # SCOPE: Non-numeric tokens do not represent timestamps.
                 continue
             seconds = number if number < YEAR_END * 10 else number / 1000.0
             if YEAR_START <= seconds < YEAR_END:
@@ -82,7 +85,9 @@ def _numeric_hits(relative: str, lines: list[str]) -> list[tuple[str, int]]:
 
 
 def _iso_hits(relative: str, lines: list[str]) -> list[tuple[str, int]]:
+    # EXCLUDE: D-151
     if not (relative.startswith("testdata/sessions/") or relative.startswith("testdata/violations/")):
+        # EXCLUDE: D-151
         return []
     hits: list[tuple[str, int]] = []
     for line_number, line in enumerate(lines, 1):
@@ -97,10 +102,13 @@ def scan(root: Path, paths: list[str] | None = None) -> list[tuple[str, int, str
     findings: list[tuple[str, int, str]] = []
     for path in _paths(root, paths):
         relative = _relative(root, path)
+        # EXCLUDE: D-147
         if relative.startswith("docs/") or relative.endswith(".md"):
+            # EXCLUDE: D-147
             continue
         content = _text(path)
         if content is None:
+            # SCOPE: Unreadable or undecodable files cannot be scanned as text.
             continue
         lines = content.splitlines()
         findings.extend((rule, line, relative) for rule, line in _numeric_hits(relative, lines))
