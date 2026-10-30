@@ -2,6 +2,7 @@ package com.trailnav.app
 
 import com.trailnav.core.GuideConfig
 import com.trailnav.core.DiscardedSlopePeak
+import com.trailnav.core.DiscardedWaypoint
 import com.trailnav.core.GuideState
 import com.trailnav.core.RouteEtaTracker
 import com.trailnav.core.RouteModel
@@ -25,8 +26,10 @@ class GuideSession(route: RouteModel, private val config: GuideConfig = GuideCon
     fun accept(location: TrailLocation): SessionDecision {
         val frame = location.toSensorFrame()
         val previousDiscardCount = state.discardedSlopePeaks.size
+        val previousDiscardedWaypointCount = state.discardedWaypoints.size
         val result = guide(state, frame, config)
         val newlyDiscardedSlopePeaks = result.nextState.discardedSlopePeaks.drop(previousDiscardCount)
+        val newlyDiscardedWaypoints = result.nextState.discardedWaypoints.drop(previousDiscardedWaypointCount)
         state = result.nextState
         state.lastMatch?.let { match ->
             etaTracker.observe(
@@ -36,13 +39,16 @@ class GuideSession(route: RouteModel, private val config: GuideConfig = GuideCon
                 onRoute = !state.offRoute,
             )
         }
-        return SessionDecision(location, result, newlyDiscardedSlopePeaks)
+        return SessionDecision(location, result, newlyDiscardedSlopePeaks, newlyDiscardedWaypoints)
     }
 }
 
-internal fun SessionEventSink?.appendDiscardedSlopePeaks(records: Iterable<DiscardedSlopePeak>) {
+internal fun SessionEventSink?.appendDiscardedEvents(
+    slopePeaks: Iterable<DiscardedSlopePeak>,
+    waypoints: Iterable<DiscardedWaypoint>,
+) {
     val sink = this ?: return
-    records.forEach { record ->
+    slopePeaks.forEach { record ->
         try {
             sink.appendSystem(
                 "event.discarded",
@@ -52,6 +58,23 @@ internal fun SessionEventSink?.appendDiscardedSlopePeaks(records: Iterable<Disca
                     "peak_s" to record.peakS.toString(),
                     "passed_projected_meters" to record.passedProjectedMeters.toString(),
                     "delay_reason" to record.delayReason,
+                    "reason" to record.reason,
+                ),
+            )
+        } catch (_: Exception) {
+            // A failed diagnostic write must not change guidance behavior.
+        }
+    }
+    waypoints.forEach { record ->
+        try {
+            sink.appendSystem(
+                "event.discarded",
+                mapOf(
+                    "event" to "E6",
+                    "waypoint_index" to record.index.toString(),
+                    "waypoint_s" to record.waypointS.toString(),
+                    "distance_meters" to record.distanceMeters.toString(),
+                    "reason" to record.reason,
                 ),
             )
         } catch (_: Exception) {
@@ -60,8 +83,12 @@ internal fun SessionEventSink?.appendDiscardedSlopePeaks(records: Iterable<Disca
     }
 }
 
+internal fun SessionEventSink?.appendDiscardedSlopePeaks(records: Iterable<DiscardedSlopePeak>) =
+    appendDiscardedEvents(records, emptyList())
+
 data class SessionDecision(
     val location: TrailLocation,
     val result: com.trailnav.core.GuideResult,
     val newlyDiscardedSlopePeaks: List<DiscardedSlopePeak> = emptyList(),
+    val newlyDiscardedWaypoints: List<DiscardedWaypoint> = emptyList(),
 )

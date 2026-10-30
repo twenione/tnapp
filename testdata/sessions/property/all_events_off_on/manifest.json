@@ -1,0 +1,132 @@
+{
+  "session_id": "62aa285d-092e-5c4a-b964-48d17ec73a9d",
+  "schema_version": "0.1.0-draft",
+  "started_at_wall": "2026-01-01T00:00:00Z",
+  "app": {
+    "version": "synthetic",
+    "build": 0,
+    "code_hash": "git:unknown"
+  },
+  "engine": {
+    "config": {
+      "implementation": "core-guide",
+      "config_hash": "sha256:task078-synthetic",
+      "events": {
+        "E1": true,
+        "E2": true,
+        "E3": true,
+        "E4": true,
+        "E5": true,
+        "E6": true,
+        "E7": true,
+        "E8": true
+      }
+    },
+    "rng_seed": 0,
+    "config_changes": [
+      {
+        "frame_index": 1,
+        "event": "E1",
+        "value": false
+      },
+      {
+        "frame_index": 1,
+        "event": "E2",
+        "value": false
+      },
+      {
+        "frame_index": 1,
+        "event": "E3",
+        "value": false
+      },
+      {
+        "frame_index": 1,
+        "event": "E4",
+        "value": false
+      },
+      {
+        "frame_index": 1,
+        "event": "E5",
+        "value": false
+      },
+      {
+        "frame_index": 1,
+        "event": "E6",
+        "value": false
+      },
+      {
+        "frame_index": 1,
+        "event": "E7",
+        "value": false
+      },
+      {
+        "frame_index": 1,
+        "event": "E8",
+        "value": false
+      },
+      {
+        "frame_index": 4,
+        "event": "E1",
+        "value": true
+      },
+      {
+        "frame_index": 4,
+        "event": "E2",
+        "value": true
+      },
+      {
+        "frame_index": 4,
+        "event": "E3",
+        "value": true
+      },
+      {
+        "frame_index": 4,
+        "event": "E4",
+        "value": true
+      },
+      {
+        "frame_index": 4,
+        "event": "E5",
+        "value": true
+      },
+      {
+        "frame_index": 4,
+        "event": "E6",
+        "value": true
+      },
+      {
+        "frame_index": 4,
+        "event": "E7",
+        "value": true
+      },
+      {
+        "frame_index": 4,
+        "event": "E8",
+        "value": true
+      }
+    ]
+  },
+  "route": {
+    "gpx_id": "synthetic-all_events_off_on",
+    "gpx_hash": "sha256:843290777b22977e9e970d17d5932fc398839bfef59d8828b8823519de0ef3fc",
+    "point_count": 33,
+    "elevation_used": true,
+    "elevation_reason": "ok",
+    "waypoint_count": 1
+  },
+  "clock": {
+    "monotonic_source": "synthetic-sequence",
+    "timestamp_unit": "seconds",
+    "seq_order": "append"
+  },
+  "privacy": {
+    "upload_default": false
+  },
+  "device": {
+    "model": "synthetic",
+    "os": "test",
+    "sensors": [
+      "gps"
+    ]
+  }
+}

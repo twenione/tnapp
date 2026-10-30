@@ -142,8 +142,41 @@ class SessionLoggerTest {
         assertTrue(event.contains("\"peak_s\":\"${peak.s}\""))
         assertTrue(event.contains("\"passed_projected_meters\":"))
         assertTrue(event.contains("\"delay_reason\":\"event-min-interval\""))
+        assertTrue(event.contains("\"reason\":\"passed\""))
         assertTrue(!event.contains("\"lat\"") && !event.contains("\"lon\"") && !event.contains("\"timestamp\""))
         directory.deleteRecursively()
+    }
+
+    @Test
+    fun discardedWaypointIsLoggedWithoutLocationOrName() {
+        val captured = mutableListOf<Pair<String, Map<String, String>>>()
+        val sink = object : SessionEventSink {
+            override fun appendEnvelope(location: TrailLocation, eventStream: String, eventType: String) = Unit
+            override fun appendLocation(location: TrailLocation): Long = 0L
+            override fun appendGuide(location: TrailLocation, result: com.trailnav.core.GuideResult, spokenText: String?, sourceSeq: Long, trigger: String?) = Unit
+            override fun appendSystem(kind: String, details: Map<String, String>) { captured += kind to details }
+            override fun appendError(kind: String, message: String) = Unit
+            override fun close() = Unit
+        }
+
+        sink.appendDiscardedEvents(
+            emptyList(),
+            listOf(com.trailnav.core.DiscardedWaypoint(2, 410.0, 35.0, "priority")),
+        )
+
+        assertEquals(1, captured.size)
+        assertEquals("event.discarded", captured.single().first)
+        assertEquals(
+            mapOf(
+                "event" to "E6",
+                "waypoint_index" to "2",
+                "waypoint_s" to "410.0",
+                "distance_meters" to "35.0",
+                "reason" to "priority",
+            ),
+            captured.single().second,
+        )
+        assertTrue(captured.single().second.keys.none { it in setOf("lat", "lon", "timestamp", "name") })
     }
 
     @Test
@@ -156,8 +189,9 @@ class SessionLoggerTest {
             override fun appendError(kind: String, message: String) = Unit
             override fun close() = Unit
         }
-        sink.appendDiscardedSlopePeaks(
-            listOf(com.trailnav.core.DiscardedSlopePeak(0, 510.0, 520.0, "event-min-interval")),
+        sink.appendDiscardedEvents(
+            listOf(com.trailnav.core.DiscardedSlopePeak(0, 510.0, 520.0, "event-min-interval", "disabled")),
+            listOf(com.trailnav.core.DiscardedWaypoint(2, 410.0, 35.0, "priority")),
         )
         assertTrue(true)
     }

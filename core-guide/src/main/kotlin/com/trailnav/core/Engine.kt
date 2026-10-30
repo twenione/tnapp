@@ -267,6 +267,7 @@ private data class DynamicCandidate(
     val sunsetThresholds: Set<Int> = emptySet(),
     val remainingThresholds: Set<Double> = emptySet(),
     val slopeIndices: Set<Int> = emptySet(),
+    val waypointIndices: Set<Int> = emptySet(),
 )
 
 /** Single arbitration table for simultaneous periodic events (R14). */
@@ -393,8 +394,22 @@ private fun evaluateDynamicGuidance(
         val alreadyPending = index in pendingSlopePeaks
         if (!config.slopeEnabled || !forward) {
             if (distance < 0.0 || distance <= config.peakAnnounceLeadMeters || alreadyPending) {
+                val pending = pendingSlopePeaks[index]
+                if (pending != null) pendingSlopePeaks.remove(index)
+                if ((distance >= 0.0 && distance <= config.peakAnnounceLeadMeters) || pending != null) {
+                    discardedSlopePeaks += DiscardedSlopePeak(
+                        index = index,
+                        peakS = peak.s,
+                        passedProjectedMeters = match.projectedMeters,
+                        delayReason = pending?.delayReason ?: "none",
+                        reason = when {
+                            !config.slopeEnabled -> "disabled"
+                            state.direction == ProgressDirection.REVERSE -> "reverse"
+                            else -> "direction-unknown"
+                        },
+                    )
+                }
                 consumedSlopeIndices += index
-                pendingSlopePeaks.remove(index)
             }
         } else if (distance < 0.0) {
             val pending = pendingSlopePeaks.remove(index)
@@ -441,19 +456,42 @@ private fun evaluateDynamicGuidance(
     )
 
     // E6: eligible waypoints are approached once; their names were sanitized at load time.
+    val discardedWaypoints = next.discardedWaypoints.toMutableList()
+    val consumedWaypointIndices = next.consumedWaypointIndices.toMutableSet()
     state.route.waypoints.forEachIndexed { index, waypoint ->
         val distance = waypoint.s - match.projectedMeters
-        if (distance < 0.0) next = next.copy(consumedWaypointIndices = next.consumedWaypointIndices + index)
+        if (distance < 0.0) consumedWaypointIndices += index
         else if (distance <= config.waypointAnnounceLeadMeters) {
-            next = next.copy(consumedWaypointIndices = next.consumedWaypointIndices + index)
-            if (config.waypointEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedWaypointIndices) {
-                candidates += DynamicCandidate(
-                    EventPriority.WAYPOINT, "event.waypoint", Guidance.Waypoint(index, waypoint.name, distance),
-                    reason("event.waypoint", "E6", mapOf("waypointIndex" to index.toString(), "name" to waypoint.name, "distanceMeters" to distance.toString()))
-                )
+            consumedWaypointIndices += index
+            if (index !in previous.consumedWaypointIndices) {
+                if (config.waypointEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedWaypointIndices) {
+                    candidates += DynamicCandidate(
+                        EventPriority.WAYPOINT,
+                        "event.waypoint",
+                        Guidance.Waypoint(index, waypoint.name, distance),
+                        reason("event.waypoint", "E6", mapOf("waypointIndex" to index.toString(), "name" to waypoint.name, "distanceMeters" to distance.toString())),
+                        waypointIndices = setOf(index),
+                    )
+                } else {
+                    val discardReason = when {
+                        !config.waypointEnabled -> "disabled"
+                        !onRoute -> "offroute"
+                        state.direction == ProgressDirection.REVERSE -> "reverse"
+                        state.direction == ProgressDirection.UNKNOWN -> "direction-unknown"
+                        !eventIntervalOpen -> "interval"
+                        else -> null
+                    }
+                    if (discardReason != null) {
+                        discardedWaypoints += DiscardedWaypoint(index, waypoint.s, distance, discardReason)
+                    }
+                }
             }
         }
     }
+    next = next.copy(
+        consumedWaypointIndices = consumedWaypointIndices,
+        discardedWaypoints = discardedWaypoints,
+    )
 
     // E7 is evaluated before the new E5/E8 candidates so it can retain its
     // existing higher-priority/deferred semantics.
@@ -491,6 +529,7 @@ private fun evaluateDynamicGuidance(
         return DynamicEvaluation(next, null, reason("event.none", "none"))
     }
     val slopeCandidateIndices = candidates.flatMap { it.slopeIndices }.toSet()
+    val waypointCandidateIndices = candidates.flatMap { it.waypointIndices }.toSet()
     if (suppressAnnouncements) {
         slopeCandidateIndices.forEach { index ->
             val peak = state.route.peaks[index]
@@ -499,9 +538,32 @@ private fun evaluateDynamicGuidance(
                 PendingSlopePeak(index, peak.s, suppressionReason ?: "priority-higher"),
             )
         }
-        return DynamicEvaluation(next.copy(pendingSlopePeaks = pendingSlopePeaks), null, selected.reason)
+        waypointCandidateIndices.forEach { index ->
+            val waypoint = state.route.waypoints[index]
+            discardedWaypoints += DiscardedWaypoint(
+                index = index,
+                waypointS = waypoint.s,
+                distanceMeters = waypoint.s - match.projectedMeters,
+                reason = "priority",
+            )
+        }
+        return DynamicEvaluation(
+            next.copy(pendingSlopePeaks = pendingSlopePeaks, discardedWaypoints = discardedWaypoints),
+            null,
+            selected.reason,
+        )
     }
     val selectedSlopeIndices = selected.slopeIndices
+    val selectedWaypointIndices = selected.waypointIndices
+    (waypointCandidateIndices - selectedWaypointIndices).forEach { index ->
+        val waypoint = state.route.waypoints[index]
+        discardedWaypoints += DiscardedWaypoint(
+            index = index,
+            waypointS = waypoint.s,
+            distanceMeters = waypoint.s - match.projectedMeters,
+            reason = "priority",
+        )
+    }
     val slopeLosers = slopeCandidateIndices - selectedSlopeIndices
     slopeLosers.forEach { index ->
         val peak = state.route.peaks[index]
@@ -522,6 +584,7 @@ private fun evaluateDynamicGuidance(
         pendingRemainingDelayReason = if (selected.remainingThresholds.isNotEmpty()) null else next.pendingRemainingDelayReason,
         consumedSlopeIndices = consumedSlope,
         pendingSlopePeaks = remainingSlopePending,
+        discardedWaypoints = discardedWaypoints,
         lastPeriodicEventAt = frame.timestamp,
     )
     return DynamicEvaluation(next, selected.guidance, selected.reason)

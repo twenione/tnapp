@@ -671,7 +671,7 @@ class DynamicGuidanceTest {
     }
 
     @Test
-    fun slopeDisabledAndReverseFramesConsumeWithoutDeferralOrDiscard() {
+    fun slopeDisabledAndReverseFramesConsumeAndRecordTheDiscard() {
         val route = peakEventRoute()
         val peak = route.peaks.first()
         val disabled = guide(
@@ -681,7 +681,8 @@ class DynamicGuidanceTest {
         )
         check(disabled.guidance !is Guidance.Slope)
         check(disabled.nextState.pendingSlopePeaks.isEmpty())
-        check(disabled.nextState.discardedSlopePeaks.isEmpty())
+        check(disabled.nextState.discardedSlopePeaks.single().reason == "disabled")
+        check(disabled.nextState.discardedSlopePeaks.single().delayReason == "none")
         check(0 in disabled.nextState.consumedSlopeIndices)
 
         val reverse = guide(
@@ -696,7 +697,8 @@ class DynamicGuidanceTest {
         check(reverse.nextState.direction == ProgressDirection.REVERSE)
         check(reverse.guidance !is Guidance.Slope)
         check(reverse.nextState.pendingSlopePeaks.isEmpty())
-        check(reverse.nextState.discardedSlopePeaks.isEmpty())
+        check(reverse.nextState.discardedSlopePeaks.single().reason == "reverse")
+        check(reverse.nextState.discardedSlopePeaks.single().delayReason == "none")
         check(0 in reverse.nextState.consumedSlopeIndices)
     }
 
