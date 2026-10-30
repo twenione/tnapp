@@ -93,7 +93,30 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         }
     )
 
-    if (isArrived(next.route, directedMatch, frame.timestamp, next.sessionStartTimestamp, config)) {
+    next = updateArrivalAdvance(
+        state = next,
+        match = directedMatch,
+        previousMatch = initializedState.lastMatch,
+        previousTimestamp = initializedState.lastTimestamp,
+        timestamp = frame.timestamp,
+        config = config,
+    )
+    val arrivalCandidate = isArrivalCandidate(next.route, directedMatch, frame.timestamp, next.sessionStartTimestamp, config)
+    val requiredArrivalAdvance = requiredArrivalAdvance(next.route, next.arrivalBaselineRemainingMeters, config)
+    val arrivalHasAdvance = next.arrivalBaselineRemainingMeters != null &&
+        next.advanceCreditedMeters >= requiredArrivalAdvance
+    if (arrivalCandidate && !arrivalHasAdvance && next.arrivalBlockedRecords.isEmpty()) {
+        next = next.copy(
+            arrivalBlockedRecords = next.arrivalBlockedRecords + ArrivalBlockedRecord(
+                creditedMeters = next.advanceCreditedMeters,
+                requiredMeters = requiredArrivalAdvance,
+                baselineRemainingMeters = next.arrivalBaselineRemainingMeters,
+                projectedMeters = directedMatch.projectedMeters,
+            ),
+        )
+    }
+
+    if (arrivalCandidate && arrivalHasAdvance) {
         next = next.copy(
             arrived = true,
             offRoute = false,
@@ -967,7 +990,7 @@ private fun evaluateTurnGuidance(
     }
 }
 
-private fun isArrived(
+private fun isArrivalCandidate(
     route: RouteModel,
     match: MatchResult,
     timestamp: Long,
@@ -981,6 +1004,55 @@ private fun isArrived(
     return sessionElapsed >= config.minimumSessionSecondsBeforeArrival &&
         distanceToEnd <= config.arriveRadiusMeters &&
         match.projectedMeters > route.totalLengthMeters * config.arriveProgressFraction
+}
+
+private fun requiredArrivalAdvance(
+    route: RouteModel,
+    baselineRemainingMeters: Double?,
+    config: GuideConfig,
+): Double {
+    val proportional = baselineRemainingMeters?.let { config.arrivalAdvanceFraction * it } ?: 0.0
+    val absoluteFloor = min(config.arrivalMinAdvanceMeters, config.arrivalAdvanceFraction * route.totalLengthMeters)
+    return max(proportional, absoluteFloor)
+}
+
+private fun updateArrivalAdvance(
+    state: GuideState,
+    match: MatchResult,
+    previousMatch: MatchResult?,
+    previousTimestamp: Long?,
+    timestamp: Long,
+    config: GuideConfig,
+): GuideState {
+    if (state.arrivalBaselineRemainingMeters == null && match.distanceMeters < config.offRouteExitDistMeters) {
+        return state.copy(
+            arrivalBaselineRemainingMeters = state.route.totalLengthMeters - match.projectedMeters,
+            advanceHighWaterMeters = match.projectedMeters,
+        )
+    }
+    if (state.arrivalBaselineRemainingMeters == null || match.distanceMeters >= config.offRouteEnterDistMeters) {
+        return state
+    }
+    val prior = previousMatch ?: return state
+    val priorTimestamp = previousTimestamp ?: return state
+    val previousProjected = prior.projectedMeters
+    val projected = match.projectedMeters
+    val highWater = state.advanceHighWaterMeters ?: previousProjected
+    val deltaSeconds = (timestamp - priorTimestamp).coerceAtLeast(0L) / 1_000.0
+    val allowed = config.arrivalWalkMaxSpeedMps * deltaSeconds + config.arrivalJumpToleranceMeters
+    if (projected > highWater) {
+        val jump = projected - previousProjected
+        val credited = if (jump <= allowed) {
+            state.advanceCreditedMeters + projected - highWater
+        } else {
+            state.advanceCreditedMeters
+        }
+        return state.copy(advanceHighWaterMeters = projected, advanceCreditedMeters = credited)
+    }
+    if (projected < previousProjected - allowed) {
+        return state.copy(advanceHighWaterMeters = projected)
+    }
+    return state
 }
 
 private fun updateOffRouteState(

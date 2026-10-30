@@ -104,11 +104,14 @@ def test_unique_mutation_needles() -> None:
     eta = eta_path.read_text(encoding="utf-8")
     turn_pass_path = Path("core-guide/src/main/kotlin/com/trailnav/core/TurnPass.kt")
     turn_pass = turn_pass_path.read_text(encoding="utf-8")
+    model_path = Path("core-guide/src/main/kotlin/com/trailnav/core/Model.kt")
+    model = model_path.read_text(encoding="utf-8")
     sources = {
         d033.ENGINE: engine,
         d033.ROUTE_SOURCE: route,
         d033.ETA_SOURCE: eta,
         d033.TURN_PASS_SOURCE: turn_pass,
+        d033.MODEL_SOURCE: model,
     }
     assert source and d033.mutation_needle_failures(sources) == []
 

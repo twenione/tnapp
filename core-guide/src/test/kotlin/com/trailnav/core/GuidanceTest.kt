@@ -30,8 +30,18 @@ class GuidanceTest {
     check(!near2.nextState.offRoute)
     val middle = guide(GuideState.initial(route), SensorFrame(0, 10.0, 20.001, 5f, 1f, null), config)
     check(middle.guidance == null)
-    val end = guide(middle.nextState, SensorFrame(1_000, 10.0, 20.002, 5f, 1f, null), config)
-    check(end.guidance == Guidance.Arrived && end.nextState.arrived)
+    var walkingState = middle.nextState
+    var end: GuideResult? = null
+    for (step in 1..12) {
+        val longitude = (20.001 + step * 0.0001).coerceAtMost(20.002)
+        val result = guide(walkingState, SensorFrame(step * 1_000L, 10.0, longitude, 5f, 1f, null), config)
+        walkingState = result.nextState
+        if (result.guidance == Guidance.Arrived) {
+            end = result
+            break
+        }
+    }
+    check(end?.nextState?.arrived == true) { "walking the remaining route must earn arrival" }
     }
 
     @Test
@@ -253,23 +263,28 @@ class GuidanceTest {
         val config = GuideConfig()
         val nearEnd = SensorFrame(0L, 10.0, 20.0019, 5f, 1f, null)
 
-        val immediate = guide(GuideState.initial(route), nearEnd, config)
-        check(immediate.nextState.sessionStartTimestamp == 0L)
-        check(immediate.guidance != Guidance.Arrived) {
-            "a first frame near 95% progress must not arrive immediately"
+        var stationaryState = guide(GuideState.initial(route), nearEnd, config).nextState
+        check(stationaryState.sessionStartTimestamp == 0L)
+        for (second in 1..600) {
+            val result = guide(stationaryState, nearEnd.copy(timestamp = second * 1_000L), config)
+            stationaryState = result.nextState
+            check(result.guidance != Guidance.Arrived) { "standing near the end must not arrive at second=$second" }
         }
+        check(stationaryState.arrivalBlockedRecords.size == 1)
 
+        val walkingConfig = GuideConfig(arrivalWalkMaxSpeedMps = 100.0)
+        var walkingState = GuideState.initial(route)
+        walkingState = guide(walkingState, SensorFrame(0L, 10.0, 20.0, 5f, 0f, null), walkingConfig).nextState
         val beforeMinimum = guide(
-            immediate.nextState,
-            nearEnd.copy(timestamp = 5_000L),
-            config,
+            walkingState,
+            SensorFrame(5_000L, 10.0, 20.00192, 5f, 5f, null),
+            walkingConfig,
         )
         check(beforeMinimum.guidance != Guidance.Arrived)
-
         val afterMinimum = guide(
             beforeMinimum.nextState,
-            nearEnd.copy(timestamp = 10_000L),
-            config,
+            SensorFrame(10_000L, 10.0, 20.00192, 5f, 0f, null),
+            walkingConfig,
         )
         check(afterMinimum.guidance == Guidance.Arrived)
         check(afterMinimum.nextState.arrived)
@@ -531,11 +546,13 @@ class GuidanceTest {
     @Test
     fun arrivalGuardDoesNotTriggerAfterSubsecondGap() {
         val route = RouteModel.fromGpx("""<gpx><trk><trkseg><trkpt lat="10.0" lon="20.0"/><trkpt lat="10.0" lon="20.002"/></trkseg></trk></gpx>""")
-        val nearEnd = SensorFrame(0L, 10.0, 20.0019, 5f, 1f, null)
-        val first = guide(GuideState.initial(route), nearEnd, GuideConfig())
-        val second = guide(first.nextState, nearEnd.copy(timestamp = 944L), GuideConfig())
+        val config = GuideConfig(arrivalWalkMaxSpeedMps = 500.0)
+        val start = SensorFrame(0L, 10.0, 20.0, 5f, 0f, null)
+        val nearEnd = SensorFrame(944L, 10.0, 20.0019, 5f, 5f, null)
+        val first = guide(GuideState.initial(route), start, config)
+        val second = guide(first.nextState, nearEnd, config)
         check(second.guidance != Guidance.Arrived) { "944 ms must not satisfy a 10 second startup guard" }
-        val afterGuard = guide(second.nextState, nearEnd.copy(timestamp = 10_000L), GuideConfig())
+        val afterGuard = guide(second.nextState, nearEnd.copy(timestamp = 10_000L), config)
         check(afterGuard.guidance == Guidance.Arrived) { "a full startup guard must permit arrival" }
     }
 }

@@ -1,0 +1,59 @@
+{
+  "session_id": "12549643-4f51-5926-b7ed-13333389520c",
+  "schema_version": "0.1.0-draft",
+  "started_at_wall": "2026-01-01T00:00:00Z",
+  "app": {
+    "version": "0.1.0",
+    "build": 0,
+    "code_hash": "sha256:synthetic"
+  },
+  "engine": {
+    "config": {
+      "stub": false,
+      "variant": "18_combo_e_continuous",
+      "implementation": "core-guide"
+    },
+    "rng_seed": 3078
+  },
+  "route": {
+    "gpx_id": "synthetic-base",
+    "gpx_hash": "sha256:37a7737ddfc8aab96c1ecbd01c1513959de1859759496a6ca83f562c4cc06a53",
+    "point_count": 260,
+    "elevation_use": {
+      "used": false,
+      "reason": "absent"
+    },
+    "waypoint_count": 0
+  },
+  "clock": {
+    "monotonic_source": "synthetic-sequence",
+    "timestamp_unit": "seconds",
+    "frame_intervals_seconds": [
+      0.944,
+      0.997,
+      0.95,
+      0.999
+    ]
+  },
+  "privacy": {
+    "upload_default": false
+  },
+  "device": {
+    "model": "synthetic",
+    "os": "test",
+    "sensors": [
+      "gps"
+    ]
+  },
+  "scenario": {
+    "family": "phase1-combination",
+    "noise_sigma_m": 0.0,
+    "departure_angle_deg": 0.0,
+    "departure_segment_m": 0.0,
+    "max_cross_track_m": 0.0,
+    "accuracy_degraded_seconds": 0,
+    "stationary_before_departure_seconds": 0,
+    "reverse_overlap": true,
+    "description": "연속 위치의 역방향 겹침 — 되돌아 걷기. 14_combo_e와 짝"
+  }
+}

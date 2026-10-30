@@ -106,6 +106,11 @@ def make_session(root: Path, name: str, points: list[tuple[float, float]], varia
             "stationary_before_departure_seconds": spec.get("stationary_before_departure_seconds", 0),
             "reverse_overlap": spec.get("reverse_overlap", False),
         }
+        if variant == "combo_e":
+            manifest["scenario"]["description"] = (
+                "위치 불연속(순간이동) 포함 — reverse_overlap 구간 경계에서 진행 위치가 약 160 m씩 두 번 불연속하다. "
+                "D-176: 이 세션은 불가능한 이동이 도착 크레디트가 되지 않음을 단언한다"
+            )
     if variant == "golden":
         manifest["golden_status"] = "verified-engine-output"
         manifest["golden_verification"] = "phase1-accuracy"
@@ -134,10 +139,14 @@ def make_session(root: Path, name: str, points: list[tuple[float, float]], varia
         combo = combo_specs.get(variant)
         if combo is not None:
             start = combo["departure_start"]
+            # combo_e intentionally jumps about 160 m along the route at
+            # indices 20 and 100; this is a route-progress discontinuity.
             if combo.get("reverse_overlap") and start <= index < start + 80:
                 source_index = start + 79 - (index - start)
                 route_lat, route_lon = points[source_index]
             if start <= index < combo["departure_end"]:
+                # combo_a..combo_e also return the perpendicular departure
+                # offset to zero in one frame at index 160.
                 distance_from_departure = (index - start) * 2.0
                 cross_track = distance_from_departure * math.sin(math.radians(combo["departure_angle_deg"]))
                 route_lon += cross_track / (6_371_008.8 * math.cos(math.radians(route_lat))) * 180.0 / math.pi
@@ -325,6 +334,90 @@ def make_e4_deferred_session(root: Path) -> None:
     (session / "events.ndjson").write_text("\n".join(json.dumps(item, sort_keys=True) for item in events) + "\n", encoding="utf-8")
 
 
+def make_continuous_reverse_overlap_session(root: Path) -> None:
+    """Create a route-progress-continuous, out-and-back reverse-overlap fixture."""
+    name = "18_combo_e_continuous"
+    session = root / name
+    session.mkdir(parents=True, exist_ok=True)
+    points = long_route_points()
+    write_gpx(session / "route.gpx", points)
+    route_bytes = "\n".join(f"{lat:.8f},{lon:.8f}" for lat, lon in points).encode()
+    route_hash = "sha256:" + hashlib.sha256(route_bytes).hexdigest()
+    seed = 3078
+    manifest = {
+        "session_id": str(uuid.uuid5(SYNTH_NAMESPACE, name)),
+        "schema_version": "0.1.0-draft",
+        "started_at_wall": "2026-01-01T00:00:00Z",
+        "app": {"version": "0.1.0", "build": 0, "code_hash": "sha256:synthetic"},
+        "engine": {
+            "config": {"stub": False, "variant": name, "implementation": "core-guide"},
+            "rng_seed": seed,
+        },
+        "route": {
+            "gpx_id": "synthetic-base",
+            "gpx_hash": route_hash,
+            "point_count": len(points),
+            "elevation_use": {"used": False, "reason": "absent"},
+            "waypoint_count": 0,
+        },
+        "clock": {
+            "monotonic_source": "synthetic-sequence",
+            "timestamp_unit": "seconds",
+            "frame_intervals_seconds": [0.944, 0.997, 0.950, 0.999],
+        },
+        "privacy": {"upload_default": False},
+        "device": {"model": "synthetic", "os": "test", "sensors": ["gps"]},
+        "scenario": {
+            "family": "phase1-combination",
+            "noise_sigma_m": 0.0,
+            "departure_angle_deg": 0.0,
+            "departure_segment_m": 0.0,
+            "max_cross_track_m": 0.0,
+            "accuracy_degraded_seconds": 0,
+            "stationary_before_departure_seconds": 0,
+            "reverse_overlap": True,
+            "description": "연속 위치의 역방향 겹침 — 되돌아 걷기. 14_combo_e와 짝",
+        },
+    }
+    (session / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    # 0→99 forward, 98→20 backward, then 21→end forward. Every sample is one
+    # adjacent route point from the preceding sample; no teleport is present.
+    source_indices = [*range(0, 100), *range(98, 19, -1), *range(21, len(points))]
+    frame_intervals = (0.944, 0.997, 0.950, 0.999)
+    frame_clock = 0.0
+    events = []
+    for index, source_index in enumerate(source_indices):
+        latitude, longitude = points[source_index]
+        seq = index * 2
+        events.append(event(
+            seq,
+            frame_clock,
+            "loc",
+            lat=round(latitude, 8),
+            lon=round(longitude, 8),
+            accuracy=5.0,
+            provider="synthetic",
+            speed_mps=2.0,
+            bearing_deg=0.0,
+        ))
+        events.append(event(
+            seq + 1,
+            frame_clock + 0.1,
+            "guide",
+            decision="CONTINUE",
+            src_seq=seq,
+            inputs={"frame_count": index + 1, "rng_seed": seed},
+            reason={"rule": "synthetic.pending-engine-output", "details": {}},
+            state_hash="sha256:synthetic",
+        ))
+        frame_clock += frame_intervals[index % len(frame_intervals)]
+    (session / "events.ndjson").write_text(
+        "\n".join(json.dumps(item, sort_keys=True) for item in events) + "\n",
+        encoding="utf-8",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", type=Path, default=Path("testdata/routes/base.gpx"))
@@ -356,9 +449,10 @@ def main() -> int:
     make_session(synth, "15_elevation_profile", points, "elevation_profile", 3015, elevation=elevation_profile)
     make_session(synth, "16_waypoint_profile", points, "waypoint_profile", 3016, waypoint_name="Synthetic Summit")
     make_e4_deferred_session(synth)
+    make_continuous_reverse_overlap_session(synth)
     print(f"base={args.base}")
     print("generated_golden=1")
-    print(f"generated_synth={len(variants) + 8}")
+    print(f"generated_synth={len(variants) + 9}")
     print(f"source={source}; original measured GPX and offset are not retained")
     return 0
 

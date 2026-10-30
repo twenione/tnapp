@@ -198,12 +198,29 @@ class RouteStatusRibbonConsistencyTest {
         val session = GuideSession(route, config)
         val frames = listOf(0.0, 250.0, 600.0, 970.0, 1_000.0)
 
-        frames.forEachIndexed { index, progress ->
-            val location = location(progress, index * 1_000L)
-            val decision = session.accept(location)
+        var progressMeters = 0.0
+        var frameIndex = 0
+        frames.forEach { progress ->
+            var sampleLocation: TrailLocation? = null
+            var decision: SessionDecision? = null
+            while (progressMeters < progress) {
+                progressMeters = (progressMeters + 10.0).coerceAtMost(progress)
+                val nextLocation = location(progressMeters, frameIndex * 5_000L)
+                sampleLocation = nextLocation
+                decision = session.accept(nextLocation)
+                frameIndex++
+            }
+            if (decision == null) {
+                val nextLocation = location(progress, frameIndex * 5_000L)
+                sampleLocation = nextLocation
+                decision = session.accept(nextLocation)
+                frameIndex++
+            }
+            val currentLocation = requireNotNull(sampleLocation)
+            val currentDecision = requireNotNull(decision)
             val status = session.routeStatus()!!
             val target = status.target
-            val ribbon = RouteRibbonCalculator.calculate(location, decision.result, route, config, target)!!
+            val ribbon = RouteRibbonCalculator.calculate(currentLocation, currentDecision.result, route, config, target)!!
             val label = ribbonDistanceLabel(ribbon)
             DistanceTimeMode.values().forEach { mode ->
                 val speech = GuidancePhrases.onDemandResponse(status, mode, hasEnteredRoute = true)

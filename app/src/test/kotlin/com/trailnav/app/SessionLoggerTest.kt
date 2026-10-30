@@ -2,6 +2,7 @@ package com.trailnav.app
 
 import com.trailnav.core.GuideConfig
 import com.trailnav.core.GuideState
+import com.trailnav.core.Guidance
 import com.trailnav.core.ElevationRepair
 import com.trailnav.core.RouteModel
 import com.trailnav.core.RouteQuality
@@ -177,6 +178,55 @@ class SessionLoggerTest {
             captured.single().second,
         )
         assertTrue(captured.single().second.keys.none { it in setOf("lat", "lon", "timestamp", "name") })
+    }
+
+    @Test
+    fun blockedArrivalIsReturnedOnceAndLoggedWithoutLocationOrTime() {
+        val route = RouteModel.fromGpx(
+            """<gpx><trk><trkseg><trkpt lat="10.0" lon="20.0"/><trkpt lat="10.0" lon="20.018263876598734"/></trkseg></trk></gpx>""",
+        )
+        val session = GuideSession(route, GuideConfig(minimumSessionSecondsBeforeArrival = 0.0))
+        fun location(progress: Double, timestamp: Long, speed: Float) = TrailLocation(
+            timestamp,
+            10.0,
+            20.0 + 0.018263876598734 * progress / 2_000.0,
+            5f,
+            speed,
+            null,
+            "synthetic",
+        )
+
+        session.accept(location(1_940.0, 0L, 0f))
+        val blocked = session.accept(location(1_980.0, 10_000L, 2f))
+        val repeated = session.accept(location(1_980.0, 11_000L, 0f))
+        assertEquals(1, blocked.newlyBlockedArrivals.size)
+        assertTrue(repeated.newlyBlockedArrivals.isEmpty())
+        assertTrue(blocked.result.guidance != Guidance.Arrived)
+
+        val captured = mutableListOf<Pair<String, Map<String, String>>>()
+        val sink = object : SessionEventSink {
+            override fun appendEnvelope(location: TrailLocation, eventStream: String, eventType: String) = Unit
+            override fun appendLocation(location: TrailLocation): Long = 0L
+            override fun appendGuide(location: TrailLocation, result: com.trailnav.core.GuideResult, spokenText: String?, sourceSeq: Long, trigger: String?) = Unit
+            override fun appendSystem(kind: String, details: Map<String, String>) { captured += kind to details }
+            override fun appendError(kind: String, message: String) = Unit
+            override fun close() = Unit
+        }
+        sink.appendArrivalBlockedEvents(blocked.newlyBlockedArrivals)
+        sink.appendArrivalBlockedEvents(repeated.newlyBlockedArrivals)
+        assertEquals(1, captured.size)
+        assertEquals("arrival.blocked", captured.single().first)
+        assertEquals(
+            setOf("creditedMeters", "requiredMeters", "baselineRemainingMeters", "projectedMeters"),
+            captured.single().second.keys,
+        )
+        assertTrue(captured.single().second.keys.none { it in setOf("lat", "lon", "timestamp", "t", "name") })
+
+        val failingSink = object : SessionEventSink by sink {
+            override fun appendSystem(kind: String, details: Map<String, String>) { error("synthetic logger failure") }
+        }
+        failingSink.appendArrivalBlockedEvents(blocked.newlyBlockedArrivals)
+        assertTrue(blocked.result.guidance != Guidance.Arrived)
     }
 
     @Test

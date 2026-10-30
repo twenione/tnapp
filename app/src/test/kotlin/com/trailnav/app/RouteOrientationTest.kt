@@ -62,9 +62,16 @@ class RouteOrientationTest {
         assertEquals(20.002, route.sourcePoints.first().lon, 0.000001)
         assertEquals(20.0, route.sourcePoints.last().lon, 0.000001)
         val session = GuideSession(route, GuideConfig(minimumSessionSecondsBeforeArrival = 0.0))
-        session.accept(location(20.002))
-        val arrival = session.accept(location(20.0))
-        assertTrue(arrival.result.guidance is Guidance.Arrived)
+        session.accept(location(20.002, 0L))
+        var arrival: SessionDecision? = null
+        for (step in 1..22) {
+            val decision = session.accept(location(20.002 - 0.002 * step / 22.0, step * 5_000L))
+            if (decision.result.guidance is Guidance.Arrived) {
+                arrival = decision
+                break
+            }
+        }
+        assertTrue(arrival?.result?.guidance is Guidance.Arrived)
     }
 
     @Test
@@ -191,9 +198,9 @@ class RouteOrientationTest {
         assertEquals("경로 방향 잡힘 (안내를 시작합니다)", RoutePreparationStage.DIRECTION_CONFIRMED.label)
     }
 
-    private fun location(longitude: Double): TrailLocation {
+    private fun location(longitude: Double, timestampMillis: Long = 0L): TrailLocation {
         return TrailLocation(
-            timestampMillis = 0L,
+            timestampMillis = timestampMillis,
             latitude = 10.0,
             longitude = longitude,
             accuracyMeters = 5f,

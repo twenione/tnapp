@@ -1,6 +1,7 @@
 package com.trailnav.app
 
 import com.trailnav.core.GuideConfig
+import com.trailnav.core.ArrivalBlockedRecord
 import com.trailnav.core.DiscardedSlopePeak
 import com.trailnav.core.DiscardedWaypoint
 import com.trailnav.core.GuideState
@@ -27,9 +28,11 @@ class GuideSession(route: RouteModel, private val config: GuideConfig = GuideCon
         val frame = location.toSensorFrame()
         val previousDiscardCount = state.discardedSlopePeaks.size
         val previousDiscardedWaypointCount = state.discardedWaypoints.size
+        val previousArrivalBlockedCount = state.arrivalBlockedRecords.size
         val result = guide(state, frame, config)
         val newlyDiscardedSlopePeaks = result.nextState.discardedSlopePeaks.drop(previousDiscardCount)
         val newlyDiscardedWaypoints = result.nextState.discardedWaypoints.drop(previousDiscardedWaypointCount)
+        val newlyBlockedArrivals = result.nextState.arrivalBlockedRecords.drop(previousArrivalBlockedCount)
         state = result.nextState
         state.lastMatch?.let { match ->
             etaTracker.observe(
@@ -39,7 +42,7 @@ class GuideSession(route: RouteModel, private val config: GuideConfig = GuideCon
                 onRoute = !state.offRoute,
             )
         }
-        return SessionDecision(location, result, newlyDiscardedSlopePeaks, newlyDiscardedWaypoints)
+        return SessionDecision(location, result, newlyDiscardedSlopePeaks, newlyDiscardedWaypoints, newlyBlockedArrivals)
     }
 }
 
@@ -86,9 +89,29 @@ internal fun SessionEventSink?.appendDiscardedEvents(
 internal fun SessionEventSink?.appendDiscardedSlopePeaks(records: Iterable<DiscardedSlopePeak>) =
     appendDiscardedEvents(records, emptyList())
 
+internal fun SessionEventSink?.appendArrivalBlockedEvents(records: Iterable<ArrivalBlockedRecord>) {
+    val sink = this ?: return
+    records.forEach { record ->
+        try {
+            sink.appendSystem(
+                "arrival.blocked",
+                mapOf(
+                    "creditedMeters" to record.creditedMeters.toString(),
+                    "requiredMeters" to record.requiredMeters.toString(),
+                    "baselineRemainingMeters" to (record.baselineRemainingMeters?.toString() ?: "none"),
+                    "projectedMeters" to record.projectedMeters.toString(),
+                ),
+            )
+        } catch (_: Exception) {
+            // Diagnostic persistence must never change guidance behavior.
+        }
+    }
+}
+
 data class SessionDecision(
     val location: TrailLocation,
     val result: com.trailnav.core.GuideResult,
     val newlyDiscardedSlopePeaks: List<DiscardedSlopePeak> = emptyList(),
     val newlyDiscardedWaypoints: List<DiscardedWaypoint> = emptyList(),
+    val newlyBlockedArrivals: List<ArrivalBlockedRecord> = emptyList(),
 )
