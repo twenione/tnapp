@@ -57,7 +57,7 @@ def fixture(name: str, frames: list[tuple[int, float]], enabled: set[str], *, ch
     manifest = {
         "session_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"trailnav:task078:{name}")),
         "schema_version": "0.1.0-draft",
-        "started_at_wall": "2026-10-30T00:00:00Z",
+        "started_at_wall": "2026-01-01T00:00:00Z",
         "app": {"version": "synthetic", "build": 0, "code_hash": "git:unknown"},
         "engine": engine,
         "route": {

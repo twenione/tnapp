@@ -1,7 +1,7 @@
 {
   "session_id": "bb2fe3c7-aa54-5bde-b37d-7e5f52f8ceaf",
   "schema_version": "0.1.0-draft",
-  "started_at_wall": "2026-10-30T00:00:00Z",
+  "started_at_wall": "2026-01-01T00:00:00Z",
   "app": {
     "version": "synthetic",
     "build": 0,
