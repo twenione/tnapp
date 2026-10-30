@@ -27,9 +27,32 @@ def discarded_event() -> dict:
         "seq": 4, "t": 1.0, "stream": "sys", "kind": "event.discarded", "battery_pct": None,
         "details": {
             "event": "E4", "peak_index": "0", "peak_s": "510.0",
-            "passed_projected_meters": "520.0", "delay_reason": "event-min-interval",
+            "passed_projected_meters": "520.0", "delay_reason": "event-min-interval", "reason": "passed",
         },
     }
+
+
+def discarded_waypoint_event() -> dict:
+    return {
+        "seq": 5, "t": 1.0, "stream": "sys", "kind": "event.discarded", "battery_pct": None,
+        "details": {
+            "event": "E6", "waypoint_index": "1", "waypoint_s": "600.0",
+            "distance_meters": "45.0", "reason": "priority",
+        },
+    }
+
+
+def assert_discard_shape(event: dict) -> None:
+    details = event["details"]
+    expected = {
+        "E4": {"event", "peak_index", "peak_s", "passed_projected_meters", "delay_reason", "reason"},
+        "E6": {"event", "waypoint_index", "waypoint_s", "distance_meters", "reason"},
+    }.get(details.get("event"))
+    if expected is None or set(details) != expected:
+        raise AssertionError(f"unexpected discarded-event fields for {details.get('event')}")
+    forbidden = {"lat", "lon", "timestamp", "t", "waypoint_name", "name"}
+    if forbidden & set(details):
+        raise AssertionError("discarded-event details contain location, time, or waypoint-name data")
 
 def event_stream(include_frame: bool = True) -> list[dict]:
     events: list[dict] = [
@@ -46,6 +69,7 @@ def event_stream(include_frame: bool = True) -> list[dict]:
         "decision": "CONTINUE", "inputs": {}, "reason": {"rule": "matching.on-route", "details": {}}, "state_hash": "sha256:test", "output_text": "경로 위입니다",
     })
     events.append(discarded_event())
+    events.append(discarded_waypoint_event())
     return events
 
 
@@ -64,12 +88,22 @@ def main() -> int:
         write_session(root, include_frame=True)
         errors, warnings, count = validate(root)
         assert not errors, errors
-        assert count == 5
+        assert count == 6
         emitted = [json.loads(raw) for raw in (root / "events.ndjson").read_text(encoding="utf-8").splitlines()]
-        discard = next(event for event in emitted if event.get("kind") == "event.discarded")
-        assert discard["stream"] == "sys" and discard["details"]["event"] == "E4"
-        assert set(discard["details"]) == {"event", "peak_index", "peak_s", "passed_projected_meters", "delay_reason"}
-        assert not ({"lat", "lon", "timestamp", "t"} & set(discard["details"]))
+        discards = [event for event in emitted if event.get("kind") == "event.discarded"]
+        assert [event["details"]["event"] for event in discards] == ["E4", "E6"]
+        assert all(event["stream"] == "sys" for event in discards)
+        for discard in discards:
+            assert_discard_shape(discard)
+
+        invalid_discard = discarded_waypoint_event()
+        invalid_discard["details"]["lat"] = "10.0"
+        try:
+            assert_discard_shape(invalid_discard)
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError("coordinate-bearing discarded-event details were accepted")
 
         invalid = root_dir / "missing-frame"
         invalid.mkdir()
@@ -78,7 +112,7 @@ def main() -> int:
         assert any("loc/frame guide count mismatch" in error for error in errors), errors
     finally:
         shutil.rmtree(root_dir, ignore_errors=True)
-    print("app_session_shape=PASS separate_frame_and_slot_trigger=PASS missing_frame_rejected=PASS")
+    print("app_session_shape=PASS E4_E6_discard_shape=PASS sensitive_discard_fields_rejected=PASS separate_frame_and_slot_trigger=PASS missing_frame_rejected=PASS")
     return 0
 
 

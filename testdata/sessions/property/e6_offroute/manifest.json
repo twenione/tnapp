@@ -1,0 +1,52 @@
+{
+  "session_id": "26778518-b959-5461-bd3c-d5fef7e701b9",
+  "schema_version": "0.1.0-draft",
+  "started_at_wall": "2026-10-30T00:00:00Z",
+  "app": {
+    "version": "synthetic",
+    "build": 0,
+    "code_hash": "git:unknown"
+  },
+  "engine": {
+    "config": {
+      "implementation": "core-guide",
+      "config_hash": "sha256:task078-synthetic",
+      "events": {
+        "E1": false,
+        "E2": false,
+        "E3": false,
+        "E4": false,
+        "E5": false,
+        "E6": true,
+        "E7": false,
+        "E8": false
+      },
+      "waypointAnnounceLeadMeters": 200.0
+    },
+    "rng_seed": 0,
+    "config_changes": []
+  },
+  "route": {
+    "gpx_id": "synthetic-e6_offroute",
+    "gpx_hash": "sha256:843290777b22977e9e970d17d5932fc398839bfef59d8828b8823519de0ef3fc",
+    "point_count": 33,
+    "elevation_used": true,
+    "elevation_reason": "ok",
+    "waypoint_count": 1
+  },
+  "clock": {
+    "monotonic_source": "synthetic-sequence",
+    "timestamp_unit": "seconds",
+    "seq_order": "append"
+  },
+  "privacy": {
+    "upload_default": false
+  },
+  "device": {
+    "model": "synthetic",
+    "os": "test",
+    "sensors": [
+      "gps"
+    ]
+  }
+}

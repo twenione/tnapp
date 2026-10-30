@@ -271,6 +271,15 @@ data class DiscardedSlopePeak(
     val peakS: Double,
     val passedProjectedMeters: Double,
     val delayReason: String,
+    val reason: String = "passed",
+)
+
+/** An E6 waypoint consumed without an announcement. */
+data class DiscardedWaypoint(
+    val index: Int,
+    val waypointS: Double,
+    val distanceMeters: Double,
+    val reason: String,
 )
 
 data class MatchResult(
@@ -313,6 +322,7 @@ data class GuideState(
     val pendingSlopePeaks: Map<Int, PendingSlopePeak> = emptyMap(),
     val discardedSlopePeaks: List<DiscardedSlopePeak> = emptyList(),
     val consumedWaypointIndices: Set<Int> = emptySet(),
+    val discardedWaypoints: List<DiscardedWaypoint> = emptyList(),
     val consumedSunsetThresholds: Set<Int> = emptySet(),
     val pendingSunsetThresholds: Set<Int> = emptySet(),
     val pendingSunsetDelayReason: String? = null,
