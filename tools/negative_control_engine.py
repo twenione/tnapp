@@ -35,6 +35,41 @@ VARIANTS = {
                   'false -> "total-exceeds-max" /* D-033 total ETA cap removed */'),
  'eta-clamped-observation-included': ('if (!prediction.clampedAnySegment) {',
                   'if (true /* D-033 clamped observation included */) {'),
+ 'arrival-advance-removed': ('val arrivalHasAdvance = next.arrivalBaselineRemainingMeters != null &&\n'
+                             '        next.advanceCreditedMeters >= requiredArrivalAdvance',
+                             'val arrivalHasAdvance = true /* TASK-079 advance condition removed */'),
+ 'arrival-jump-always-credited': ('if (jump <= allowed) {',
+                                  'if (true) { /* TASK-079 jump limit removed */'),
+ 'arrival-floor-removed': ('val absoluteFloor = min(config.arrivalMinAdvanceMeters, config.arrivalAdvanceFraction * route.totalLengthMeters)',
+                           'val absoluteFloor = 0.0 /* TASK-079 absolute floor removed */'),
+ 'arrival-positive-deltas-summed': ('if (projected > highWater) {\n'
+                                    '        val jump = projected - previousProjected\n'
+                                    '        val credited = if (jump <= allowed) {\n'
+                                    '            state.advanceCreditedMeters + projected - highWater\n'
+                                    '        } else {\n'
+                                    '            state.advanceCreditedMeters\n'
+                                    '        }\n'
+                                    '        return state.copy(advanceHighWaterMeters = projected, advanceCreditedMeters = credited)\n'
+                                    '    }',
+                                    'if (projected > previousProjected) {\n'
+                                    '        val jump = projected - previousProjected\n'
+                                    '        val credited = if (jump <= allowed) {\n'
+                                    '            state.advanceCreditedMeters + projected - previousProjected /* TASK-079 jitter summed */\n'
+                                    '        } else {\n'
+                                    '            state.advanceCreditedMeters\n'
+                                    '        }\n'
+                                    '        return state.copy(advanceHighWaterMeters = projected, advanceCreditedMeters = credited)\n'
+                                    '    }'),
+ 'arrival-backward-highwater-retained': ('return state.copy(advanceHighWaterMeters = projected)',
+                                         'return state /* TASK-079 backward high-water retained */'),
+ 'arrival-record-every-frame': ('if (arrivalCandidate && !arrivalHasAdvance && next.arrivalBlockedRecords.isEmpty()) {',
+                                'if (arrivalCandidate && !arrivalHasAdvance) { /* TASK-079 record every frame */'),
+ 'arrival-fraction-hardcoded': ('val proportional = baselineRemainingMeters?.let { config.arrivalAdvanceFraction * it } ?: 0.0',
+                                'val proportional = baselineRemainingMeters?.let { 0.8 * it } ?: 0.0 /* TASK-079 fraction hardcoded */'),
+ 'arrival-baseline-approach-frame': ('if (state.arrivalBaselineRemainingMeters == null && match.distanceMeters < config.offRouteExitDistMeters) {',
+                                     'if (state.arrivalBaselineRemainingMeters == null) { /* TASK-079 approach frame used */'),
+ 'arrival-jump-tolerance-default-20': ('val arrivalJumpToleranceMeters: Double = 40.0,',
+                                       'val arrivalJumpToleranceMeters: Double = 20.0, /* D-175 tolerance default regressed */'),
  'dwell-bypass': ('elapsedSeconds(timestamp, since) >= config.offRouteEnterDwellSeconds',
                   'true /* D-033 dwell bypass */'),
  'approach-gate-removed': ('if (!next.hasEnteredRoute) {',
@@ -347,6 +382,7 @@ VARIANTS = {
 ROUTE_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/Route.kt")
 ETA_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/RouteEta.kt")
 TURN_PASS_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/TurnPass.kt")
+MODEL_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/Model.kt")
 VARIANT_SOURCE_PATHS = {
     "turn-pass-always-false": TURN_PASS_SOURCE,
     "turn-axis-simplified": ROUTE_SOURCE,
@@ -365,6 +401,7 @@ VARIANT_SOURCE_PATHS = {
     "eta-floor-removed": ETA_SOURCE,
     "eta-cap-removed": ETA_SOURCE,
     "eta-clamped-observation-included": ETA_SOURCE,
+    "arrival-jump-tolerance-default-20": MODEL_SOURCE,
 }
 CORE_TEST = frozenset({"core-guide-test"})
 OFF_ROUTE_CONSUMERS = frozenset({"core-guide-test", "replay", "phase1-accuracy", "config-sensitivity"})
@@ -459,6 +496,15 @@ MUTATION_REQUIRED_CONSUMERS = {
     "eta-floor-removed": CORE_TEST,
     "eta-cap-removed": CORE_TEST,
     "eta-clamped-observation-included": CORE_TEST,
+    "arrival-advance-removed": CORE_TEST,
+    "arrival-jump-always-credited": CORE_TEST,
+    "arrival-floor-removed": CORE_TEST,
+    "arrival-positive-deltas-summed": CORE_TEST,
+    "arrival-backward-highwater-retained": CORE_TEST,
+    "arrival-record-every-frame": CORE_TEST,
+    "arrival-fraction-hardcoded": CORE_TEST,
+    "arrival-baseline-approach-frame": CORE_TEST,
+    "arrival-jump-tolerance-default-20": CORE_TEST,
 }
 
 CONSUMER_NAMES = ("replay", "replay-turn-session", "config-sensitivity", "phase1-accuracy")
@@ -583,6 +629,7 @@ def main() -> int:
             ROUTE_SOURCE: (workspace / ROUTE_SOURCE).read_text(encoding="utf-8"),
             ETA_SOURCE: (workspace / ETA_SOURCE).read_text(encoding="utf-8"),
             TURN_PASS_SOURCE: (workspace / TURN_PASS_SOURCE).read_text(encoding="utf-8"),
+            MODEL_SOURCE: (workspace / MODEL_SOURCE).read_text(encoding="utf-8"),
         }
         needle_errors = mutation_needle_failures(sources)
         if needle_errors:

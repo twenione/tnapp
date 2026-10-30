@@ -69,6 +69,10 @@ data class GuideConfig(
     val reannounceIntervalSeconds: Double = 60.0,
     val arriveRadiusMeters: Double = 25.0,
     val arriveProgressFraction: Double = 0.95,
+    val arrivalWalkMaxSpeedMps: Double = 4.0,
+    val arrivalJumpToleranceMeters: Double = 40.0,
+    val arrivalAdvanceFraction: Double = 0.8,
+    val arrivalMinAdvanceMeters: Double = 50.0,
     val minimumPointSpacingMeters: Double = 1.0,
     val maximumPointGapMeters: Double = 50.0,
     val douglasPeuckerEpsilonMeters: Double = 5.0,
@@ -135,6 +139,10 @@ data class GuideConfig(
         require(emaAlpha in 0.0..1.0)
         require(offRouteExitDistMeters <= offRouteEnterDistMeters)
         require(arriveProgressFraction in 0.0..1.0)
+        require(arrivalWalkMaxSpeedMps > 0.0)
+        require(arrivalJumpToleranceMeters >= 0.0)
+        require(arrivalAdvanceFraction > 0.0 && arrivalAdvanceFraction <= 1.0)
+        require(arrivalMinAdvanceMeters >= 0.0)
         require(minimumPointSpacingMeters >= 0.0)
         require(maximumPointGapMeters > 0.0)
         require(douglasPeuckerEpsilonMeters >= 0.0)
@@ -201,6 +209,10 @@ data class GuideConfig(
             "reverseWarningDwellSeconds" to "reverse warning timing; covered by matching tests",
             "arriveRadiusMeters" to "fixed Phase 1 arrival criterion; covered by arrival tests",
             "arriveProgressFraction" to "fixed Phase 1 arrival criterion; covered by arrival tests",
+            "arrivalWalkMaxSpeedMps" to "covered by ArrivalAdvanceTest.arrivalWalkMaxSpeedChangesOutcome",
+            "arrivalJumpToleranceMeters" to "covered by ArrivalAdvanceTest.arrivalJumpToleranceChangesOutcome",
+            "arrivalAdvanceFraction" to "covered by ArrivalAdvanceTest.arrivalAdvanceFractionChangesOutcome",
+            "arrivalMinAdvanceMeters" to "covered by ArrivalAdvanceTest.arrivalMinAdvanceMetersChangesOutcome",
             "minimumPointSpacingMeters" to "route preprocessing criterion",
             "maximumPointGapMeters" to "route warning criterion",
             "douglasPeuckerEpsilonMeters" to "route preprocessing criterion",
@@ -282,6 +294,14 @@ data class DiscardedWaypoint(
     val reason: String,
 )
 
+/** A route-end candidate blocked because the session has not earned enough forward progress. */
+data class ArrivalBlockedRecord(
+    val creditedMeters: Double,
+    val requiredMeters: Double,
+    val baselineRemainingMeters: Double?,
+    val projectedMeters: Double,
+)
+
 data class MatchResult(
     val distanceMeters: Double,
     val projectedMeters: Double,
@@ -323,6 +343,10 @@ data class GuideState(
     val discardedSlopePeaks: List<DiscardedSlopePeak> = emptyList(),
     val consumedWaypointIndices: Set<Int> = emptySet(),
     val discardedWaypoints: List<DiscardedWaypoint> = emptyList(),
+    val arrivalBaselineRemainingMeters: Double? = null,
+    val advanceHighWaterMeters: Double? = null,
+    val advanceCreditedMeters: Double = 0.0,
+    val arrivalBlockedRecords: List<ArrivalBlockedRecord> = emptyList(),
     val consumedSunsetThresholds: Set<Int> = emptySet(),
     val pendingSunsetThresholds: Set<Int> = emptySet(),
     val pendingSunsetDelayReason: String? = null,

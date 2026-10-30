@@ -5,7 +5,7 @@
   "app": {
     "version": "0.1.0",
     "build": 0,
-    "code_hash": "git:db7a36cd5c7ed0f1d99bd2fcd601045a929217fe"
+    "code_hash": "sha256:synthetic"
   },
   "engine": {
     "config": {
@@ -19,9 +19,11 @@
     "gpx_id": "synthetic-base",
     "gpx_hash": "sha256:37a7737ddfc8aab96c1ecbd01c1513959de1859759496a6ca83f562c4cc06a53",
     "point_count": 260,
-    "elevation_used": false,
-    "elevation_reason": "absent",
-    "waypoint_count": 0
+    "waypoint_count": 0,
+    "elevation_use": {
+      "used": false,
+      "reason": "absent"
+    }
   },
   "clock": {
     "monotonic_source": "synthetic-sequence",
@@ -51,6 +53,7 @@
     "max_cross_track_m": 72.46933262870581,
     "accuracy_degraded_seconds": 0,
     "stationary_before_departure_seconds": 0,
-    "reverse_overlap": true
+    "reverse_overlap": true,
+    "description": "\uc704\uce58 \ubd88\uc5f0\uc18d(\uc21c\uac04\uc774\ub3d9) \ud3ec\ud568 \u2014 reverse_overlap \uad6c\uac04 \uacbd\uacc4\uc5d0\uc11c \uc9c4\ud589 \uc704\uce58\uac00 \uc57d 160 m\uc529 \ub450 \ubc88 \ubd88\uc5f0\uc18d\ud558\ub2e4. D-176: \uc774 \uc138\uc158\uc740 \ubd88\uac00\ub2a5\ud55c \uc774\ub3d9\uc774 \ub3c4\ucc29 \ud06c\ub808\ub514\ud2b8\uac00 \ub418\uc9c0 \uc54a\uc74c\uc744 \ub2e8\uc5b8\ud55c\ub2e4"
   }
 }

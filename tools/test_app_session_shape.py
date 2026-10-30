@@ -42,6 +42,16 @@ def discarded_waypoint_event() -> dict:
     }
 
 
+def arrival_blocked_event() -> dict:
+    return {
+        "seq": 6, "t": 1.0, "stream": "sys", "kind": "arrival.blocked", "battery_pct": None,
+        "details": {
+            "creditedMeters": "0.0", "requiredMeters": "50.0",
+            "baselineRemainingMeters": "20.0", "projectedMeters": "1980.0",
+        },
+    }
+
+
 def assert_discard_shape(event: dict) -> None:
     details = event["details"]
     expected = {
@@ -53,6 +63,18 @@ def assert_discard_shape(event: dict) -> None:
     forbidden = {"lat", "lon", "timestamp", "t", "waypoint_name", "name"}
     if forbidden & set(details):
         raise AssertionError("discarded-event details contain location, time, or waypoint-name data")
+
+
+def assert_arrival_blocked_shape(event: dict) -> None:
+    details = event["details"]
+    expected = {"creditedMeters", "requiredMeters", "baselineRemainingMeters", "projectedMeters"}
+    if event.get("kind") != "arrival.blocked" or set(details) != expected:
+        raise AssertionError("unexpected arrival.blocked fields")
+    if any(not isinstance(value, str) for value in details.values()):
+        raise AssertionError("arrival.blocked details must be strings")
+    if {"lat", "lon", "timestamp", "t", "name"} & set(details):
+        raise AssertionError("arrival.blocked details contain location, time, or name data")
+
 
 def event_stream(include_frame: bool = True) -> list[dict]:
     events: list[dict] = [
@@ -70,6 +92,7 @@ def event_stream(include_frame: bool = True) -> list[dict]:
     })
     events.append(discarded_event())
     events.append(discarded_waypoint_event())
+    events.append(arrival_blocked_event())
     return events
 
 
@@ -88,7 +111,7 @@ def main() -> int:
         write_session(root, include_frame=True)
         errors, warnings, count = validate(root)
         assert not errors, errors
-        assert count == 6
+        assert count == 7
         emitted = [json.loads(raw) for raw in (root / "events.ndjson").read_text(encoding="utf-8").splitlines()]
         discards = [event for event in emitted if event.get("kind") == "event.discarded"]
         assert [event["details"]["event"] for event in discards] == ["E4", "E6"]
@@ -96,14 +119,19 @@ def main() -> int:
         for discard in discards:
             assert_discard_shape(discard)
 
-        invalid_discard = discarded_waypoint_event()
-        invalid_discard["details"]["lat"] = "10.0"
-        try:
-            assert_discard_shape(invalid_discard)
-        except AssertionError:
-            pass
-        else:
-            raise AssertionError("coordinate-bearing discarded-event details were accepted")
+        blocked = [event for event in emitted if event.get("kind") == "arrival.blocked"]
+        assert len(blocked) == 1 and blocked[0]["stream"] == "sys"
+        assert_arrival_blocked_shape(blocked[0])
+
+        for forbidden_key in ("lat", "timestamp"):
+            invalid_arrival = arrival_blocked_event()
+            invalid_arrival["details"][forbidden_key] = "10.0"
+            try:
+                assert_arrival_blocked_shape(invalid_arrival)
+            except AssertionError:
+                pass
+            else:
+                raise AssertionError(f"arrival.blocked details containing {forbidden_key} were accepted")
 
         invalid = root_dir / "missing-frame"
         invalid.mkdir()
@@ -112,7 +140,7 @@ def main() -> int:
         assert any("loc/frame guide count mismatch" in error for error in errors), errors
     finally:
         shutil.rmtree(root_dir, ignore_errors=True)
-    print("app_session_shape=PASS E4_E6_discard_shape=PASS sensitive_discard_fields_rejected=PASS separate_frame_and_slot_trigger=PASS missing_frame_rejected=PASS")
+    print("app_session_shape=PASS E4_E6_discard_shape=PASS arrival_blocked_shape=PASS sensitive_arrival_fields_rejected=PASS separate_frame_and_slot_trigger=PASS missing_frame_rejected=PASS")
     return 0
 
 

@@ -560,6 +560,7 @@ class TrailForegroundService : Service() {
         val session = guideSession ?: return
         val decision = session.accept(location)
         logger.appendDiscardedEvents(decision.newlyDiscardedSlopePeaks, decision.newlyDiscardedWaypoints)
+        logger.appendArrivalBlockedEvents(decision.newlyBlockedArrivals)
         publishRouteRibbon(location, decision)
         val guidance = decision.result.guidance
         val currentOffRoute = decision.result.nextState.offRoute
