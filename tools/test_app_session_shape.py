@@ -26,9 +26,17 @@ def discarded_event() -> dict:
     return {
         "seq": 4, "t": 1.0, "stream": "sys", "kind": "event.discarded", "battery_pct": None,
         "details": {
-            "event": "E4", "peak_index": "0", "peak_s": "510.0",
+            "event": "E4", "threshold": "0", "progress_meters": "520.0",
+            "peak_index": "0", "peak_s": "510.0",
             "passed_projected_meters": "520.0", "delay_reason": "event-min-interval", "reason": "passed",
         },
+    }
+
+
+def discarded_generic_event() -> dict:
+    return {
+        "seq": 6, "t": 1.0, "stream": "sys", "kind": "event.discarded", "battery_pct": None,
+        "details": {"event": "E1", "threshold": "2", "reason": "interval", "progress_meters": "250.0"},
     }
 
 
@@ -36,7 +44,8 @@ def discarded_waypoint_event() -> dict:
     return {
         "seq": 5, "t": 1.0, "stream": "sys", "kind": "event.discarded", "battery_pct": None,
         "details": {
-            "event": "E6", "waypoint_index": "1", "waypoint_s": "600.0",
+            "event": "E6", "threshold": "1", "progress_meters": "555.0",
+            "waypoint_index": "1", "waypoint_s": "600.0",
             "distance_meters": "45.0", "reason": "priority",
         },
     }
@@ -44,7 +53,7 @@ def discarded_waypoint_event() -> dict:
 
 def arrival_blocked_event() -> dict:
     return {
-        "seq": 6, "t": 1.0, "stream": "sys", "kind": "arrival.blocked", "battery_pct": None,
+        "seq": 7, "t": 1.0, "stream": "sys", "kind": "arrival.blocked", "battery_pct": None,
         "details": {
             "creditedMeters": "0.0", "requiredMeters": "50.0",
             "baselineRemainingMeters": "20.0", "projectedMeters": "1980.0",
@@ -55,12 +64,17 @@ def arrival_blocked_event() -> dict:
 def assert_discard_shape(event: dict) -> None:
     details = event["details"]
     expected = {
-        "E4": {"event", "peak_index", "peak_s", "passed_projected_meters", "delay_reason", "reason"},
-        "E6": {"event", "waypoint_index", "waypoint_s", "distance_meters", "reason"},
+        "E1": {"event", "threshold", "reason", "progress_meters"},
+        "E2": {"event", "threshold", "reason", "progress_meters"},
+        "E3": {"event", "threshold", "reason", "progress_meters"},
+        "E4": {"event", "threshold", "progress_meters", "peak_index", "peak_s", "passed_projected_meters", "delay_reason", "reason"},
+        "E6": {"event", "threshold", "progress_meters", "waypoint_index", "waypoint_s", "distance_meters", "reason"},
+        "E8": {"event", "threshold", "reason", "progress_meters"},
     }.get(details.get("event"))
+
     if expected is None or set(details) != expected:
         raise AssertionError(f"unexpected discarded-event fields for {details.get('event')}")
-    forbidden = {"lat", "lon", "timestamp", "t", "waypoint_name", "name"}
+    forbidden = {"lat", "lon", "timestamp", "t", "waypoint_name", "name", "bearing_deg"}
     if forbidden & set(details):
         raise AssertionError("discarded-event details contain location, time, or waypoint-name data")
 
@@ -92,6 +106,7 @@ def event_stream(include_frame: bool = True) -> list[dict]:
     })
     events.append(discarded_event())
     events.append(discarded_waypoint_event())
+    events.append(discarded_generic_event())
     events.append(arrival_blocked_event())
     return events
 
@@ -111,13 +126,24 @@ def main() -> int:
         write_session(root, include_frame=True)
         errors, warnings, count = validate(root)
         assert not errors, errors
-        assert count == 7
+        assert count == 8
         emitted = [json.loads(raw) for raw in (root / "events.ndjson").read_text(encoding="utf-8").splitlines()]
         discards = [event for event in emitted if event.get("kind") == "event.discarded"]
-        assert [event["details"]["event"] for event in discards] == ["E4", "E6"]
+        assert [event["details"]["event"] for event in discards] == ["E4", "E6", "E1"]
         assert all(event["stream"] == "sys" for event in discards)
         for discard in discards:
             assert_discard_shape(discard)
+            if discard["details"]["event"] == "E1":
+                assert all(isinstance(value, str) for value in discard["details"].values())
+                for forbidden_key in ("lat", "timestamp", "name"):
+                    invalid_discard = dict(discard)
+                    invalid_discard["details"] = dict(discard["details"], **{forbidden_key: "10.0"})
+                    try:
+                        assert_discard_shape(invalid_discard)
+                    except AssertionError:
+                        pass
+                    else:
+                        raise AssertionError(f"event.discarded containing {forbidden_key} was accepted")
 
         blocked = [event for event in emitted if event.get("kind") == "arrival.blocked"]
         assert len(blocked) == 1 and blocked[0]["stream"] == "sys"
@@ -140,7 +166,7 @@ def main() -> int:
         assert any("loc/frame guide count mismatch" in error for error in errors), errors
     finally:
         shutil.rmtree(root_dir, ignore_errors=True)
-    print("app_session_shape=PASS E4_E6_discard_shape=PASS arrival_blocked_shape=PASS sensitive_arrival_fields_rejected=PASS separate_frame_and_slot_trigger=PASS missing_frame_rejected=PASS")
+    print("app_session_shape=PASS all_discard_shapes=PASS sensitive_discard_fields_rejected=PASS arrival_blocked_shape=PASS separate_frame_and_slot_trigger=PASS missing_frame_rejected=PASS")
     return 0
 
 

@@ -1,7 +1,7 @@
 {
-  "session_id": "df6f5857-e25f-51a0-a736-060e4f624543",
+  "session_id": "51f7213c-d5dd-5f4a-81be-7dd6f00776d6",
   "schema_version": "0.1.0-draft",
-  "started_at_wall": "2026-01-01T00:00:00Z",
+  "started_at_wall": "2000-01-01T00:00:00Z",
   "app": {
     "version": "synthetic",
     "build": 0,
@@ -10,7 +10,7 @@
   "engine": {
     "config": {
       "implementation": "core-guide",
-      "config_hash": "sha256:task078-synthetic",
+      "config_hash": "sha256:task080-synthetic",
       "events": {
         "E1": false,
         "E2": false,
@@ -28,7 +28,7 @@
   },
   "route": {
     "gpx_id": "synthetic-e4_direction_unknown",
-    "gpx_hash": "sha256:843290777b22977e9e970d17d5932fc398839bfef59d8828b8823519de0ef3fc",
+    "gpx_hash": "sha256:96f109e367495b317c7ab8263c8c3cd220765979f0a86fd5c6167d6af21e68a6",
     "point_count": 33,
     "elevation_used": true,
     "elevation_reason": "ok",

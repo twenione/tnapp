@@ -11,6 +11,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKER = ROOT / "tools" / "check_exclusion_references.py"
+EMPTY_EXCEPTION_DATA = (
+    '{"unrecorded_allowlist":[],"structurally_unreachable":[],"expected_failures":[],'
+    '"observation_exempt":[],"withdrawn_decisions":[]}\n'
+)
+
 
 
 class ExclusionReferenceTests(unittest.TestCase):
@@ -24,6 +29,10 @@ class ExclusionReferenceTests(unittest.TestCase):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(content, encoding="utf-8")
+            exception_path = root / "tools" / "known_exceptions.json"
+            if "tools/known_exceptions.json" not in files:
+                exception_path.parent.mkdir(parents=True, exist_ok=True)
+                exception_path.write_text(EMPTY_EXCEPTION_DATA, encoding="utf-8")
             return subprocess.run(
                 [sys.executable, str(CHECKER), "--root", str(root)],
                 capture_output=True,
@@ -137,6 +146,65 @@ class ExclusionReferenceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("missing adjacent", result.stdout)
 
+
+    def test_known_exception_data_rejects_missing_and_invalid_decision_references(self):
+        cases = (
+            ("missing", '{"unrecorded_allowlist":[{"event":"E1","reason":"disabled","note":"x"}],"expected_failures":[],"observation_exempt":[],"withdrawn_decisions":[]}', "decision must be D-nnn"),
+            ("unknown", '{"unrecorded_allowlist":[{"event":"E1","reason":"disabled","decision":"D-999","note":"x"}],"expected_failures":[],"observation_exempt":[],"withdrawn_decisions":[]}', "D-999 has no heading"),
+            ("withdrawn", '{"unrecorded_allowlist":[{"event":"E1","reason":"disabled","decision":"D-001","note":"x"}],"expected_failures":[],"observation_exempt":[],"withdrawn_decisions":["D-001"]}', "references withdrawn decision D-001"),
+            ("malformed", "{", "invalid JSON"),
+            ("duplicate", '{"unrecorded_allowlist":[{"event":"E1","reason":"disabled","decision":"D-001","note":"a"},{"event":"E1","reason":"disabled","decision":"D-001","note":"b"}],"expected_failures":[],"observation_exempt":[],"withdrawn_decisions":[]}', "duplicate (event, reason)"),
+        )
+        for label, content, expected in cases:
+            with self.subTest(case=label):
+                result = self.run_checker({"tools/known_exceptions.json": content})
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(expected, result.stdout)
+
+    def test_empty_known_exception_lists_pass(self):
+        result = self.run_checker({"tools/known_exceptions.json": EMPTY_EXCEPTION_DATA})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_structurally_unreachable_requires_decision_reference_and_no_duplicates(self):
+        cases = (
+            ("missing decision", '{"event":"E1","reason":"direction-unknown","note":"x"}', "decision must be D-nnn"),
+            ("unknown decision", '{"event":"E1","reason":"direction-unknown","decision":"D-999","note":"x"}', "D-999 has no heading"),
+            ("withdrawn decision", '{"event":"E1","reason":"direction-unknown","decision":"D-001","note":"x"}', "references withdrawn decision D-001"),
+            ("duplicate pair", '{"event":"E1","reason":"direction-unknown","decision":"D-001","note":"x"},{"event":"E1","reason":"direction-unknown","decision":"D-001","note":"y"}', "duplicate (event, reason)"),
+        )
+        for label, item, expected in cases:
+            with self.subTest(case=label):
+                withdrawn = '["D-001"]' if label == "withdrawn decision" else "[]"
+                if label == "duplicate pair":
+                    entries = "[" + item + "]"
+                elif label == "missing decision":
+                    entries = "[" + item + "]"
+                else:
+                    entries = "[" + item + "]"
+                data = (
+                    '{"unrecorded_allowlist":[],"structurally_unreachable":' + entries +
+                    ',"expected_failures":[],"observation_exempt":[],"withdrawn_decisions":' + withdrawn + '}'
+                )
+                result = self.run_checker({"tools/known_exceptions.json": data})
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(expected, result.stdout)
+
+    def test_structurally_unreachable_requires_its_list_key(self):
+        data = '{"unrecorded_allowlist":[],"expected_failures":[],"observation_exempt":[],"withdrawn_decisions":[]}'
+        result = self.run_checker({"tools/known_exceptions.json": data})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("missing list key(s): structurally_unreachable", result.stdout)
+
+    def test_structurally_unreachable_valid_entry_and_empty_list_pass(self):
+        valid = (
+            '{"unrecorded_allowlist":[],"structurally_unreachable":['
+            '{"event":"E1","reason":"direction-unknown","decision":"D-001","note":"structural"}],'
+            '"expected_failures":[],"observation_exempt":[],"withdrawn_decisions":[]} '
+        )
+        for data in (EMPTY_EXCEPTION_DATA, valid):
+            with self.subTest(data=data):
+                result = self.run_checker({"tools/known_exceptions.json": data})
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
     def test_new_scanner_is_discovered_by_glob(self):
         result = self.run_checker({
             "tools/check_new.py": "def inspect(path):\n    if path.startswith('hidden/'):\n        pass\n",

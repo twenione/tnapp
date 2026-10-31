@@ -170,6 +170,8 @@ class SessionLoggerTest {
         assertEquals(
             mapOf(
                 "event" to "E6",
+                "threshold" to "2",
+                "progress_meters" to "375.0",
                 "waypoint_index" to "2",
                 "waypoint_s" to "410.0",
                 "distance_meters" to "35.0",

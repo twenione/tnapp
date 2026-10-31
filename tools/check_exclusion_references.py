@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 import re
 import sys
 from dataclasses import dataclass, field
@@ -15,6 +16,14 @@ EXCLUDE_MARKER_RE = re.compile(r"#\s*EXCLUDE\s*:(.*)$")
 SCOPE_MARKER_RE = re.compile(r"#\s*SCOPE\s*:(.*)$")
 DECISION_HEADING_RE = re.compile(r"^## D-(\d+)\b", re.MULTILINE)
 NAMED_SETTING_RE = re.compile(r"(?i)(exclu|ignor|skip|allow|exempt)")
+DECISION_NUMBER_RE = re.compile(r"D-\d{3}")
+EXCEPTION_DATA_FILE = "tools/known_exceptions.json"
+EXCEPTION_LISTS = {
+    "unrecorded_allowlist": {"event", "reason", "decision", "note"},
+    "structurally_unreachable": {"event", "reason", "decision", "note"},
+    "expected_failures": {"test", "decision", "release_condition"},
+    "observation_exempt": {"event", "decision", "reason"},
+}
 
 
 @dataclass
@@ -192,6 +201,73 @@ def _read_marker(root: Path, candidate: Candidate) -> Result:
     return Result(classification=kind, reason=payload)
 
 
+def _known_exception_errors(root: Path, decision_numbers: set[str]) -> list[str]:
+    path = root / EXCEPTION_DATA_FILE
+    errors: list[str] = []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return [f"{EXCEPTION_DATA_FILE}: cannot read data file ({type(exc).__name__})"]
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        return [f"{EXCEPTION_DATA_FILE}: invalid JSON or text ({type(exc).__name__})"]
+    if not isinstance(data, dict):
+        return [f"{EXCEPTION_DATA_FILE}: root must be an object"]
+
+    required_keys = set(EXCEPTION_LISTS) | {"withdrawn_decisions"}
+    missing_keys = required_keys - set(data)
+    if missing_keys:
+        errors.append(f"{EXCEPTION_DATA_FILE}: missing list key(s): {', '.join(sorted(missing_keys))}")
+
+    withdrawn_raw = data.get("withdrawn_decisions")
+    withdrawn: set[str] = set()
+    if not isinstance(withdrawn_raw, list):
+        errors.append(f"{EXCEPTION_DATA_FILE}: withdrawn_decisions must be a list")
+        withdrawn_raw = []
+    for index, decision in enumerate(withdrawn_raw):
+        if not isinstance(decision, str) or DECISION_NUMBER_RE.fullmatch(decision) is None:
+            errors.append(f"{EXCEPTION_DATA_FILE}: withdrawn_decisions[{index}] must be D-nnn")
+        else:
+            withdrawn.add(decision)
+            if decision[2:] not in decision_numbers:
+                errors.append(f"{EXCEPTION_DATA_FILE}: withdrawn decision {decision} has no heading in docs/DECISIONS.md")
+
+    for list_name, required_fields in EXCEPTION_LISTS.items():
+        entries = data.get(list_name)
+        if not isinstance(entries, list):
+            errors.append(f"{EXCEPTION_DATA_FILE}: {list_name} must be a list")
+            entries = []
+        seen_pairs: set[tuple[str, str]] = set()
+        for index, raw_entry in enumerate(entries):
+            label = f"{EXCEPTION_DATA_FILE}:{list_name}[{index}]"
+            entry = raw_entry if isinstance(raw_entry, dict) else {}
+            if not isinstance(raw_entry, dict):
+                errors.append(f"{label}: entry must be an object")
+            missing = required_fields - set(entry)
+            if missing:
+                errors.append(f"{label}: missing field(s): {', '.join(sorted(missing))}")
+            decision = entry.get("decision")
+            if not isinstance(decision, str) or DECISION_NUMBER_RE.fullmatch(decision) is None:
+                errors.append(f"{label}: decision must be D-nnn")
+            else:
+                if decision[2:] not in decision_numbers:
+                    errors.append(f"{label}: {decision} has no heading in docs/DECISIONS.md")
+                if decision in withdrawn:
+                    errors.append(f"{label}: references withdrawn decision {decision}")
+            for field_name in required_fields - {"decision"}:
+                value = entry.get(field_name)
+                if not isinstance(value, str) or not value.strip():
+                    errors.append(f"{label}: {field_name} must be a non-empty string")
+            if list_name in {"unrecorded_allowlist", "structurally_unreachable"}:
+                event = entry.get("event")
+                reason = entry.get("reason")
+                if isinstance(event, str) and isinstance(reason, str):
+                    pair = (event, reason)
+                    if pair in seen_pairs:
+                        errors.append(f"{label}: duplicate (event, reason) pair {event}/{reason}")
+                    seen_pairs.add(pair)
+    return errors
+
+
 def check(root: Path) -> tuple[list[Candidate], list[tuple[Candidate, Result]], list[str]]:
     candidates, parse_errors = _python_candidates(root)
     candidates.extend(_workflow_candidates(root))
@@ -203,6 +279,8 @@ def check(root: Path) -> tuple[list[Candidate], list[tuple[Candidate, Result]], 
         decision_numbers: set[str] = set()
     else:
         decision_numbers = set(DECISION_HEADING_RE.findall(decisions_path.read_text(encoding="utf-8")))
+
+    errors.extend(_known_exception_errors(root, decision_numbers))
 
     results: list[tuple[Candidate, Result]] = []
     for candidate in candidates:

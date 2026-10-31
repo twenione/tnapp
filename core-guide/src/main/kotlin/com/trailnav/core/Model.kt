@@ -286,6 +286,14 @@ data class DiscardedSlopePeak(
     val reason: String = "passed",
 )
 
+/** A consumed E1/E2/E3/E8 event target that was not announced. */
+data class DiscardedEvent(
+    val event: String,
+    val threshold: String,
+    val reason: String,
+    val progressMeters: Double,
+)
+
 /** An E6 waypoint consumed without an announcement. */
 data class DiscardedWaypoint(
     val index: Int,
@@ -315,6 +323,7 @@ data class GuideState(
     val route: RouteModel,
     val hasEnteredRoute: Boolean = false,
     val lastMatch: MatchResult? = null,
+    val firstMatchProgressMeters: Double? = null,
     val lastTimestamp: Long? = null,
     val sessionStartTimestamp: Long? = null,
     val emaDeltaMeters: Double = 0.0,
@@ -343,6 +352,7 @@ data class GuideState(
     val discardedSlopePeaks: List<DiscardedSlopePeak> = emptyList(),
     val consumedWaypointIndices: Set<Int> = emptySet(),
     val discardedWaypoints: List<DiscardedWaypoint> = emptyList(),
+    val discardedEvents: List<DiscardedEvent> = emptyList(),
     val arrivalBaselineRemainingMeters: Double? = null,
     val advanceHighWaterMeters: Double? = null,
     val advanceCreditedMeters: Double = 0.0,

@@ -1,0 +1,3 @@
+{"seq":0,"t":0.0,"stream":"envelope","event_stream":"loc","event_type":"location"}
+{"seq":1,"t":0.0,"stream":"loc","lat":10.006295247088449,"lon":20.0,"accuracy":5.0,"speed_mps":1.0,"bearing_deg":0.0,"provider":"synthetic"}
+{"seq":2,"t":0.0,"stream":"guide","src_seq":1,"decision":"CONTINUE","engine":"core-guide","inputs":{"frame_count":1,"rng_seed":0},"reason":{"rule":"synthetic.property-session","details":{}},"state_hash":"sha256:synthetic-property"}

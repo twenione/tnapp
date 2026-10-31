@@ -1,0 +1,9 @@
+{"seq":0,"t":0.0,"stream":"envelope","event_stream":"loc","event_type":"location"}
+{"seq":1,"t":0.0,"stream":"loc","lat":10.0,"lon":20.0,"accuracy":5.0,"speed_mps":1.0,"bearing_deg":0.0,"provider":"synthetic"}
+{"seq":2,"t":0.0,"stream":"guide","src_seq":1,"decision":"CONTINUE","engine":"core-guide","inputs":{"frame_count":1,"rng_seed":0},"reason":{"rule":"synthetic.property-session","details":{}},"state_hash":"sha256:synthetic-property"}
+{"seq":3,"t":1.0,"stream":"envelope","event_stream":"loc","event_type":"location"}
+{"seq":4,"t":1.0,"stream":"loc","lat":10.000899321012636,"lon":20.0,"accuracy":5.0,"speed_mps":1.0,"bearing_deg":0.0,"provider":"synthetic"}
+{"seq":5,"t":1.0,"stream":"guide","src_seq":4,"decision":"CONTINUE","engine":"core-guide","inputs":{"frame_count":2,"rng_seed":0},"reason":{"rule":"synthetic.property-session","details":{}},"state_hash":"sha256:synthetic-property"}
+{"seq":6,"t":2.0,"stream":"envelope","event_stream":"loc","event_type":"location"}
+{"seq":7,"t":2.0,"stream":"loc","lat":10.001798642025271,"lon":20.0,"accuracy":5.0,"speed_mps":1.0,"bearing_deg":0.0,"provider":"synthetic"}
+{"seq":8,"t":2.0,"stream":"guide","src_seq":7,"decision":"CONTINUE","engine":"core-guide","inputs":{"frame_count":3,"rng_seed":0},"reason":{"rule":"synthetic.property-session","details":{}},"state_hash":"sha256:synthetic-property"}
