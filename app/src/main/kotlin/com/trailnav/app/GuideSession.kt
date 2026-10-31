@@ -2,6 +2,7 @@ package com.trailnav.app
 
 import com.trailnav.core.GuideConfig
 import com.trailnav.core.ArrivalBlockedRecord
+import com.trailnav.core.DiscardedEvent
 import com.trailnav.core.DiscardedSlopePeak
 import com.trailnav.core.DiscardedWaypoint
 import com.trailnav.core.GuideState
@@ -28,10 +29,12 @@ class GuideSession(route: RouteModel, private val config: GuideConfig = GuideCon
         val frame = location.toSensorFrame()
         val previousDiscardCount = state.discardedSlopePeaks.size
         val previousDiscardedWaypointCount = state.discardedWaypoints.size
+        val previousDiscardedEventCount = state.discardedEvents.size
         val previousArrivalBlockedCount = state.arrivalBlockedRecords.size
         val result = guide(state, frame, config)
         val newlyDiscardedSlopePeaks = result.nextState.discardedSlopePeaks.drop(previousDiscardCount)
         val newlyDiscardedWaypoints = result.nextState.discardedWaypoints.drop(previousDiscardedWaypointCount)
+        val newlyDiscardedEvents = result.nextState.discardedEvents.drop(previousDiscardedEventCount)
         val newlyBlockedArrivals = result.nextState.arrivalBlockedRecords.drop(previousArrivalBlockedCount)
         state = result.nextState
         state.lastMatch?.let { match ->
@@ -42,21 +45,39 @@ class GuideSession(route: RouteModel, private val config: GuideConfig = GuideCon
                 onRoute = !state.offRoute,
             )
         }
-        return SessionDecision(location, result, newlyDiscardedSlopePeaks, newlyDiscardedWaypoints, newlyBlockedArrivals)
+        return SessionDecision(location, result, newlyDiscardedSlopePeaks, newlyDiscardedWaypoints, newlyBlockedArrivals, newlyDiscardedEvents)
     }
 }
 
 internal fun SessionEventSink?.appendDiscardedEvents(
     slopePeaks: Iterable<DiscardedSlopePeak>,
     waypoints: Iterable<DiscardedWaypoint>,
+    events: Iterable<DiscardedEvent> = emptyList(),
 ) {
     val sink = this ?: return
+    events.forEach { record ->
+        try {
+            sink.appendSystem(
+                "event.discarded",
+                mapOf(
+                    "event" to record.event,
+                    "threshold" to record.threshold,
+                    "reason" to record.reason,
+                    "progress_meters" to record.progressMeters.toString(),
+                ),
+            )
+        } catch (_: Exception) {
+            // A failed diagnostic write must not change guidance behavior.
+        }
+    }
     slopePeaks.forEach { record ->
         try {
             sink.appendSystem(
                 "event.discarded",
                 mapOf(
                     "event" to "E4",
+                    "threshold" to record.index.toString(),
+                    "progress_meters" to record.passedProjectedMeters.toString(),
                     "peak_index" to record.index.toString(),
                     "peak_s" to record.peakS.toString(),
                     "passed_projected_meters" to record.passedProjectedMeters.toString(),
@@ -74,6 +95,8 @@ internal fun SessionEventSink?.appendDiscardedEvents(
                 "event.discarded",
                 mapOf(
                     "event" to "E6",
+                    "threshold" to record.index.toString(),
+                    "progress_meters" to (record.waypointS - record.distanceMeters).toString(),
                     "waypoint_index" to record.index.toString(),
                     "waypoint_s" to record.waypointS.toString(),
                     "distance_meters" to record.distanceMeters.toString(),
@@ -114,4 +137,5 @@ data class SessionDecision(
     val newlyDiscardedSlopePeaks: List<DiscardedSlopePeak> = emptyList(),
     val newlyDiscardedWaypoints: List<DiscardedWaypoint> = emptyList(),
     val newlyBlockedArrivals: List<ArrivalBlockedRecord> = emptyList(),
+    val newlyDiscardedEvents: List<DiscardedEvent> = emptyList(),
 )

@@ -80,6 +80,7 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
     }
     var next = initializedState.copy(
         lastMatch = directedMatch.copy(direction = direction),
+        firstMatchProgressMeters = initializedState.firstMatchProgressMeters ?: directedMatch.projectedMeters,
         lastTimestamp = frame.timestamp,
         emaDeltaMeters = ema,
         direction = direction,
@@ -291,6 +292,7 @@ private data class DynamicCandidate(
     val remainingThresholds: Set<Double> = emptySet(),
     val slopeIndices: Set<Int> = emptySet(),
     val waypointIndices: Set<Int> = emptySet(),
+    val recordOnPriority: Set<Pair<String, String>> = emptySet(),
 )
 
 /** Single arbitration table for simultaneous periodic events (R14). */
@@ -328,6 +330,17 @@ private fun evaluateDynamicGuidance(
     fun reason(rule: String, kind: String, details: Map<String, String> = emptyMap()) =
         Reason(rule, thresholds = mapOf("eventMinIntervalSeconds" to config.eventMinIntervalSeconds), details = details + ("event" to kind))
 
+    fun record(event: String, threshold: String, discardReason: String) {
+        next = next.copy(
+            discardedEvents = next.discardedEvents + DiscardedEvent(
+                event = event,
+                threshold = threshold,
+                reason = discardReason,
+                progressMeters = match.projectedMeters,
+            ),
+        )
+    }
+
     // E1: distance milestones are based on projected route distance.
     val milestoneCount = floor(match.projectedMeters / config.milestoneIntervalMeters).toInt()
     val oldMilestoneCount = oldProgress?.let { floor(it / config.milestoneIntervalMeters).toInt() } ?: milestoneCount
@@ -335,11 +348,24 @@ private fun evaluateDynamicGuidance(
         val crossed = (oldMilestoneCount + 1..milestoneCount).toList()
         next = next.copy(consumedMilestoneIndices = next.consumedMilestoneIndices + crossed)
         val freshCrossed = crossed.filterNot { it in previous.consumedMilestoneIndices }
-        if (config.milestoneEnabled && onRoute && forward && eventIntervalOpen && freshCrossed.isNotEmpty()) {
+        val discardReason = when {
+            !config.milestoneEnabled -> "disabled"
+            !onRoute -> "offroute"
+            state.direction == ProgressDirection.REVERSE -> "reverse"
+            state.direction == ProgressDirection.UNKNOWN -> "direction-unknown"
+            else -> null
+        }
+        if (discardReason != null) {
+            freshCrossed.forEach { record("E1", it.toString(), discardReason) }
+        } else if (!eventIntervalOpen) {
+            freshCrossed.forEach { record("E1", it.toString(), "interval") }
+        } else if (config.milestoneEnabled && onRoute && forward && eventIntervalOpen && freshCrossed.isNotEmpty()) {
             val index = freshCrossed.maxOrNull()!!
+            freshCrossed.filterNot { it == index }.forEach { record("E1", it.toString(), "jump") }
             candidates += DynamicCandidate(
                 EventPriority.MILESTONE, "event.milestone", Guidance.Milestone(index * config.milestoneIntervalMeters),
-                reason("event.milestone", "E1", mapOf("index" to index.toString(), "thresholdMeters" to (index * config.milestoneIntervalMeters).toString()))
+                reason("event.milestone", "E1", mapOf("index" to index.toString(), "thresholdMeters" to (index * config.milestoneIntervalMeters).toString())),
+                recordOnPriority = setOf("E1" to index.toString()),
             )
         }
     }
@@ -352,11 +378,22 @@ private fun evaluateDynamicGuidance(
         val oldCount = previous.lastTimestamp?.let { floor(elapsedSeconds(it, start) / config.elapsedAnnounceIntervalSeconds).toInt() } ?: count
         val crossed = (oldCount + 1..count).toList()
         next = next.copy(consumedElapsedIndices = next.consumedElapsedIndices + crossed)
-        if (config.elapsedEnabled && onRoute && eventIntervalOpen && crossed.isNotEmpty()) {
-            val index = crossed.maxOrNull()!!
+        val freshCrossed = crossed.filterNot { it in previous.consumedElapsedIndices }
+        val discardReason = when {
+            !config.elapsedEnabled -> "disabled"
+            !onRoute -> "offroute"
+            !eventIntervalOpen -> "interval"
+            else -> null
+        }
+        if (discardReason != null) {
+            freshCrossed.forEach { record("E2", it.toString(), discardReason) }
+        } else if (freshCrossed.isNotEmpty()) {
+            val index = freshCrossed.maxOrNull()!!
+            freshCrossed.filterNot { it == index }.forEach { record("E2", it.toString(), "jump") }
             candidates += DynamicCandidate(
                 EventPriority.ELAPSED, "event.elapsed", Guidance.Elapsed(index),
-                reason("event.elapsed", "E2", mapOf("hours" to index.toString()))
+                reason("event.elapsed", "E2", mapOf("hours" to index.toString())),
+                recordOnPriority = setOf("E2" to index.toString()),
             )
         }
     }
@@ -364,6 +401,18 @@ private fun evaluateDynamicGuidance(
     // E3: remaining-distance thresholds are consumed while moving forward.
     val oldRemainingValue = oldRemaining ?: remaining
     val crossedRemaining = config.remainingAnnounceMeters.filter { oldRemainingValue > it && remaining <= it }
+    val newCrossedRemaining = crossedRemaining.filterNot { it in previous.consumedRemainingThresholds }
+    val discardReason = when {
+        !config.remainingEnabled -> "disabled"
+        state.direction == ProgressDirection.REVERSE -> "reverse"
+        state.direction == ProgressDirection.UNKNOWN -> "direction-unknown"
+        else -> null
+    }
+    if (discardReason != null) {
+        newCrossedRemaining.forEach { threshold ->
+            record("E3", threshold.toBigDecimal().stripTrailingZeros().toPlainString(), discardReason)
+        }
+    }
     val retainCrossedRemaining = config.remainingEnabled && forward && crossedRemaining.isNotEmpty()
     val pendingRemainingBefore = next.pendingRemainingThresholds
     val pendingRemaining = if (retainCrossedRemaining) {
@@ -413,23 +462,36 @@ private fun evaluateDynamicGuidance(
     val discardedSlopePeaks = next.discardedSlopePeaks.toMutableList()
     state.route.peaks.forEachIndexed { index, peak ->
         if (index in consumedSlopeIndices) return@forEachIndexed
+        if (next.firstMatchProgressMeters?.let { peak.s < it } == true) {
+            pendingSlopePeaks.remove(index)
+            consumedSlopeIndices += index
+            return@forEachIndexed
+        }
         val distance = peak.s - match.projectedMeters
+        val previousDistance = previous.lastMatch?.let { peak.s - it.projectedMeters }
         val alreadyPending = index in pendingSlopePeaks
         if (!config.slopeEnabled || !forward) {
             if (distance < 0.0 || distance <= config.peakAnnounceLeadMeters || alreadyPending) {
                 val pending = pendingSlopePeaks[index]
                 if (pending != null) pendingSlopePeaks.remove(index)
+                val skippedWithoutWindow = pending == null && distance < 0.0 &&
+                    (previousDistance == null || previousDistance < 0.0 || previousDistance > config.peakAnnounceLeadMeters)
                 if ((distance >= 0.0 && distance <= config.peakAnnounceLeadMeters) || pending != null) {
                     discardedSlopePeaks += DiscardedSlopePeak(
                         index = index,
                         peakS = peak.s,
                         passedProjectedMeters = match.projectedMeters,
                         delayReason = pending?.delayReason ?: "none",
-                        reason = when {
-                            !config.slopeEnabled -> "disabled"
-                            state.direction == ProgressDirection.REVERSE -> "reverse"
-                            else -> "direction-unknown"
-                        },
+                        reason = if (!config.slopeEnabled) "disabled" else if (state.direction == ProgressDirection.REVERSE) "reverse" else "direction-unknown",
+                    )
+                }
+                if (skippedWithoutWindow) {
+                    discardedSlopePeaks += DiscardedSlopePeak(
+                        index = index,
+                        peakS = peak.s,
+                        passedProjectedMeters = match.projectedMeters,
+                        delayReason = "none",
+                        reason = "jump",
                     )
                 }
                 consumedSlopeIndices += index
@@ -443,6 +505,14 @@ private fun evaluateDynamicGuidance(
                     peakS = pending.peakS,
                     passedProjectedMeters = match.projectedMeters,
                     delayReason = pending.delayReason,
+                )
+            } else if (previousDistance == null || previousDistance < 0.0 || previousDistance > config.peakAnnounceLeadMeters) {
+                discardedSlopePeaks += DiscardedSlopePeak(
+                    index = index,
+                    peakS = peak.s,
+                    passedProjectedMeters = match.projectedMeters,
+                    delayReason = "none",
+                    reason = "jump",
                 )
             }
         } else if (distance <= config.peakAnnounceLeadMeters) {
@@ -482,31 +552,39 @@ private fun evaluateDynamicGuidance(
     val discardedWaypoints = next.discardedWaypoints.toMutableList()
     val consumedWaypointIndices = next.consumedWaypointIndices.toMutableSet()
     state.route.waypoints.forEachIndexed { index, waypoint ->
-        val distance = waypoint.s - match.projectedMeters
-        if (distance < 0.0) consumedWaypointIndices += index
-        else if (distance <= config.waypointAnnounceLeadMeters) {
+        if (index in consumedWaypointIndices) return@forEachIndexed
+        if (next.firstMatchProgressMeters?.let { waypoint.s < it } == true) {
             consumedWaypointIndices += index
-            if (index !in previous.consumedWaypointIndices) {
-                if (config.waypointEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedWaypointIndices) {
-                    candidates += DynamicCandidate(
-                        EventPriority.WAYPOINT,
-                        "event.waypoint",
-                        Guidance.Waypoint(index, waypoint.name, distance),
-                        reason("event.waypoint", "E6", mapOf("waypointIndex" to index.toString(), "name" to waypoint.name, "distanceMeters" to distance.toString())),
-                        waypointIndices = setOf(index),
-                    )
-                } else {
-                    val discardReason = when {
-                        !config.waypointEnabled -> "disabled"
-                        !onRoute -> "offroute"
-                        state.direction == ProgressDirection.REVERSE -> "reverse"
-                        state.direction == ProgressDirection.UNKNOWN -> "direction-unknown"
-                        !eventIntervalOpen -> "interval"
-                        else -> null
-                    }
-                    if (discardReason != null) {
-                        discardedWaypoints += DiscardedWaypoint(index, waypoint.s, distance, discardReason)
-                    }
+            return@forEachIndexed
+        }
+        val distance = waypoint.s - match.projectedMeters
+        if (distance < 0.0) {
+            consumedWaypointIndices += index
+            val previousDistance = previous.lastMatch?.let { waypoint.s - it.projectedMeters }
+            if (previousDistance == null || previousDistance < 0.0 || previousDistance > config.waypointAnnounceLeadMeters) {
+                discardedWaypoints += DiscardedWaypoint(index, waypoint.s, distance, "jump")
+            }
+        } else if (distance <= config.waypointAnnounceLeadMeters) {
+            consumedWaypointIndices += index
+            if (config.waypointEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedWaypointIndices) {
+                candidates += DynamicCandidate(
+                    EventPriority.WAYPOINT,
+                    "event.waypoint",
+                    Guidance.Waypoint(index, waypoint.name, distance),
+                    reason("event.waypoint", "E6", mapOf("waypointIndex" to index.toString(), "name" to waypoint.name, "distanceMeters" to distance.toString())),
+                    waypointIndices = setOf(index),
+                )
+            } else {
+                val discardReason = when {
+                    !config.waypointEnabled -> "disabled"
+                    !onRoute -> "offroute"
+                    state.direction == ProgressDirection.REVERSE -> "reverse"
+                    state.direction == ProgressDirection.UNKNOWN -> "direction-unknown"
+                    !eventIntervalOpen -> "interval"
+                    else -> null
+                }
+                if (discardReason != null) {
+                    discardedWaypoints += DiscardedWaypoint(index, waypoint.s, distance, discardReason)
                 }
             }
         }
@@ -543,6 +621,7 @@ private fun evaluateDynamicGuidance(
         config,
         onRoute = onRoute,
         eventIntervalOpen = eventIntervalOpen,
+        progressMeters = match.projectedMeters,
     )
     next = sunriseEvaluation.state
     sunriseEvaluation.candidate?.let { candidates += it }
@@ -554,6 +633,12 @@ private fun evaluateDynamicGuidance(
     val slopeCandidateIndices = candidates.flatMap { it.slopeIndices }.toSet()
     val waypointCandidateIndices = candidates.flatMap { it.waypointIndices }.toSet()
     if (suppressAnnouncements) {
+        val suppressedRecords = candidates.flatMap { it.recordOnPriority }.map { (event, threshold) ->
+            DiscardedEvent(event, threshold, "priority", match.projectedMeters)
+        }
+        if (suppressedRecords.isNotEmpty()) {
+            next = next.copy(discardedEvents = next.discardedEvents + suppressedRecords)
+        }
         slopeCandidateIndices.forEach { index ->
             val peak = state.route.peaks[index]
             pendingSlopePeaks.putIfAbsent(
@@ -575,6 +660,14 @@ private fun evaluateDynamicGuidance(
             null,
             selected.reason,
         )
+    }
+    val priorityRecords = candidates.asSequence()
+        .filter { it !== selected }
+        .flatMap { it.recordOnPriority.asSequence() }
+        .map { (event, threshold) -> DiscardedEvent(event, threshold, "priority", match.projectedMeters) }
+        .toList()
+    if (priorityRecords.isNotEmpty()) {
+        next = next.copy(discardedEvents = next.discardedEvents + priorityRecords)
     }
     val selectedSlopeIndices = selected.slopeIndices
     val selectedWaypointIndices = selected.waypointIndices
@@ -683,6 +776,7 @@ private fun evaluateSunrise(
     config: GuideConfig,
     onRoute: Boolean,
     eventIntervalOpen: Boolean,
+    progressMeters: Double,
 ): SunriseEvaluation {
     val localDate = sunriseLocalDate(frame.timestamp, frame.lon)
     val localDay = localDate.toEpochDay()
@@ -709,10 +803,21 @@ private fun evaluateSunrise(
             oldMinutes > it && minutes <= it && it !in consumed
         }.toSet()
     }
+    val discardReason = when {
+        minutes <= 0.0 || newlyCrossed.isEmpty() -> null
+        !config.sunriseEnabled -> "disabled"
+        !onRoute -> "offroute"
+        !eventIntervalOpen -> "interval"
+        else -> null
+    }
+    val discarded = if (discardReason == null) emptyList() else newlyCrossed.map { threshold ->
+        DiscardedEvent("E8", threshold.toString(), discardReason, progressMeters)
+    }
     val next = state.copy(
         sunriseLocalDay = localDay,
         sunriseEvaluated = true,
         consumedSunriseThresholds = consumed + newlyCrossed,
+        discardedEvents = state.discardedEvents + discarded,
     )
     if (
         minutes <= 0.0 || newlyCrossed.isEmpty() || !config.sunriseEnabled ||
@@ -737,7 +842,13 @@ private fun evaluateSunrise(
     )
     return SunriseEvaluation(
         next,
-        DynamicCandidate(EventPriority.SUNRISE, "event.sunrise", Guidance.Sunrise(minutesRemaining), reason),
+        DynamicCandidate(
+            EventPriority.SUNRISE,
+            "event.sunrise",
+            Guidance.Sunrise(minutesRemaining),
+            reason,
+            recordOnPriority = newlyCrossed.map { "E8" to it.toString() }.toSet(),
+        ),
     )
 }
 
@@ -755,6 +866,7 @@ private fun evaluateSunriseStandalone(
         config = config,
         onRoute = false,
         eventIntervalOpen = intervalOpen,
+        progressMeters = state.lastMatch?.projectedMeters ?: 0.0,
     ).state
 }
 

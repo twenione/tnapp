@@ -559,7 +559,11 @@ class TrailForegroundService : Service() {
     private fun processGuidance(location: TrailLocation, sourceSeq: Long?) {
         val session = guideSession ?: return
         val decision = session.accept(location)
-        logger.appendDiscardedEvents(decision.newlyDiscardedSlopePeaks, decision.newlyDiscardedWaypoints)
+        logger.appendDiscardedEvents(
+                    decision.newlyDiscardedSlopePeaks,
+                    decision.newlyDiscardedWaypoints,
+                    decision.newlyDiscardedEvents,
+                )
         logger.appendArrivalBlockedEvents(decision.newlyBlockedArrivals)
         publishRouteRibbon(location, decision)
         val guidance = decision.result.guidance

@@ -1,0 +1,33 @@
+{
+  "unrecorded_allowlist": [
+    {
+      "event": "E7",
+      "reason": "disabled",
+      "decision": "D-174",
+      "note": "§1 E7·꺾임 관측 보고 대기"
+    }
+  ],
+  "structurally_unreachable": [
+    {
+      "event": "E1",
+      "reason": "direction-unknown",
+      "decision": "D-179",
+      "note": "구조적 미도달 (D-156 전)"
+    },
+    {
+      "event": "E3",
+      "reason": "direction-unknown",
+      "decision": "D-179",
+      "note": "구조적 미도달 (D-156 전)"
+    }
+  ],
+  "expected_failures": [],
+  "observation_exempt": [
+    {
+      "event": "E5",
+      "decision": "D-174",
+      "reason": "E5 tracks an elevation band and has no consumed threshold set."
+    }
+  ],
+  "withdrawn_decisions": []
+}

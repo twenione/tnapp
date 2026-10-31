@@ -56,6 +56,9 @@ def test_required_mutation_consumers() -> None:
         "eta-clamped-observation-included",
     ):
         assert d033.MUTATION_REQUIRED_CONSUMERS[mutation] == d033.CORE_TEST
+    task080_mutations = {name for name in d033.VARIANTS if name.startswith("task080-")}
+    assert len(task080_mutations) == 25
+    assert all(d033.MUTATION_REQUIRED_CONSUMERS[name] == d033.CORE_TEST for name in task080_mutations)
 
     for mutation, required in d033.MUTATION_REQUIRED_CONSUMERS.items():
         names = tuple(sorted(required))
@@ -79,6 +82,64 @@ def test_required_mutation_consumers() -> None:
     assert d033.mutation_consumer_failures(mutation, missing) == [
         "sunset-no-start: required consumer core-guide-test was not run"
     ]
+
+
+def test_structurally_unreachable_mutations_are_data_driven_and_not_survivors() -> None:
+    with tempfile.TemporaryDirectory(prefix="task083-structural-data-") as temporary:
+        root = Path(temporary)
+        data_path = root / "tools" / "known_exceptions.json"
+        data_path.parent.mkdir(parents=True)
+        data_path.write_text(
+            '{"structurally_unreachable":['
+            '{"event":"E1","reason":"direction-unknown","decision":"D-179","note":"x"},'
+            '{"event":"E3","reason":"direction-unknown","decision":"D-179","note":"x"}]}',
+            encoding="utf-8",
+        )
+        exemptions = d033.load_structurally_unreachable_mutations(root, set(d033.VARIANTS))
+    assert exemptions == {
+        "task080-e1-direction-unknown-record-omitted": ("E1", "direction-unknown"),
+        "task080-e3-direction-unknown-record-omitted": ("E3", "direction-unknown"),
+    }
+
+    exempt = "task080-e1-direction-unknown-record-omitted"
+    status, failures = d033.mutation_outcome(exempt, {"core-guide-test": 0}, exemptions)
+    assert status == "NOT-DETECTABLE (D-179)"
+    assert failures == []
+    assert not d033.mutation_is_survivor(status)
+
+
+def test_non_exempt_survivor_fails() -> None:
+    mutation = "task080-e1-disabled-record-omitted"
+    status, failures = d033.mutation_outcome(
+        mutation,
+        {"core-guide-test": 0},
+        {"task080-e1-direction-unknown-record-omitted": ("E1", "direction-unknown")},
+    )
+    assert status == "SURVIVED"
+    assert d033.mutation_is_survivor(status)
+    assert failures == [f"{mutation}: required consumer core-guide-test unexpectedly passed"]
+
+
+def test_detected_exempt_mutation_fails_strictly() -> None:
+    mutation = "task080-e1-direction-unknown-record-omitted"
+    status, failures = d033.mutation_outcome(
+        mutation,
+        {"core-guide-test": 1},
+        {mutation: ("E1", "direction-unknown")},
+    )
+    assert status == "DETECTED (unexpected)"
+    assert len(failures) == 1
+    assert "면제된 변이가 검출됨 — 도달 가능해졌으므로 목록에서 빼고 필수로 되돌릴 것 (D-179)" in failures[0]
+
+
+def test_missing_structurally_unreachable_data_fails_closed() -> None:
+    with tempfile.TemporaryDirectory(prefix="task083-missing-data-") as temporary:
+        try:
+            d033.load_structurally_unreachable_mutations(Path(temporary), set(d033.VARIANTS))
+        except ValueError as exc:
+            assert "cannot read structurally_unreachable data" in str(exc)
+        else:
+            raise AssertionError("missing structurally_unreachable data was accepted")
 
 
 def test_installed_cli_selects_host_launcher() -> None:
@@ -134,6 +195,10 @@ def test_unique_mutation_needles() -> None:
 if __name__ == "__main__":
     test_unmutated_positive_control()
     test_required_mutation_consumers()
+    test_structurally_unreachable_mutations_are_data_driven_and_not_survivors()
+    test_non_exempt_survivor_fails()
+    test_detected_exempt_mutation_fails_strictly()
+    test_missing_structurally_unreachable_data_fails_closed()
     test_installed_cli_selects_host_launcher()
     test_unique_mutation_needles()
     print("PASS: D-033 unmutated positive control, required-consumer matrix, and unique mutation needles")

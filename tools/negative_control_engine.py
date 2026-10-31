@@ -151,10 +151,12 @@ VARIANTS = {
                          'D-033 off-route event gate removed */'),
  'event-reverse-gate': ('if (!config.slopeEnabled || !forward) {',
                         'if (!config.slopeEnabled) { /* D-033 reverse E4 gate removed */'),
- 'event-min-interval': ('config.milestoneEnabled && onRoute && forward && eventIntervalOpen && '
-                        'freshCrossed.isNotEmpty()',
-                        'config.milestoneEnabled && onRoute && forward && freshCrossed.isNotEmpty() /* D-033 '
-                        'event interval removed */'),
+ 'event-min-interval': ('        } else if (!eventIntervalOpen) {\n'
+                        '            freshCrossed.forEach { record("E1", it.toString(), "interval") }\n'
+                        '        } else if (config.milestoneEnabled && onRoute && forward && eventIntervalOpen && '
+                        'freshCrossed.isNotEmpty()) {',
+                        '        } else if (config.milestoneEnabled && onRoute && forward && '
+                        'freshCrossed.isNotEmpty()) { /* D-033 event interval removed */'),
  'event-consumption-queue': ('next = next.copy(consumedMilestoneIndices = next.consumedMilestoneIndices + '
                              'crossed)',
                              'next = next.copy(consumedMilestoneIndices = next.consumedMilestoneIndices) /* '
@@ -301,6 +303,56 @@ VARIANTS = {
                                        '                if (discardReason != null && discardReason != "interval") { /* TASK-078 interval record omitted */'),
  'task078-e6-priority-record-omitted': ('    (waypointCandidateIndices - selectedWaypointIndices).forEach { index ->',
                                        '    (waypointCandidateIndices - selectedWaypointIndices).filter { false }.forEach { index -> /* TASK-078 priority record omitted */'),
+  'task080-e1-disabled-record-omitted': ('!config.milestoneEnabled -> "disabled"',
+                                         'false -> "disabled" /* TASK-080 E1 disabled record omitted */'),
+  'task080-e1-offroute-record-omitted': ('!config.milestoneEnabled -> "disabled"\n            !onRoute -> "offroute"',
+                                         '!config.milestoneEnabled -> "disabled"\n            false -> "offroute" /* TASK-080 E1 offroute record omitted */'),
+  'task080-e1-reverse-record-omitted': ('!onRoute -> "offroute"\n            state.direction == ProgressDirection.REVERSE -> "reverse"',
+                                        '!onRoute -> "offroute"\n            false -> "reverse" /* TASK-080 E1 reverse record omitted */'),
+  'task080-e1-direction-unknown-record-omitted': ('state.direction == ProgressDirection.REVERSE -> "reverse"\n            state.direction == ProgressDirection.UNKNOWN -> "direction-unknown"',
+                                                   'state.direction == ProgressDirection.REVERSE -> "reverse"\n            false -> "direction-unknown" /* TASK-080 E1 direction-unknown record omitted */'),
+  'task080-e1-interval-record-omitted': ('freshCrossed.forEach { record("E1", it.toString(), "interval") }',
+                                         '/* TASK-080 E1 interval record omitted */'),
+  'task080-e1-priority-record-omitted': ('recordOnPriority = setOf("E1" to index.toString()),',
+                                         'recordOnPriority = emptySet(), /* TASK-080 E1 priority record omitted */'),
+  'task080-e1-jump-record-omitted': ('freshCrossed.filterNot { it == index }.forEach { record("E1", it.toString(), "jump") }',
+                                    '/* TASK-080 E1 jump record omitted */'),
+  'task080-e2-disabled-record-omitted': ('!config.elapsedEnabled -> "disabled"',
+                                         'false -> "disabled" /* TASK-080 E2 disabled record omitted */'),
+  'task080-e2-offroute-record-omitted': ('!config.elapsedEnabled -> "disabled"\n            !onRoute -> "offroute"',
+                                         '!config.elapsedEnabled -> "disabled"\n            false -> "offroute" /* TASK-080 E2 offroute record omitted */'),
+  'task080-e2-interval-record-omitted': ('!config.elapsedEnabled -> "disabled"\n            !onRoute -> "offroute"\n            !eventIntervalOpen -> "interval"',
+                                         '!config.elapsedEnabled -> "disabled"\n            !onRoute -> "offroute"\n            false -> "interval" /* TASK-080 E2 interval record omitted */'),
+  'task080-e2-priority-record-omitted': ('recordOnPriority = setOf("E2" to index.toString()),',
+                                         'recordOnPriority = emptySet(), /* TASK-080 E2 priority record omitted */'),
+  'task080-e2-jump-record-omitted': ('freshCrossed.filterNot { it == index }.forEach { record("E2", it.toString(), "jump") }',
+                                    '/* TASK-080 E2 jump record omitted */'),
+  'task080-e3-disabled-record-omitted': ('!config.remainingEnabled -> "disabled"',
+                                         'false -> "disabled" /* TASK-080 E3 disabled record omitted */'),
+  'task080-e3-reverse-record-omitted': ('!config.remainingEnabled -> "disabled"\n        state.direction == ProgressDirection.REVERSE -> "reverse"',
+                                        '!config.remainingEnabled -> "disabled"\n        false -> "reverse" /* TASK-080 E3 reverse record omitted */'),
+  'task080-e3-direction-unknown-record-omitted': ('state.direction == ProgressDirection.REVERSE -> "reverse"\n        state.direction == ProgressDirection.UNKNOWN -> "direction-unknown"',
+                                                   'state.direction == ProgressDirection.REVERSE -> "reverse"\n        false -> "direction-unknown" /* TASK-080 E3 direction-unknown record omitted */'),
+  'task080-e8-disabled-record-omitted': ('!config.sunriseEnabled -> "disabled"',
+                                         'false -> "disabled" /* TASK-080 E8 disabled record omitted */'),
+  'task080-e8-offroute-record-omitted': ('!config.sunriseEnabled -> "disabled"\n        !onRoute -> "offroute"',
+                                         '!config.sunriseEnabled -> "disabled"\n        false -> "offroute" /* TASK-080 E8 offroute record omitted */'),
+  'task080-e8-interval-record-omitted': ('!config.sunriseEnabled -> "disabled"\n        !onRoute -> "offroute"\n        !eventIntervalOpen -> "interval"',
+                                         '!config.sunriseEnabled -> "disabled"\n        !onRoute -> "offroute"\n        false -> "interval" /* TASK-080 E8 interval record omitted */'),
+  'task080-e8-priority-record-omitted': ('recordOnPriority = newlyCrossed.map { "E8" to it.toString() }.toSet(),',
+                                         'recordOnPriority = emptySet(), /* TASK-080 E8 priority record omitted */'),
+  'task080-e4-jump-record-omitted': ('                discardedSlopePeaks += DiscardedSlopePeak(\n                    index = index,\n                    peakS = peak.s,\n                    passedProjectedMeters = match.projectedMeters,\n                    delayReason = "none",\n                    reason = "jump",\n                )',
+                                      '                // TASK-080 E4 jump record omitted'),
+  'task080-e6-jump-record-omitted': ('                discardedWaypoints += DiscardedWaypoint(index, waypoint.s, distance, "jump")',
+                                      '                // TASK-080 E6 jump record omitted'),
+  'task080-first-match-e4-exclusion-removed': ('if (next.firstMatchProgressMeters?.let { peak.s < it } == true) {',
+                                              'if (false) { /* TASK-080 E4 first-match exclusion removed */'),
+  'task080-first-match-e6-exclusion-removed': ('if (next.firstMatchProgressMeters?.let { waypoint.s < it } == true) {',
+                                              'if (false) { /* TASK-080 E6 first-match exclusion removed */'),
+  'task080-duplicate-discard-record': ('                progressMeters = match.projectedMeters,\n            ),\n        )\n    }\n\n    // E1: distance milestones are based on projected route distance.',
+                                      '                progressMeters = match.projectedMeters,\n            ),\n        )\n        if (next.discardedEvents.isNotEmpty()) {\n            next = next.copy(discardedEvents = next.discardedEvents + next.discardedEvents.last())\n        }\n    }\n\n    // E1: distance milestones are based on projected route distance. /* TASK-080 duplicate record */'),
+  'task080-invalid-e3-record-reason': ('record("E3", threshold.toBigDecimal().stripTrailingZeros().toPlainString(), discardReason)',
+                                       'record("E3", threshold.toBigDecimal().stripTrailingZeros().toPlainString(), "interval") /* TASK-080 invalid reason */'),
  'waypoint-toggle-ignored': ('if (config.waypointEnabled && onRoute && forward && eventIntervalOpen && index '
                              '!in previous.consumedWaypointIndices) {',
                              'if (onRoute && forward && eventIntervalOpen && index !in '
@@ -505,6 +557,31 @@ MUTATION_REQUIRED_CONSUMERS = {
     "arrival-fraction-hardcoded": CORE_TEST,
     "arrival-baseline-approach-frame": CORE_TEST,
     "arrival-jump-tolerance-default-20": CORE_TEST,
+    "task080-e1-disabled-record-omitted": CORE_TEST,
+    "task080-e1-offroute-record-omitted": CORE_TEST,
+    "task080-e1-reverse-record-omitted": CORE_TEST,
+    "task080-e1-direction-unknown-record-omitted": CORE_TEST,
+    "task080-e1-interval-record-omitted": CORE_TEST,
+    "task080-e1-priority-record-omitted": CORE_TEST,
+    "task080-e1-jump-record-omitted": CORE_TEST,
+    "task080-e2-disabled-record-omitted": CORE_TEST,
+    "task080-e2-offroute-record-omitted": CORE_TEST,
+    "task080-e2-interval-record-omitted": CORE_TEST,
+    "task080-e2-priority-record-omitted": CORE_TEST,
+    "task080-e2-jump-record-omitted": CORE_TEST,
+    "task080-e3-disabled-record-omitted": CORE_TEST,
+    "task080-e3-reverse-record-omitted": CORE_TEST,
+    "task080-e3-direction-unknown-record-omitted": CORE_TEST,
+    "task080-e8-disabled-record-omitted": CORE_TEST,
+    "task080-e8-offroute-record-omitted": CORE_TEST,
+    "task080-e8-interval-record-omitted": CORE_TEST,
+    "task080-e8-priority-record-omitted": CORE_TEST,
+    "task080-e4-jump-record-omitted": CORE_TEST,
+    "task080-e6-jump-record-omitted": CORE_TEST,
+    "task080-first-match-e4-exclusion-removed": CORE_TEST,
+    "task080-first-match-e6-exclusion-removed": CORE_TEST,
+    "task080-duplicate-discard-record": CORE_TEST,
+    "task080-invalid-e3-record-reason": CORE_TEST,
 }
 
 CONSUMER_NAMES = ("replay", "replay-turn-session", "config-sensitivity", "phase1-accuracy")
@@ -533,6 +610,70 @@ def mutation_consumer_failures(mutation: str, results: dict[str, int]) -> list[s
         elif results[name] == 0:
             failures.append(f"{mutation}: required consumer {name} unexpectedly passed")
     return failures
+
+
+def load_structurally_unreachable_mutations(repo_root: Path, variant_names: set[str]) -> dict[str, tuple[str, str]]:
+    """Resolve D-179 exemptions from the shared data file, never a local list."""
+    data_path = repo_root / "tools" / "known_exceptions.json"
+    try:
+        data = json.loads(data_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read structurally_unreachable data ({type(exc).__name__})") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("structurally_unreachable"), list):
+        raise ValueError("known_exceptions.json must contain a structurally_unreachable list")
+
+    result: dict[str, tuple[str, str]] = {}
+    seen: set[tuple[str, str]] = set()
+    for index, entry in enumerate(data["structurally_unreachable"]):
+        if not isinstance(entry, dict):
+            raise ValueError(f"structurally_unreachable[{index}] must be an object")
+        event, reason = entry.get("event"), entry.get("reason")
+        if not isinstance(event, str) or not event or not isinstance(reason, str) or not reason:
+            raise ValueError(f"structurally_unreachable[{index}] must contain event and reason")
+        pair = (event, reason)
+        if pair in seen:
+            raise ValueError(f"duplicate structurally_unreachable pair {event}/{reason}")
+        seen.add(pair)
+        mutation = f"task080-{event.lower()}-{reason}-record-omitted"
+        if mutation not in variant_names:
+            raise ValueError(f"no D-033 mutation corresponds to structurally_unreachable pair {event}/{reason}")
+        result[mutation] = pair
+    return result
+
+
+def mutation_outcome(
+    mutation: str,
+    results: dict[str, int],
+    structurally_unreachable_mutations: dict[str, tuple[str, str]],
+) -> tuple[str, list[str]]:
+    """Return DETECTED, NOT-DETECTABLE, or SURVIVED with strict D-179 handling."""
+    required = MUTATION_REQUIRED_CONSUMERS.get(mutation)
+    if required is None:
+        return "INVALID", [f"{mutation}: missing required-consumer table row"]
+    if mutation in structurally_unreachable_mutations:
+        missing = sorted(name for name in required if name not in results)
+        if missing:
+            return "INVALID", [f"{mutation}: required consumer {name} was not run" for name in missing]
+        detected = sorted(name for name in required if results[name] != 0)
+        if detected:
+            message = (
+                f"{mutation}: 면제된 변이가 검출됨 — 도달 가능해졌으므로 목록에서 빼고 "
+                f"필수로 되돌릴 것 (D-179); consumers={detected}"
+            )
+            return "DETECTED (unexpected)", [message]
+        return "NOT-DETECTABLE (D-179)", []
+
+    failures = mutation_consumer_failures(mutation, results)
+    missing = [name for name in sorted(required) if name not in results]
+    if missing:
+        return "INVALID", failures
+    if any(results[name] == 0 for name in required):
+        return "SURVIVED", failures
+    return "DETECTED", failures
+
+
+def mutation_is_survivor(status: str) -> bool:
+    return status == "SURVIVED"
 
 
 def failed_test_names(workspace: Path) -> list[str]:
@@ -615,7 +756,7 @@ def main() -> int:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         table = [
             "D-033 mutation rejection summary",
-            "mutation | required consumers | rejected by | failed test/contract",
+            "mutation | required consumers | status | failed test/contract",
             "--- | --- | --- | ---",
         ]
         table.extend(" | ".join(row) for row in summary_rows)
@@ -624,6 +765,19 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="tnapp-d033-") as temporary:
         workspace = Path(temporary) / "repo"
         copy_repo(source, workspace)
+        try:
+            structurally_unreachable_mutations = load_structurally_unreachable_mutations(
+                workspace,
+                set(VARIANTS),
+            )
+        except ValueError as exc:
+            failures.append(f"FAIL: structurally_unreachable data: {exc}")
+            evidence.append(f"FAIL: structurally_unreachable data\n{exc}")
+            save_evidence()
+            print("FAIL: structurally_unreachable data")
+            print(failures[-1])
+            return 1
+
         sources = {
             ENGINE: (workspace / ENGINE).read_text(encoding="utf-8"),
             ROUTE_SOURCE: (workspace / ROUTE_SOURCE).read_text(encoding="utf-8"),
@@ -699,7 +853,11 @@ def main() -> int:
                     evidence.append(f"VARIANT {name} consumer={consumer} exit={code}\n{output}")
 
             required = MUTATION_REQUIRED_CONSUMERS[name]
-            variant_failures = mutation_consumer_failures(name, consumer_results)
+            status, variant_failures = mutation_outcome(
+                name,
+                consumer_results,
+                structurally_unreachable_mutations,
+            )
             failures.extend(variant_failures)
             if test_code != 0 and not test_names:
                 failures.append(f"{name}: core-guide-test failed without a named failing test")
@@ -710,7 +868,14 @@ def main() -> int:
                 else f"{consumer}: contract/replay check"
                 for consumer in rejected
             ]
-            summary_rows.append((name, ", ".join(sorted(required)), ", ".join(rejected), "; ".join(failed_tests)))
+            if name in structurally_unreachable_mutations:
+                pair = structurally_unreachable_mutations[name]
+                detail = f"pair={pair[0]}/{pair[1]}"
+                if failed_tests:
+                    detail += "; unexpected detection=" + "; ".join(failed_tests)
+            else:
+                detail = "; ".join(failed_tests)
+            summary_rows.append((name, ", ".join(sorted(required)), status, detail))
             target.write_text(target_original, encoding="utf-8")
 
         fixture = workspace / "testdata/sessions/golden/turn_contract"
@@ -735,11 +900,22 @@ def main() -> int:
             if pairing_code == 0:
                 failures.append("replay: missing-loc mutation unexpectedly passed")
     save_evidence()
+    task080_rows = [row for row in summary_rows if row[0].startswith("task080-")]
+    detected_count = sum(row[2] == "DETECTED" for row in task080_rows)
+    exempt_count = sum(row[2] == "NOT-DETECTABLE (D-179)" for row in task080_rows)
+    survivor_count = sum(mutation_is_survivor(row[2]) for row in task080_rows)
+    print(
+        "TASK-080 mutation outcomes "
+        f"detected={detected_count} exempt={exempt_count} survivors={survivor_count}"
+    )
     if failures:
         print("FAIL: D-033 negative control")
         print("\n".join(failures))
         return 1
-    print(f"PASS: D-033 consumers rejected {len(VARIANTS)} engine mutations")
+    print(
+        f"PASS: D-033 consumers validated {len(VARIANTS)} engine mutations "
+        f"(TASK-080 detected={detected_count}, NOT-DETECTABLE={exempt_count}, survivors={survivor_count})"
+    )
     print(f"evidence={args.out}")
     return 0
 
