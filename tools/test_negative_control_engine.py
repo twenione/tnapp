@@ -14,7 +14,7 @@ def fake_consumer_runner(outcomes: dict[str, int], names: tuple[str, ...]) -> di
 
 
 def test_unmutated_positive_control() -> None:
-    names = ("core-guide-test", *d033.CONSUMER_NAMES)
+    names = ("core-guide-test", *d033.CONSUMER_NAMES, d033.APP_START_TEST)
     passing = fake_consumer_runner({name: 0 for name in names}, names)
     assert d033.unmutated_consumer_failures(passing) == []
 
@@ -26,6 +26,10 @@ def test_unmutated_positive_control() -> None:
     missing = fake_consumer_runner({name: 0 for name in names if name != "phase1-accuracy"}, names)
     assert d033.unmutated_consumer_failures(missing) == [
         "FAIL: consumer phase1-accuracy was not run on the unmutated engine"
+    ]
+    missing_app = fake_consumer_runner({name: 0 for name in names if name != d033.APP_START_TEST}, names)
+    assert d033.unmutated_consumer_failures(missing_app) == [
+        "FAIL: consumer app-start-test was not run on the unmutated engine"
     ]
 
 
@@ -43,6 +47,15 @@ def test_required_mutation_consumers() -> None:
 
     assert d033.MUTATION_REQUIRED_CONSUMERS["turn-pass-always-false"] == d033.CORE_TEST
     assert d033.MUTATION_REQUIRED_CONSUMERS["turn-identity-zero"] == d033.CORE_TEST
+    assert d033.APP_START_TEST in d033.MUTATION_REQUIRED_CONSUMERS["arrival-advance-removed"]
+    assert d033.CORE_TEST.issubset(d033.MUTATION_REQUIRED_CONSUMERS["arrival-advance-removed"])
+    named_commands = d033.mutation_consumer_commands("arrival-advance-removed", Path("replay"), "gradle")
+    assert d033.APP_START_TEST in named_commands
+    assert named_commands[d033.APP_START_TEST] == [
+        "gradle", ":app:testDebugUnitTest", "--tests", "com.trailnav.app.StartPhase*", "--no-daemon"
+    ]
+    unnamed_commands = d033.mutation_consumer_commands("approach-gate-removed", Path("replay"), "gradle")
+    assert d033.APP_START_TEST not in unnamed_commands
     for mutation in (
         "slope-defer-ignored",
         "slope-discard-ignored",
@@ -82,6 +95,20 @@ def test_required_mutation_consumers() -> None:
     assert d033.mutation_consumer_failures(mutation, missing) == [
         "sunset-no-start: required consumer core-guide-test was not run"
     ]
+
+    arrival_mutation = "arrival-advance-removed"
+    arrival_results = {"core-guide-test": 1, d033.APP_START_TEST: 0}
+    expected_failure = [
+        "arrival-advance-removed: required consumer app-start-test unexpectedly passed"
+    ]
+    assert d033.mutation_consumer_failures(arrival_mutation, arrival_results) == expected_failure
+    status, failures = d033.mutation_outcome(arrival_mutation, arrival_results, {})
+    assert status == "SURVIVED"
+    assert failures == expected_failure
+
+    status, failures = d033.mutation_outcome(arrival_mutation, {"core-guide-test": 1}, {})
+    assert status == "INVALID"
+    assert failures == ["arrival-advance-removed: required consumer app-start-test was not run"]
 
 
 def test_structurally_unreachable_mutations_are_data_driven_and_not_survivors() -> None:

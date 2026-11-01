@@ -21,7 +21,33 @@
       "note": "구조적 미도달 (D-156 전)"
     }
   ],
-  "expected_failures": [],
+  "expected_failures": [
+    {
+      "test": "startPhaseNoFalseArrivalWithinFiveMinutes",
+      "decision": "D-156",
+      "release_condition": "D-156 implementation PR removes this entry only after the full five-minute start-phase grid has zero false arrivals in every deterministic and noisy cell."
+    },
+    {
+      "test": "startPhaseOnRouteNeverLeavesRoute",
+      "decision": "D-156",
+      "release_condition": "D-156 implementation PR removes this entry only after the complete start-phase grid passes with zero on-route off-route frames."
+    },
+    {
+      "test": "startPhaseDirectionNeverOpposesTravel",
+      "decision": "D-156",
+      "release_condition": "D-156 implementation PR removes this entry only after the complete start-phase grid reports no direction-opposed frame."
+    },
+    {
+      "test": "startPhaseMilestoneUsesGuidanceStartReference",
+      "decision": "D-158",
+      "release_condition": "D-158 implementation PR removes this entry only after E1 distances are measured from the guidance start."
+    },
+    {
+      "test": "startPhasePreDecisionOffRouteUsesWholeRouteMinimum",
+      "decision": "D-156",
+      "release_condition": "D-156 implementation PR removes this entry only after pre-decision off-route guidance uses the route-wide minimum distance."
+    }
+  ],
   "observation_exempt": [
     {
       "event": "E5",
