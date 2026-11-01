@@ -17,6 +17,7 @@ SCOPE_MARKER_RE = re.compile(r"#\s*SCOPE\s*:(.*)$")
 DECISION_HEADING_RE = re.compile(r"^## D-(\d+)\b", re.MULTILINE)
 NAMED_SETTING_RE = re.compile(r"(?i)(exclu|ignor|skip|allow|exempt)")
 DECISION_NUMBER_RE = re.compile(r"D-\d{3}")
+EXPECTED_FAILURE_CALL_RE = re.compile(r'\bexpectedFailureAware\s*\(\s*"((?:\\.|[^"\\])*)"')
 EXCEPTION_DATA_FILE = "tools/known_exceptions.json"
 EXCEPTION_LISTS = {
     "unrecorded_allowlist": {"event", "reason", "decision", "note"},
@@ -265,7 +266,31 @@ def _known_exception_errors(root: Path, decision_numbers: set[str]) -> list[str]
                     if pair in seen_pairs:
                         errors.append(f"{label}: duplicate (event, reason) pair {event}/{reason}")
                     seen_pairs.add(pair)
+        if list_name == "expected_failures":
+            expected_tests = [
+                entry.get("test")
+                for entry in entries
+                if isinstance(entry, dict) and isinstance(entry.get("test"), str) and entry.get("test")
+            ]
+            errors.extend(_expected_failure_source_errors(root, expected_tests))
     return errors
+
+
+def _expected_failure_source_errors(root: Path, expected_tests: list[str]) -> list[str]:
+    source_root = root / "app" / "src" / "test" / "kotlin"
+    if not source_root.is_dir():
+        return ["app/src/test/kotlin: expected-failure test source directory is missing"] if expected_tests else []
+    source_ids: set[str] = set()
+    try:
+        for path in sorted(source_root.rglob("*.kt")):
+            source_ids.update(EXPECTED_FAILURE_CALL_RE.findall(path.read_text(encoding="utf-8")))
+    except (OSError, UnicodeError) as exc:
+        return [f"app/src/test/kotlin: cannot scan expected-failure test sources ({type(exc).__name__})"]
+    return [
+        f"{EXCEPTION_DATA_FILE}: expected_failures test {test!r} has no expectedFailureAware call in app/src/test/kotlin"
+        for test in expected_tests
+        if test not in source_ids
+    ]
 
 
 def check(root: Path) -> tuple[list[Candidate], list[tuple[Candidate, Result]], list[str]]:

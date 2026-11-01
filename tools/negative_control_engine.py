@@ -548,7 +548,7 @@ MUTATION_REQUIRED_CONSUMERS = {
     "eta-floor-removed": CORE_TEST,
     "eta-cap-removed": CORE_TEST,
     "eta-clamped-observation-included": CORE_TEST,
-    "arrival-advance-removed": CORE_TEST,
+    "arrival-advance-removed": CORE_TEST | frozenset({"app-start-test"}),
     "arrival-jump-always-credited": CORE_TEST,
     "arrival-floor-removed": CORE_TEST,
     "arrival-positive-deltas-summed": CORE_TEST,
@@ -585,12 +585,13 @@ MUTATION_REQUIRED_CONSUMERS = {
 }
 
 CONSUMER_NAMES = ("replay", "replay-turn-session", "config-sensitivity", "phase1-accuracy")
+APP_START_TEST = "app-start-test"
 
 
 def unmutated_consumer_failures(results: dict[str, int]) -> list[str]:
     """Fail closed when any downstream consumer rejects the clean engine."""
     failures: list[str] = []
-    for name in ("core-guide-test", *CONSUMER_NAMES):
+    for name in ("core-guide-test", *CONSUMER_NAMES, APP_START_TEST):
         if name not in results:
             failures.append(f"FAIL: consumer {name} was not run on the unmutated engine")
         elif results[name] != 0:
@@ -715,6 +716,19 @@ def consumer_commands(cli: Path) -> dict[str, list[str]]:
     }
 
 
+def app_start_test_command(gradle: str) -> list[str]:
+    return [gradle, ":app:testDebugUnitTest", "--tests", "com.trailnav.app.StartPhase*", "--no-daemon"]
+
+
+def mutation_consumer_commands(mutation: str, cli: Path, gradle: str) -> dict[str, list[str]]:
+    """Return the shared consumers plus only mutation-specific consumers."""
+    commands = consumer_commands(cli)
+    required = MUTATION_REQUIRED_CONSUMERS.get(mutation, frozenset())
+    if APP_START_TEST in required:
+        commands[APP_START_TEST] = app_start_test_command(gradle)
+    return commands
+
+
 def installed_cli(workspace: Path, *, windows: bool | None = None) -> Path:
     """Select the launcher executable for the host running the consumer."""
     if windows is None:
@@ -804,13 +818,16 @@ def main() -> int:
         baseline_results = {"core-guide-test": baseline_core_code}
         if baseline_build_code != 0 or not baseline_cli.is_file():
             failures.append("FAIL: consumer replay CLI build fails on the unmutated engine")
-            for name in CONSUMER_NAMES:
+            for name in (*CONSUMER_NAMES, APP_START_TEST):
                 baseline_results[name] = -1
         else:
             for consumer, command in consumer_commands(baseline_cli).items():
                 code, output = run(command, workspace)
                 baseline_results[consumer] = code
                 evidence.append(f"UNMUTATED consumer={consumer} exit={code}\n{output}")
+            app_start_code, app_start_output = run(app_start_test_command(args.gradle), workspace)
+            baseline_results[APP_START_TEST] = app_start_code
+            evidence.append(f"UNMUTATED consumer={APP_START_TEST} exit={app_start_code}\n{app_start_output}")
         failures.extend(unmutated_consumer_failures(baseline_results))
         if failures:
             save_evidence()
@@ -833,6 +850,7 @@ def main() -> int:
                 f"failed_tests={','.join(test_names) if test_names else 'none'}\n{test_output}"
             )
             consumer_results = {"core-guide-test": test_code}
+            required = MUTATION_REQUIRED_CONSUMERS[name]
 
             # A failing test task prevents Gradle from reaching installDist in
             # the same invocation. Build the real CLI separately so each
@@ -846,13 +864,15 @@ def main() -> int:
                 for consumer in CONSUMER_NAMES:
                     consumer_results[consumer] = -1
                     evidence.append(f"VARIANT {name} consumer={consumer} exit=not-built")
+                if APP_START_TEST in required:
+                    consumer_results[APP_START_TEST] = -1
+                    evidence.append(f"VARIANT {name} consumer={APP_START_TEST} exit=not-built")
             else:
-                for consumer, command in consumer_commands(cli).items():
+                for consumer, command in mutation_consumer_commands(name, cli, args.gradle).items():
                     code, output = run(command, workspace)
                     consumer_results[consumer] = code
                     evidence.append(f"VARIANT {name} consumer={consumer} exit={code}\n{output}")
 
-            required = MUTATION_REQUIRED_CONSUMERS[name]
             status, variant_failures = mutation_outcome(
                 name,
                 consumer_results,

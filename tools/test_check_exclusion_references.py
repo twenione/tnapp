@@ -205,6 +205,62 @@ class ExclusionReferenceTests(unittest.TestCase):
             with self.subTest(data=data):
                 result = self.run_checker({"tools/known_exceptions.json": data})
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    def test_expected_failure_requires_source_call_and_non_empty_release_condition(self):
+        valid_data = (
+            '{"unrecorded_allowlist":[],"structurally_unreachable":[],"expected_failures":['
+            '{"test":"startPhaseDirectionBeforeStart","decision":"D-001",'
+            '"release_condition":"D-156 PR removes this entry after the test passes."}],'
+            '"observation_exempt":[],"withdrawn_decisions":[]} '
+        )
+        source = (
+            'class StartPhaseTest {\n'
+            '    fun test() = expectedFailureAware("startPhaseDirectionBeforeStart") { }\n'
+            '}\n'
+        )
+        result = self.run_checker({
+            "tools/known_exceptions.json": valid_data,
+            "app/src/test/kotlin/com/trailnav/app/StartPhaseTest.kt": source,
+        })
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        no_expected_call_source = "class UnrelatedTest { fun test() = Unit }\n"
+        missing_source = self.run_checker({
+            "tools/known_exceptions.json": valid_data,
+            "app/src/test/kotlin/com/trailnav/app/UnrelatedTest.kt": no_expected_call_source,
+        })
+        self.assertEqual(missing_source.returncode, 1, missing_source.stdout + missing_source.stderr)
+        self.assertIn("has no expectedFailureAware call", missing_source.stdout)
+
+        empty_release = valid_data.replace(
+            "D-156 PR removes this entry after the test passes.", ""
+        )
+        empty_release_result = self.run_checker({
+            "tools/known_exceptions.json": empty_release,
+            "app/src/test/kotlin/com/trailnav/app/StartPhaseTest.kt": source,
+        })
+        self.assertEqual(empty_release_result.returncode, 1, empty_release_result.stdout + empty_release_result.stderr)
+        self.assertIn("release_condition must be a non-empty string", empty_release_result.stdout)
+
+    def test_expected_failure_rejects_missing_unknown_and_withdrawn_decisions(self):
+        source = 'fun test() = expectedFailureAware("listedTest") { }\n'
+        cases = (
+            ("missing", '{"test":"listedTest","release_condition":"Fix it."}', "decision must be D-nnn", "[]"),
+            ("unknown", '{"test":"listedTest","decision":"D-999","release_condition":"Fix it."}', "D-999 has no heading", "[]"),
+            ("withdrawn", '{"test":"listedTest","decision":"D-001","release_condition":"Fix it."}', "references withdrawn decision D-001", '["D-001"]'),
+        )
+        for label, item, expected, withdrawn in cases:
+            with self.subTest(case=label):
+                data = (
+                    '{"unrecorded_allowlist":[],"structurally_unreachable":[],"expected_failures":[' + item +
+                    '],"observation_exempt":[],"withdrawn_decisions":' + withdrawn + '} '
+                )
+                result = self.run_checker({
+                    "tools/known_exceptions.json": data,
+                    "app/src/test/kotlin/com/trailnav/app/StartPhaseTest.kt": source,
+                })
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(expected, result.stdout)
+
     def test_new_scanner_is_discovered_by_glob(self):
         result = self.run_checker({
             "tools/check_new.py": "def inspect(path):\n    if path.startswith('hidden/'):\n        pass\n",
