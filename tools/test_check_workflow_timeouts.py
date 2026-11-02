@@ -28,7 +28,7 @@ def line_is_job_header(line: str) -> bool:
 def test_normal_workflow_passes() -> None:
     failures, timeouts = checker.check_workflow_text(WORKFLOW.read_text(encoding="utf-8"))
     assert failures == []
-    assert len(timeouts) == 11
+    assert len(timeouts) == 12
 
 
 def test_missing_timeout_is_rejected() -> None:
@@ -40,6 +40,17 @@ def test_missing_timeout_is_rejected() -> None:
     )
     failures, _ = checker.check_workflow_text(broken)
     assert any("purity: expected exactly one" in failure for failure in failures)
+
+
+def test_new_full_grid_job_requires_a_timeout() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    broken = replace_job_block(
+        workflow,
+        "start-phase-grid-full",
+        lambda lines: [line for line in lines if line != "    timeout-minutes: 70"],
+    )
+    failures, _ = checker.check_workflow_text(broken)
+    assert any("start-phase-grid-full: expected exactly one" in failure for failure in failures)
 
 
 def test_string_zero_negative_and_over_limit_timeouts_are_rejected() -> None:
@@ -60,6 +71,7 @@ def test_string_zero_negative_and_over_limit_timeouts_are_rejected() -> None:
 def run_all() -> None:
     test_normal_workflow_passes()
     test_missing_timeout_is_rejected()
+    test_new_full_grid_job_requires_a_timeout()
     test_string_zero_negative_and_over_limit_timeouts_are_rejected()
 
 

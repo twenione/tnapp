@@ -1,6 +1,14 @@
+import org.gradle.api.tasks.testing.Test
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+val startPhaseGridSampleCount = providers.gradleProperty("startPhaseGridSampleCount").orElse("1000")
+
+tasks.withType<Test>().configureEach {
+    systemProperty("trailnav.startPhaseGrid.sampleCount", startPhaseGridSampleCount.get())
 }
 
 fun gitOutput(vararg command: String): String? = runCatching {

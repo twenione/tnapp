@@ -48,8 +48,8 @@ def workflow_contract_failures(workflow: str) -> list[str]:
     if aggregate is not None:
         if not re.search(r"^    needs:\s*\[?\s*negative-control-engine-shard", aggregate, re.MULTILINE):
             failures.append("aggregate job must need negative-control-engine-shard")
-        if not re.search(r"^    if:\s*always\(\)\s*$", aggregate, re.MULTILINE):
-            failures.append("aggregate job must run with if: always()")
+        if not re.search(r"^    if:\s*always\(\)(?:\s*&&\s*\(.+\))?\s*$", aggregate, re.MULTILINE):
+            failures.append("aggregate job must retain always() for enabled runs")
         if "needs.negative-control-engine-shard.result" not in aggregate:
             failures.append("aggregate job must fail when the shard job result is not success")
     return failures
