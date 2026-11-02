@@ -15,6 +15,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -586,6 +587,10 @@ MUTATION_REQUIRED_CONSUMERS = {
 
 CONSUMER_NAMES = ("replay", "replay-turn-session", "config-sensitivity", "phase1-accuracy")
 APP_START_TEST = "app-start-test"
+APP_START_TEST_FILTER = (
+    "com.trailnav.app.StartPhaseGridTest."
+    "startPhaseArrivalAdvanceGuardRejectsNearLoopEndStartMutation"
+)
 
 
 def unmutated_consumer_failures(results: dict[str, int]) -> list[str]:
@@ -701,6 +706,22 @@ def mutation_needle_failures(sources: dict[Path, str]) -> list[str]:
             failures.append(f"{name}: mutation needle occurrence count={count}, expected=1 in {target}")
     return failures
 
+
+def parse_shard_spec(value: str) -> tuple[int, int]:
+    pieces = value.split("/")
+    if len(pieces) != 2 or not all(piece.isdecimal() for piece in pieces):
+        raise argparse.ArgumentTypeError("shard must be INDEX/COUNT using positive integers")
+    index, count = (int(piece) for piece in pieces)
+    if count < 1 or index < 1 or index > count:
+        raise argparse.ArgumentTypeError("shard INDEX must be between 1 and COUNT, and COUNT must be positive")
+    return index, count
+
+
+def partition_mutations(mutation_names: list[str], index: int, count: int) -> list[str]:
+    if count < 1 or index < 1 or index > count:
+        raise ValueError(f"invalid shard index/count: {index}/{count}")
+    return [name for position, name in enumerate(mutation_names) if position % count == index - 1]
+
 def consumer_commands(cli: Path) -> dict[str, list[str]]:
     return {
         "replay": ["python", "tools/replay.py", "--cli", str(cli), "--contract"],
@@ -716,8 +737,8 @@ def consumer_commands(cli: Path) -> dict[str, list[str]]:
     }
 
 
-def app_start_test_command(gradle: str) -> list[str]:
-    return [gradle, ":app:testDebugUnitTest", "--tests", "com.trailnav.app.StartPhase*", "--no-daemon"]
+def app_start_test_command(gradle: str, test_filter: str = APP_START_TEST_FILTER) -> list[str]:
+    return [gradle, ":app:testDebugUnitTest", "--tests", test_filter, "--no-daemon"]
 
 
 def mutation_consumer_commands(mutation: str, cli: Path, gradle: str) -> dict[str, list[str]]:
@@ -746,6 +767,60 @@ def run(command: list[str], cwd: Path) -> tuple[int, str]:
     return result.returncode, (result.stdout + "\n" + result.stderr).strip()
 
 
+def app_start_test_xml_result(workspace: Path, test_filter: str = APP_START_TEST_FILTER) -> tuple[bool, str]:
+    """Require exactly the requested single Gradle test in a one-test XML report."""
+    if "." not in test_filter:
+        return False, f"invalid fully qualified test filter: {test_filter}"
+    expected_class, expected_method = test_filter.rsplit(".", 1)
+    report_dir = workspace / "app/build/test-results/testDebugUnitTest"
+    matching_reports: list[tuple[Path, ET.Element, list[ET.Element]]] = []
+    for report in sorted(report_dir.glob("TEST-*.xml")):
+        try:
+            root = ET.parse(report).getroot()
+        except ET.ParseError:
+            continue
+        cases = [
+            case for case in root.findall(".//testcase")
+            if case.get("classname") == expected_class and case.get("name") == expected_method
+        ]
+        if cases:
+            matching_reports.append((report, root, cases))
+    if len(matching_reports) != 1:
+        return False, f"expected one matching XML report, found {len(matching_reports)}"
+    report, root, cases = matching_reports[0]
+    report_tests = root.get("tests")
+    all_cases = root.findall(".//testcase")
+    if len(cases) != 1 or report_tests != "1" or len(all_cases) != 1:
+        return False, (
+            f"expected tests=\"1\" and exactly one testcase in {report.name}; "
+            f"tests={report_tests!r}, matching={len(cases)}, total={len(all_cases)}"
+        )
+    return True, f"{report.as_posix()} tests=\"1\" testcase={expected_class}.{expected_method}"
+
+
+def run_app_start_test(
+    gradle: str,
+    workspace: Path,
+    test_filter: str = APP_START_TEST_FILTER,
+    runner=run,
+) -> tuple[int, str]:
+    report_dir = workspace / "app/build/test-results/testDebugUnitTest"
+    shutil.rmtree(report_dir, ignore_errors=True)
+    started_at = time.perf_counter()
+    code, output = runner(app_start_test_command(gradle, test_filter), workspace)
+    elapsed_seconds = time.perf_counter() - started_at
+    valid_report, report_summary = app_start_test_xml_result(workspace, test_filter)
+    if not valid_report:
+        return 1, (
+            f"{output}\nAPP_START_TEST_REPORT_FAIL: {report_summary}"
+            f"\nAPP_START_TEST_DURATION_SECONDS={elapsed_seconds:.3f}"
+        ).strip()
+    return code, (
+        f"{output}\nAPP_START_TEST_REPORT_PASS: {report_summary}"
+        f"\nAPP_START_TEST_DURATION_SECONDS={elapsed_seconds:.3f}"
+    ).strip()
+
+
 def copy_repo(source: Path, destination: Path) -> None:
     ignored = shutil.ignore_patterns(".git", ".gradle", ".gradle-home", "build", "*.jar", "*.log", ".task005-evidence")
     shutil.copytree(source, destination, ignore=ignored)
@@ -756,11 +831,44 @@ def main() -> int:
     parser.add_argument("--repo-root", type=Path, default=Path("."))
     parser.add_argument("--gradle", default="gradle")
     parser.add_argument("--out", type=Path, default=Path("d033-negative-control.log"))
+    parser.add_argument("--shard", type=parse_shard_spec, help="run deterministic shard INDEX/COUNT")
+    parser.add_argument("--result-json", type=Path, help="write machine-readable mutation outcomes")
     args = parser.parse_args()
+    shard_index, shard_count = args.shard or (1, 1)
     source = args.repo_root.resolve()
     evidence: list[str] = []
     failures: list[str] = []
     summary_rows: list[tuple[str, str, str, str]] = []
+    mutation_results: list[dict[str, object]] = []
+    positive_control_exit_codes: dict[str, int] = {}
+    positive_control_passed = False
+    selected_names = partition_mutations(list(VARIANTS), shard_index, shard_count)
+    started_at = time.perf_counter()
+
+    def save_result_json() -> None:
+        if args.result_json is None:
+            return
+        outcomes = [str(row["result"]) for row in mutation_results]
+        summary = {
+            "detected": outcomes.count("DETECTED"),
+            "not_detectable": outcomes.count("NOT-DETECTABLE (D-179)"),
+            "survived": outcomes.count("SURVIVED"),
+            "invalid": outcomes.count("INVALID"),
+            "total": len(outcomes),
+        }
+        result = {
+            "shard": {"index": shard_index, "count": shard_count},
+            "total_mutation_names": len(VARIANTS),
+            "campaign_passed": not failures and positive_control_passed,
+            "mutations": mutation_results,
+            "summary": summary,
+            "positive_control": {
+                "passed": positive_control_passed,
+                "observed_exit_codes": positive_control_exit_codes,
+            },
+        }
+        args.result_json.parent.mkdir(parents=True, exist_ok=True)
+        args.result_json.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if set(MUTATION_REQUIRED_CONSUMERS) != set(VARIANTS):
         missing = sorted(set(VARIANTS) - set(MUTATION_REQUIRED_CONSUMERS))
         extra = sorted(set(MUTATION_REQUIRED_CONSUMERS) - set(VARIANTS))
@@ -778,6 +886,15 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="tnapp-d033-") as temporary:
         workspace = Path(temporary) / "repo"
+        evidence.append(
+            f"SHARD index={shard_index}/{shard_count} selected={len(selected_names)}/{len(VARIANTS)} "
+            f"mutations={','.join(selected_names)}"
+        )
+        evidence.append(
+            f"ISOLATION workspace={workspace.resolve()} out={args.out.resolve()} "
+            f"result-json={args.result_json.resolve() if args.result_json else 'not-requested'} "
+            f"gradle-user-home={os.environ.get('GRADLE_USER_HOME', '<default>')}"
+        )
         copy_repo(source, workspace)
         try:
             structurally_unreachable_mutations = load_structurally_unreachable_mutations(
@@ -788,6 +905,7 @@ def main() -> int:
             failures.append(f"FAIL: structurally_unreachable data: {exc}")
             evidence.append(f"FAIL: structurally_unreachable data\n{exc}")
             save_evidence()
+            save_result_json()
             print("FAIL: structurally_unreachable data")
             print(failures[-1])
             return 1
@@ -804,6 +922,7 @@ def main() -> int:
             failures.extend(needle_errors)
             evidence.append("FAIL: mutation needles must be unique\n" + "\n".join(needle_errors))
             save_evidence()
+            save_result_json()
             print("FAIL: D-033 mutation needle uniqueness")
             print("\n".join(needle_errors))
             return 1
@@ -825,17 +944,25 @@ def main() -> int:
                 code, output = run(command, workspace)
                 baseline_results[consumer] = code
                 evidence.append(f"UNMUTATED consumer={consumer} exit={code}\n{output}")
-            app_start_code, app_start_output = run(app_start_test_command(args.gradle), workspace)
+            app_start_code, app_start_output = run_app_start_test(args.gradle, workspace)
             baseline_results[APP_START_TEST] = app_start_code
             evidence.append(f"UNMUTATED consumer={APP_START_TEST} exit={app_start_code}\n{app_start_output}")
         failures.extend(unmutated_consumer_failures(baseline_results))
+        positive_control_exit_codes = {
+            "core-guide-test": baseline_core_code,
+            "replay-build": baseline_build_code,
+            **baseline_results,
+        }
+        positive_control_passed = not failures
         if failures:
             save_evidence()
+            save_result_json()
             print("FAIL: D-033 unmutated-engine positive control")
             print("\n".join(failures))
             return 1
 
-        for name, (needle, replacement) in VARIANTS.items():
+        for name in selected_names:
+            needle, replacement = VARIANTS[name]
             target_relative = VARIANT_SOURCE_PATHS.get(name, ENGINE)
             target = workspace / target_relative
             target_original = sources[target_relative]
@@ -859,6 +986,7 @@ def main() -> int:
             evidence.append(f"VARIANT {name} consumer=replay-build exit={cli_code}\n{cli_output}")
             if cli_code != 0:
                 failures.append(f"{name}: replay CLI build failed")
+            variant_invalid = cli_code != 0
             cli = installed_cli(workspace)
             if cli_code != 0 or not cli.is_file():
                 for consumer in CONSUMER_NAMES:
@@ -869,7 +997,10 @@ def main() -> int:
                     evidence.append(f"VARIANT {name} consumer={APP_START_TEST} exit=not-built")
             else:
                 for consumer, command in mutation_consumer_commands(name, cli, args.gradle).items():
-                    code, output = run(command, workspace)
+                    if consumer == APP_START_TEST:
+                        code, output = run_app_start_test(args.gradle, workspace)
+                    else:
+                        code, output = run(command, workspace)
                     consumer_results[consumer] = code
                     evidence.append(f"VARIANT {name} consumer={consumer} exit={code}\n{output}")
 
@@ -881,6 +1012,7 @@ def main() -> int:
             failures.extend(variant_failures)
             if test_code != 0 and not test_names:
                 failures.append(f"{name}: core-guide-test failed without a named failing test")
+                variant_invalid = True
             rejected = sorted(consumer for consumer in required if consumer_results.get(consumer, 0) != 0)
             failed_tests = [
                 f"{consumer}: {', '.join(test_names)}"
@@ -896,6 +1028,15 @@ def main() -> int:
             else:
                 detail = "; ".join(failed_tests)
             summary_rows.append((name, ", ".join(sorted(required)), status, detail))
+            result_status = status
+            if variant_invalid or status == "DETECTED (unexpected)":
+                result_status = "INVALID"
+            mutation_results.append({
+                "mutation": name,
+                "required_consumers": sorted(required),
+                "observed_exit_codes": consumer_results,
+                "result": result_status,
+            })
             target.write_text(target_original, encoding="utf-8")
 
         fixture = workspace / "testdata/sessions/golden/turn_contract"
@@ -920,12 +1061,13 @@ def main() -> int:
             if pairing_code == 0:
                 failures.append("replay: missing-loc mutation unexpectedly passed")
     save_evidence()
+    save_result_json()
     task080_rows = [row for row in summary_rows if row[0].startswith("task080-")]
     detected_count = sum(row[2] == "DETECTED" for row in task080_rows)
     exempt_count = sum(row[2] == "NOT-DETECTABLE (D-179)" for row in task080_rows)
     survivor_count = sum(mutation_is_survivor(row[2]) for row in task080_rows)
     print(
-        "TASK-080 mutation outcomes "
+        f"TASK-080 mutation outcomes shard={shard_index}/{shard_count} "
         f"detected={detected_count} exempt={exempt_count} survivors={survivor_count}"
     )
     if failures:
@@ -933,10 +1075,12 @@ def main() -> int:
         print("\n".join(failures))
         return 1
     print(
-        f"PASS: D-033 consumers validated {len(VARIANTS)} engine mutations "
-        f"(TASK-080 detected={detected_count}, NOT-DETECTABLE={exempt_count}, survivors={survivor_count})"
+        f"PASS: D-033 consumers validated {len(summary_rows)}/{len(VARIANTS)} engine mutations "
+        f"(shard={shard_index}/{shard_count}; TASK-080 detected={detected_count}, "
+        f"NOT-DETECTABLE={exempt_count}, survivors={survivor_count})"
     )
     print(f"evidence={args.out}")
+    print(f"elapsed_seconds={time.perf_counter() - started_at:.3f}")
     return 0
 
 

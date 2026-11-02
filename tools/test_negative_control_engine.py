@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 
 import negative_control_engine as d033
@@ -52,7 +54,7 @@ def test_required_mutation_consumers() -> None:
     named_commands = d033.mutation_consumer_commands("arrival-advance-removed", Path("replay"), "gradle")
     assert d033.APP_START_TEST in named_commands
     assert named_commands[d033.APP_START_TEST] == [
-        "gradle", ":app:testDebugUnitTest", "--tests", "com.trailnav.app.StartPhase*", "--no-daemon"
+        "gradle", ":app:testDebugUnitTest", "--tests", d033.APP_START_TEST_FILTER, "--no-daemon"
     ]
     unnamed_commands = d033.mutation_consumer_commands("approach-gate-removed", Path("replay"), "gradle")
     assert d033.APP_START_TEST not in unnamed_commands
@@ -182,6 +184,71 @@ def test_installed_cli_selects_host_launcher() -> None:
         assert d033.installed_cli(workspace, windows=True) == windows_cli
 
 
+def test_app_start_consumer_requires_exactly_one_xml_test() -> None:
+    test_filter = d033.APP_START_TEST_FILTER
+    class_name, method_name = test_filter.rsplit(".", 1)
+
+    with tempfile.TemporaryDirectory(prefix="task085-app-start-report-") as temporary:
+        workspace = Path(temporary)
+        report_dir = workspace / "app/build/test-results/testDebugUnitTest"
+
+        def matching_runner(command: list[str], cwd: Path) -> tuple[int, str]:
+            assert command[command.index("--tests") + 1] == test_filter
+            report_dir.mkdir(parents=True, exist_ok=True)
+            (report_dir / "TEST-com.trailnav.app.StartPhaseGridTest.xml").write_text(
+                f'<testsuite tests="1"><testcase classname="{class_name}" name="{method_name}"/></testsuite>',
+                encoding="utf-8",
+            )
+            return 0, "synthetic gradle pass"
+
+        code, output = d033.run_app_start_test("gradle", workspace, runner=matching_runner)
+        assert code == 0
+        assert 'tests="1"' in output
+
+        def unmatched_runner(command: list[str], cwd: Path) -> tuple[int, str]:
+            assert "DoesNotExist" in command[command.index("--tests") + 1]
+            return 0, "gradle reported no matching tests"
+
+        code, output = d033.run_app_start_test(
+            "gradle", workspace, f"{class_name}.DoesNotExist", runner=unmatched_runner
+        )
+        assert code == 1
+        assert "APP_START_TEST_REPORT_FAIL" in output
+
+
+def test_narrow_app_start_test_does_not_read_grid_cells() -> None:
+    source = Path("app/src/test/kotlin/com/trailnav/app/StartPhaseGridTest.kt").read_text(encoding="utf-8")
+    method = "fun startPhaseArrivalAdvanceGuardRejectsNearLoopEndStartMutation() {"
+    method_body = source.split(method, 1)[1].split("\n    }", 1)[0]
+    helper = "fun deterministicLoopNearEndDidArrive(): Boolean {"
+    helper_body = source.split(helper, 1)[1].split("\n    }", 1)[0]
+    assert "StartPhaseGrid.cells" not in method_body
+    assert "StartPhaseGrid.cells" not in helper_body
+
+
+def test_shard_partition_is_deterministic_and_complete_for_counts_one_through_twelve() -> None:
+    names = list(d033.VARIANTS)
+    for count in range(1, 13):
+        first_pass = [d033.partition_mutations(names, index, count) for index in range(1, count + 1)]
+        second_pass = [d033.partition_mutations(names, index, count) for index in range(1, count + 1)]
+        assert first_pass == second_pass
+        flattened = [name for shard in first_pass for name in shard]
+        assert len(flattened) == len(names)
+        assert len(set(flattened)) == len(names)
+        assert set(flattened) == set(names)
+
+
+def test_invalid_shard_arguments_are_rejected_by_cli() -> None:
+    for shard in ("7/6", "0/6", "1/0", "a/b"):
+        result = subprocess.run(
+            [sys.executable, "tools/negative_control_engine.py", "--shard", shard],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 2, (shard, result.stdout, result.stderr)
+
+
 def test_unique_mutation_needles() -> None:
     source = Path("tools/negative_control_engine.py").read_text(encoding="utf-8")
     engine_path = Path("core-guide/src/main/kotlin/com/trailnav/core/Engine.kt")
@@ -227,5 +294,9 @@ if __name__ == "__main__":
     test_detected_exempt_mutation_fails_strictly()
     test_missing_structurally_unreachable_data_fails_closed()
     test_installed_cli_selects_host_launcher()
+    test_app_start_consumer_requires_exactly_one_xml_test()
+    test_narrow_app_start_test_does_not_read_grid_cells()
+    test_shard_partition_is_deterministic_and_complete_for_counts_one_through_twelve()
+    test_invalid_shard_arguments_are_rejected_by_cli()
     test_unique_mutation_needles()
     print("PASS: D-033 unmutated positive control, required-consumer matrix, and unique mutation needles")
