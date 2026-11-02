@@ -10,6 +10,7 @@ permissions:
 jobs:
   purity:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -46,6 +47,7 @@ jobs:
 
   session-format:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -74,6 +76,7 @@ jobs:
 
   core-guide-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -95,6 +98,7 @@ jobs:
 
   replay:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -133,6 +137,7 @@ jobs:
 
   negative-control:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -196,6 +201,12 @@ jobs:
         run: python tools/test_append_resolution.py
       - name: D-033 consumer positive-control unit tests
         run: python tools/test_negative_control_engine.py
+      - name: Sharded D-033 aggregation negative controls
+        run: python tools/test_aggregate_negative_control.py
+      - name: Workflow job timeout validation
+        run: python tools/check_workflow_timeouts.py
+      - name: Workflow job timeout negative controls
+        run: python tools/test_check_workflow_timeouts.py
       - name: Synthetic test-data rule negative controls
         run: python tools/test_check_synthetic_test_data.py
       - name: Fixture shape negative controls
@@ -223,8 +234,13 @@ jobs:
       - name: Exclusion reference negative controls
         run: python tools/test_check_exclusion_references.py
 
-  negative-control-engine:
+  negative-control-engine-shard:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -237,18 +253,56 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.14'
-      - name: Verify engine consumers reject injected defects
-        run: python tools/negative_control_engine.py --gradle gradle --out d033-negative-control.log
-      - name: Upload D-033 mutation evidence
+      - name: Verify assigned mutation shard
+        run: python tools/negative_control_engine.py --gradle gradle --shard ${{ matrix.shard }}/6 --out d033-negative-control-${{ matrix.shard }}.log --result-json d033-result-${{ matrix.shard }}.json
+      - name: Upload D-033 shard evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: d033-negative-control-${{ github.run_id }}
-          path: d033-negative-control.log
+          name: d033-negative-control-${{ github.run_id }}-${{ matrix.shard }}
+          path: |
+            d033-negative-control-${{ matrix.shard }}.log
+            d033-result-${{ matrix.shard }}.json
           if-no-files-found: error
+
+  negative-control-engine:
+    runs-on: ubuntu-latest
+    needs: negative-control-engine-shard
+    if: always()
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Require every mutation shard to succeed
+        if: always()
+        run: test "${{ needs.negative-control-engine-shard.result }}" = "success"
+      - name: Download all shard evidence
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          pattern: d033-negative-control-${{ github.run_id }}-*
+          path: d033-results
+          merge-multiple: true
+      - name: Aggregate all mutation outcomes
+        if: always()
+        run: python tools/aggregate_negative_control.py --dir d033-results --shards 6
+      - name: Add shard logs to job summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          for log in d033-results/*.log; do
+            [[ -f "$log" ]] || continue
+            echo "## $log" >> "$GITHUB_STEP_SUMMARY"
+            tail -n 12 "$log" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+          done
 
   replay-determinism:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -274,6 +328,7 @@ jobs:
 
   phase1-accuracy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -296,6 +351,7 @@ jobs:
       contents: read
       actions: read
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -312,6 +368,7 @@ jobs:
 
   config-sensitivity:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
