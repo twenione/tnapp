@@ -97,6 +97,17 @@ class FailureMetricsTest(unittest.TestCase):
         self.assertEqual(run_preserve_record("push")["trigger_event"], "push")
         self.assertEqual(run_preserve_record(None)["trigger_event"], "unknown")
 
+    def test_f8_schedule_and_manual_events_are_preserved_outside_push_denominator(self):
+        for event in ("schedule", "workflow_dispatch"):
+            record = run_preserve_record(event)
+            self.assertEqual(record["trigger_event"], event)
+            summary = run_metrics([record, resolution(record["run_id"])])
+            self.assertEqual(summary["failures_total"], "1")
+            self.assertEqual(summary["failures_push"], "0")
+            self.assertEqual(summary["failures_pull_request"], "0")
+            self.assertEqual(summary["resolved_push"], "0")
+            self.assertEqual(summary["resolution_coverage_push"], "undefined")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.test.assertFailsWith
 import org.junit.FixMethodOrder
 import org.junit.runners.MethodSorters
 
@@ -163,6 +164,17 @@ internal fun assertExpectedFailureRuntimeConsistency(expected: Set<String>, obse
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class StartPhaseGridTest {
     @Test
+    fun sampleCountInputUsesDefaultAndRejectsInvalidValues() {
+        assertEquals(1_000, parseStartPhaseGridSampleCount(null))
+        assertEquals(250, parseStartPhaseGridSampleCount("250"))
+        for (invalid in listOf("", "abc", "0", "-1")) {
+            assertFailsWith<IllegalArgumentException>(invalid) {
+                parseStartPhaseGridSampleCount(invalid)
+            }
+        }
+    }
+
+    @Test
     fun startPhaseArrivalAdvanceGuardRejectsNearLoopEndStartMutation() {
         assertFalse(
             StartPhaseGrid.deterministicLoopNearEndDidArrive(),
@@ -273,8 +285,18 @@ class StartPhaseGridTest {
     }
 }
 
+internal fun parseStartPhaseGridSampleCount(raw: String?): Int {
+    val value = raw ?: "1000"
+    val parsed = value.toIntOrNull()
+        ?: throw IllegalArgumentException("start-phase grid sample count must be an integer, got '$value'")
+    require(parsed >= 1) { "start-phase grid sample count must be at least 1, got $parsed" }
+    return parsed
+}
+
 private object StartPhaseGrid {
-    private const val SAMPLE_COUNT = 1_000
+    private val sampleCount = parseStartPhaseGridSampleCount(
+        System.getProperty("trailnav.startPhaseGrid.sampleCount"),
+    )
     private const val SEED_BASE = 84_159_177L
     private const val SECONDS = 300
     private const val METERS_PER_DEGREE = 111_320.0
@@ -292,6 +314,13 @@ private object StartPhaseGrid {
         sunsetEnabled = true,
         sunriseEnabled = true,
     )
+
+    init {
+        println("START-GRID-N n=$sampleCount")
+        if (sampleCount < 1_000) {
+            println("N 축소 — 0건이 1/1,000 수준을 보증하지 않음(D-183)")
+        }
+    }
 
     val cells: List<StartCellEvidence> by lazy(::run)
 
@@ -383,12 +412,12 @@ private object StartPhaseGrid {
 
     private fun run(): List<StartCellEvidence> {
         val cells = scenarios().mapIndexed { cellIndex, scenario ->
-            val sampleCount = if (scenario.sigmaMeters == 0.0) 1 else SAMPLE_COUNT
+            val samplesForCell = if (scenario.sigmaMeters == 0.0) 1 else sampleCount
             var arrivals = 0
             var offRouteFrames = 0
             var opposedFrames = 0
             var prematureFrames = 0
-            for (sample in 0 until sampleCount) {
+            for (sample in 0 until samplesForCell) {
                 val seed = SEED_BASE + cellIndex * 10_000L + sample
                 val run = runScenario(scenario, seed)
                 if (run.arrived) arrivals++
@@ -399,7 +428,7 @@ private object StartPhaseGrid {
             StartCellEvidence(
                 label = scenario.label(),
                 sigmaMeters = scenario.sigmaMeters,
-                samples = sampleCount,
+                samples = samplesForCell,
                 arrivalRuns = arrivals,
                 onRouteOffRouteFrames = offRouteFrames,
                 opposedDirectionFrames = opposedFrames,
