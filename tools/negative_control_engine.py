@@ -39,6 +39,8 @@ VARIANTS = {
  'arrival-advance-removed': ('val arrivalHasAdvance = next.arrivalBaselineRemainingMeters != null &&\n'
                              '        next.advanceCreditedMeters >= requiredArrivalAdvance',
                              'val arrivalHasAdvance = true /* TASK-079 advance condition removed */'),
+ 'arrival-lateral-distance-condition-removed': ('        match.distanceMeters < config.offRouteEnterDistMeters &&',
+                                                 '        true /* D-033 D-184 lateral arrival guard removed */ &&'),
  'arrival-jump-always-credited': ('if (jump <= allowed) {',
                                   'if (true) { /* TASK-079 jump limit removed */'),
  'arrival-floor-removed': ('val absoluteFloor = min(config.arrivalMinAdvanceMeters, config.arrivalAdvanceFraction * route.totalLengthMeters)',
@@ -550,6 +552,7 @@ MUTATION_REQUIRED_CONSUMERS = {
     "eta-cap-removed": CORE_TEST,
     "eta-clamped-observation-included": CORE_TEST,
     "arrival-advance-removed": CORE_TEST | frozenset({"app-start-test"}),
+    "arrival-lateral-distance-condition-removed": CORE_TEST,
     "arrival-jump-always-credited": CORE_TEST,
     "arrival-floor-removed": CORE_TEST,
     "arrival-positive-deltas-summed": CORE_TEST,

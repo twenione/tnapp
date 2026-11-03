@@ -1113,7 +1113,9 @@ private fun isArrivalCandidate(
     val finalPoint = route.points.last()
     val distanceToEnd = RouteMath.distance(match.projectedPoint, finalPoint)
     val sessionElapsed = elapsedSeconds(timestamp, sessionStartTimestamp)
+    // D-184: a geometric endpoint match outside the route is not an arrival candidate.
     return sessionElapsed >= config.minimumSessionSecondsBeforeArrival &&
+        match.distanceMeters < config.offRouteEnterDistMeters &&
         distanceToEnd <= config.arriveRadiusMeters &&
         match.projectedMeters > route.totalLengthMeters * config.arriveProgressFraction
 }

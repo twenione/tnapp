@@ -271,6 +271,197 @@ class ArrivalAdvanceTest {
     }
 
     @Test
+    fun offRouteArrivalReproductionRequiresLateralDistanceBelowThreshold() {
+        val route = lineRoute(1_000.0)
+        val config = GuideConfig()
+        val observed = mutableListOf<ArrivalReproductionObservation>()
+
+        for (finalOffsetMeters in listOf(0.0, 30.0, 60.0, 150.0, 400.0)) {
+            var state = GuideState.initial(route)
+            for (step in 0..90) {
+                val result = guide(state, frameAt(route, step * 10.0, step * 7_000L), config)
+                state = result.nextState
+            }
+
+            var arrivedAtLateralMeters: Double? = null
+            var arrivalFrame: Int? = null
+            var offRouteBeforeArrival = false
+            for (step in 1..30) {
+                val result = guide(
+                    state,
+                    frameAt(
+                        route,
+                        900.0 + step * (100.0 / 30.0),
+                        630_000L + step * 7_000L,
+                        northError = finalOffsetMeters * step / 30.0,
+                    ),
+                    config,
+                )
+                state = result.nextState
+                if (result.guidance is Guidance.OffRoute && arrivedAtLateralMeters == null) {
+                    offRouteBeforeArrival = true
+                }
+                if (result.guidance == Guidance.Arrived && arrivedAtLateralMeters == null) {
+                    arrivedAtLateralMeters = assertNotNull(state.lastMatch).distanceMeters
+                    arrivalFrame = step
+                }
+            }
+            observed += ArrivalReproductionObservation(
+                finalOffsetMeters = finalOffsetMeters,
+                arrivalLateralMeters = arrivedAtLateralMeters,
+                offRouteBeforeArrival = offRouteBeforeArrival,
+                arrivalFrame = arrivalFrame,
+            )
+        }
+
+        observed.forEach { row ->
+            println(
+                "TASK087_S12 finalOffset=${row.finalOffsetMeters}m " +
+                    "arrivalLateral=${row.arrivalLateralMeters ?: "none"}m " +
+                    "offRouteBeforeArrival=${row.offRouteBeforeArrival} " +
+                    "arrivalFrame=${row.arrivalFrame ?: "none"}",
+            )
+        }
+
+        assertEquals(0.0, assertNotNull(observed[0].arrivalLateralMeters), 0.5)
+        assertFalse(observed[0].offRouteBeforeArrival)
+        assertEquals(23, observed[0].arrivalFrame)
+
+        assertEquals(23.0, assertNotNull(observed[1].arrivalLateralMeters), 0.5)
+        assertFalse(observed[1].offRouteBeforeArrival)
+        assertEquals(23, observed[1].arrivalFrame)
+
+        for (row in observed.drop(2)) {
+            assertEquals(null, row.arrivalLateralMeters, "must not arrive at final offset ${row.finalOffsetMeters} m")
+            assertTrue(row.offRouteBeforeArrival, "expected an OffRoute event at final offset ${row.finalOffsetMeters} m")
+            assertEquals(null, row.arrivalFrame)
+        }
+    }
+
+    @Test
+    fun arrivalLateralDistanceUsesStrictConfiguredEnterThreshold() {
+        val route = lineRoute(1_000.0)
+        val defaultThresholdMeters = GuideConfig().offRouteEnterDistMeters
+
+        fun arrivalAtOffset(offsetMeters: Double, config: GuideConfig): Pair<Double, Boolean> {
+            var state = GuideState.initial(route)
+            for (step in 0..90) {
+                state = guide(state, frameAt(route, step * 10.0, step * 7_000L), config).nextState
+            }
+
+            var arrived = false
+            var matchDistanceMeters = Double.NaN
+            for (step in 1..10) {
+                val result = guide(
+                    state,
+                    frameAt(route, 900.0 + step * 10.0, 630_000L + step * 7_000L, northError = offsetMeters),
+                    config,
+                )
+                state = result.nextState
+                matchDistanceMeters = assertNotNull(state.lastMatch).distanceMeters
+                if (result.guidance == Guidance.Arrived) arrived = true
+            }
+            return matchDistanceMeters to arrived
+        }
+
+        // Calibrate the exact match metric at the requested GuideConfig boundary: geo conversion
+        // can make a nominal 25.0 m input differ from 25.0 by floating-point rounding.
+        val nominalBoundaryMatchMeters = arrivalAtOffset(
+            defaultThresholdMeters,
+            GuideConfig(),
+        ).first
+        val thresholdMeters = nominalBoundaryMatchMeters
+        val config = GuideConfig(offRouteEnterDistMeters = thresholdMeters)
+        val observed = listOf(thresholdMeters - 0.1, thresholdMeters, thresholdMeters + 0.1).map { offsetMeters ->
+            val (matchDistanceMeters, arrived) = arrivalAtOffset(offsetMeters, config)
+            println(
+                "TASK087_BOUNDARY configured=${thresholdMeters}m input=${offsetMeters}m " +
+                    "match=${matchDistanceMeters}m arrived=$arrived",
+            )
+            Triple(offsetMeters, matchDistanceMeters, arrived)
+        }
+
+        assertEquals(defaultThresholdMeters, thresholdMeters, 0.1)
+        assertTrue(assertNotNull(observed[0].second) < thresholdMeters)
+        assertTrue(observed[0].third, "threshold minus 0.1 m should allow arrival")
+        assertEquals(thresholdMeters, assertNotNull(observed[1].second), 0.1)
+        assertFalse(observed[1].third, "the strict boundary must not allow arrival")
+        assertTrue(assertNotNull(observed[2].second) > thresholdMeters)
+        assertFalse(observed[2].third, "threshold plus 0.1 m must not allow arrival")
+    }
+
+    @Test
+    fun arrivalCanProceedAfterReturningInsideLateralThreshold() {
+        val route = lineRoute(1_000.0)
+        val config = GuideConfig()
+        var state = GuideState.initial(route)
+        for (step in 0..90) {
+            state = guide(state, frameAt(route, step * 10.0, step * 7_000L), config).nextState
+        }
+        var sawOffRoute = false
+        for (step in 1..8) {
+            val result = guide(
+                state,
+                frameAt(route, 900.0 + step * 10.0, 630_000L + step * 7_000L, northError = 60.0),
+                config,
+            )
+            state = result.nextState
+            if (result.guidance is Guidance.OffRoute) sawOffRoute = true
+        }
+
+        var arrival: GuideResult? = null
+        val targetLateralMeters = config.offRouteEnterDistMeters - 0.1
+        for (step in 1..10) {
+            val result = guide(
+                state,
+                frameAt(
+                    route,
+                    980.0 + step * 2.0,
+                    686_000L + step * 7_000L,
+                    northError = 60.0 + (targetLateralMeters - 60.0) * step / 10.0,
+                ),
+                config,
+            )
+            state = result.nextState
+            if (result.guidance == Guidance.Arrived) {
+                arrival = result
+                break
+            }
+        }
+
+        println(
+            "TASK087_RETURN sawOffRoute=$sawOffRoute " +
+                "arrivalLateral=${arrival?.nextState?.lastMatch?.distanceMeters ?: "none"}m " +
+                "arrived=${arrival != null}",
+        )
+        assertTrue(sawOffRoute, "the test must first observe OffRoute")
+        val arrivedResult = assertNotNull(arrival, "arrival should proceed after returning inside the configured threshold")
+        assertTrue(assertNotNull(arrivedResult.nextState.lastMatch).distanceMeters < config.offRouteEnterDistMeters)
+    }
+
+    @Test
+    fun offRouteArrivalCandidateDoesNotWriteBlockedCreditRecord() {
+        val route = lineRoute(1_000.0)
+        val config = GuideConfig(minimumSessionSecondsBeforeArrival = 0.0)
+        val thresholdMeters = config.offRouteEnterDistMeters
+
+        fun blockedRecordsForOffset(offsetMeters: Double): List<ArrivalBlockedRecord> {
+            var state = GuideState.initial(route)
+            state = guide(state, frameAt(route, 970.0, 0L), config).nextState
+            val result = guide(state, frameAt(route, 980.0, 10_000L, northError = offsetMeters), config)
+            assertFalse(result.guidance == Guidance.Arrived)
+            return result.nextState.arrivalBlockedRecords
+        }
+
+        val outsideRecords = blockedRecordsForOffset(thresholdMeters + 0.1)
+        val insideRecords = blockedRecordsForOffset(thresholdMeters - 0.1)
+        println("TASK087_BLOCKED_RECORDS outside=${outsideRecords.size} inside=${insideRecords.size}")
+
+        assertTrue(outsideRecords.isEmpty(), "an off-route non-candidate must not write an arrival block")
+        assertEquals(1, insideRecords.size, "an in-threshold candidate with insufficient credit still writes a block")
+    }
+
+    @Test
     fun arrivalAdvanceFractionChangesOutcome() {
         val route = lineRoute(2_000.0)
         val distances = listOf(1_880.0, 1_942.0, 1_980.0)
@@ -453,6 +644,13 @@ class ArrivalAdvanceTest {
 
     private fun normalApprox(random: Random, sigma: Double): Double =
         (0 until 12).sumOf { random.nextDouble() - 0.5 } * sigma
+
+    private data class ArrivalReproductionObservation(
+        val finalOffsetMeters: Double,
+        val arrivalLateralMeters: Double?,
+        val offRouteBeforeArrival: Boolean,
+        val arrivalFrame: Int?,
+    )
 
     private companion object {
         const val EARTH_RADIUS_METERS = 6_371_008.8
