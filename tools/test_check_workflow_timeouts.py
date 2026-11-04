@@ -47,7 +47,7 @@ def test_new_full_grid_job_requires_a_timeout() -> None:
     broken = replace_job_block(
         workflow,
         "start-phase-grid-full",
-        lambda lines: [line for line in lines if line != "    timeout-minutes: 70"],
+        lambda lines: [line for line in lines if line != "    timeout-minutes: 95"],
     )
     failures, _ = checker.check_workflow_text(broken)
     assert any("start-phase-grid-full: expected exactly one" in failure for failure in failures)
