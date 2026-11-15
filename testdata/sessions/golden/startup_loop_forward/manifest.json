@@ -1,0 +1,63 @@
+{
+  "session_id": "86f02e77-5c9f-4dd5-9cd3-84a558a50baf",
+  "schema_version": "0.1.0-draft",
+  "started_at_wall": "2026-01-01T00:00:00Z",
+  "app": {
+    "version": "0.1.0",
+    "build": 0,
+    "code_hash": "sha256:synthetic"
+  },
+  "engine": {
+    "config": {
+      "stub": false,
+      "variant": "startup_loop_forward",
+      "implementation": "core-guide",
+      "events": {
+        "E1": false,
+        "E2": false,
+        "E3": false,
+        "E4": false,
+        "E5": false,
+        "E6": false,
+        "E7": false,
+        "E8": false
+      }
+    },
+    "rng_seed": 93001
+  },
+  "route": {
+    "gpx_id": "startup_loop_forward",
+    "gpx_hash": "sha256:559a503b698a39415a8be37b18542396b426d10da4236d8583edc8f72fa46c1d",
+    "point_count": 5,
+    "elevation_use": {
+      "used": false,
+      "reason": "absent"
+    },
+    "waypoint_count": 0
+  },
+  "clock": {
+    "monotonic_source": "synthetic-sequence",
+    "timestamp_unit": "seconds"
+  },
+  "privacy": {
+    "upload_default": false
+  },
+  "device": {
+    "model": "synthetic",
+    "os": "test",
+    "sensors": [
+      "gps"
+    ]
+  },
+  "scenario": {
+    "family": "start-phase-golden",
+    "description": "startup loop forward"
+  },
+  "golden_status": "verified-engine-output",
+  "golden_verification": "replay+independent-startup-oracle",
+  "startup_oracle": {
+    "decision_source_seq": 50,
+    "direction": "forward",
+    "route_reversed": false
+  }
+}

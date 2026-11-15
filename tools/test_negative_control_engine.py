@@ -49,13 +49,44 @@ def test_required_mutation_consumers() -> None:
 
     assert d033.MUTATION_REQUIRED_CONSUMERS["turn-pass-always-false"] == d033.CORE_TEST
     assert d033.MUTATION_REQUIRED_CONSUMERS["turn-identity-zero"] == d033.CORE_TEST
+    task093_mutations = {name for name in d033.VARIANTS if name.startswith("task093-m")}
+    assert len(task093_mutations) == 12
+    task094_m1_mutations = {name for name in d033.VARIANTS if name.startswith("task094-m1-")}
+    assert task094_m1_mutations == {
+        "task094-m1-e1-direction-unknown-record-omitted",
+        "task094-m1-e3-direction-unknown-record-omitted",
+        "task094-m1-e4-direction-unknown-record-omitted",
+        "task094-m1-e6-direction-unknown-record-omitted",
+        "task094-m1-turn-ahead-direction-unknown-record-omitted",
+        "task094-m1-turn-now-direction-unknown-record-omitted",
+    }
+    assert all(d033.MUTATION_REQUIRED_CONSUMERS[name] == d033.CORE_TEST for name in task094_m1_mutations)
+    assert all(d033.VARIANT_SOURCE_PATHS[name] == d033.ENGINE for name in task094_m1_mutations)
+    assert d033.MUTATION_REQUIRED_CONSUMERS["task093-m4-tie-break-order-reversed"] == d033.CORE_TEST
+    assert d033.MUTATION_REQUIRED_CONSUMERS["task093-m10-zero-fit-width"] == d033.CORE_TEST
+    assert d033.APP_START_TEST in d033.MUTATION_REQUIRED_CONSUMERS["task093-m11-record-obligation-test-50m"]
+    assert d033.APP_START_TEST_FILTERS["task093-m14-suspect-changes-direction"].endswith(
+        "directionSuspectToggleChangesOnlyDiagnosticRecording"
+    )
     assert d033.APP_START_TEST in d033.MUTATION_REQUIRED_CONSUMERS["arrival-advance-removed"]
     assert d033.CORE_TEST.issubset(d033.MUTATION_REQUIRED_CONSUMERS["arrival-advance-removed"])
     named_commands = d033.mutation_consumer_commands("arrival-advance-removed", Path("replay"), "gradle")
     assert d033.APP_START_TEST in named_commands
     assert named_commands[d033.APP_START_TEST] == [
-        "gradle", ":app:testDebugUnitTest", "--tests", d033.APP_START_TEST_FILTER, "--no-daemon"
+        "gradle", ":app:testDebugUnitTest", "--tests",
+        d033.APP_START_TEST_FILTERS["arrival-advance-removed"], "--no-daemon"
     ]
+    for mutation in (
+        "arrival-d210-rmin-comparison-strict",
+        "arrival-d210-distance-comparison-strict",
+    ):
+        assert d033.MUTATION_REQUIRED_CONSUMERS[mutation] == {d033.APP_START_TEST}
+        assert d033.VARIANT_SOURCE_PATHS[mutation] == d033.APP_START_PHASE_TEST
+        command = d033.mutation_consumer_commands(mutation, Path("replay"), "gradle")
+        assert command[d033.APP_START_TEST] == [
+            "gradle", ":app:testDebugUnitTest", "--tests",
+            d033.APP_START_TEST_FILTERS[mutation], "--no-daemon"
+        ]
     unnamed_commands = d033.mutation_consumer_commands("approach-gate-removed", Path("replay"), "gradle")
     assert d033.APP_START_TEST not in unnamed_commands
     for mutation in (
@@ -261,12 +292,24 @@ def test_unique_mutation_needles() -> None:
     turn_pass = turn_pass_path.read_text(encoding="utf-8")
     model_path = Path("core-guide/src/main/kotlin/com/trailnav/core/Model.kt")
     model = model_path.read_text(encoding="utf-8")
+    matcher_path = Path("core-guide/src/main/kotlin/com/trailnav/core/StartTrajectoryMatcher.kt")
+    matcher = matcher_path.read_text(encoding="utf-8")
+    direction_test_path = Path("app/src/test/kotlin/com/trailnav/app/DirectionSuspectCalibrationTest.kt")
+    direction_test = direction_test_path.read_text(encoding="utf-8")
+    start_phase_test_path = d033.APP_START_PHASE_TEST
+    start_phase_test = start_phase_test_path.read_text(encoding="utf-8")
+    guide_session_path = Path("app/src/main/kotlin/com/trailnav/app/GuideSession.kt")
+    guide_session = guide_session_path.read_text(encoding="utf-8")
     sources = {
         d033.ENGINE: engine,
         d033.ROUTE_SOURCE: route,
         d033.ETA_SOURCE: eta,
         d033.TURN_PASS_SOURCE: turn_pass,
         d033.MODEL_SOURCE: model,
+        d033.MATCHER_SOURCE: matcher,
+        d033.APP_DIRECTION_TEST: direction_test,
+        d033.APP_START_PHASE_TEST: start_phase_test,
+        d033.GUIDE_SESSION_SOURCE: guide_session,
     }
     assert source and d033.mutation_needle_failures(sources) == []
 

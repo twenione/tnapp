@@ -3,6 +3,9 @@ package com.trailnav.app
 import com.trailnav.core.Guidance
 import com.trailnav.core.GuideConfig
 import com.trailnav.core.GuideResult
+import com.trailnav.core.GuideState
+import com.trailnav.core.ArrivalBlockedRecord
+import com.trailnav.core.MatchResult
 import com.trailnav.core.ProgressDirection
 import com.trailnav.core.RouteModel
 import java.time.Instant
@@ -21,9 +24,9 @@ import kotlin.test.assertFailsWith
 import org.junit.FixMethodOrder
 import org.junit.runners.MethodSorters
 
-private data class StartPoint(val east: Double, val north: Double, val elevation: Double = 100.0)
+internal data class StartPoint(val east: Double, val north: Double, val elevation: Double = 100.0)
 
-private data class StartRoute(
+internal data class StartRoute(
     val name: String,
     val corners: List<StartPoint>,
     val closed: Boolean,
@@ -61,6 +64,31 @@ private data class StartRoute(
         val length = hypot(deltaEast, deltaNorth).coerceAtLeast(1e-9)
         return StartPoint(deltaEast / length, deltaNorth / length)
     }
+
+    fun wrapsAsWalkingLoop(): Boolean = closed && !hasRetracedOverlap()
+
+    private fun hasRetracedOverlap(): Boolean {
+        if (!closed || points.size < 3) return false
+        val lastIndex = points.lastIndex
+        for (leftIndex in points.indices) {
+            for (rightIndex in (leftIndex + 2)..lastIndex) {
+                if (leftIndex == 0 && rightIndex == lastIndex) continue
+                val routeGap = cumulative[rightIndex] - cumulative[leftIndex]
+                if (routeGap < RETRACED_POSITION_MIN_GAP_METERS) continue
+                val left = points[leftIndex]
+                val right = points[rightIndex]
+                if (hypot(left.east - right.east, left.north - right.north) <= RETRACED_POSITION_TOLERANCE_METERS) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private companion object {
+        const val RETRACED_POSITION_MIN_GAP_METERS = 100.0
+        const val RETRACED_POSITION_TOLERANCE_METERS = 0.25
+    }
 }
 
 private data class StartScenario(
@@ -73,7 +101,7 @@ private data class StartScenario(
     val sigmaMeters: Double,
 )
 
-private fun directionLabelMatchesRouteDistance(
+internal fun directionLabelMatchesRouteDistance(
     route: StartRoute,
     startMeters: Double,
     endMeters: Double,
@@ -90,7 +118,7 @@ private fun directionLabelMatchesRouteDistance(
     return fromSign == label
 }
 
-private fun nearestRouteDistance(route: StartRoute, point: StartPoint): Double {
+internal fun nearestRouteDistance(route: StartRoute, point: StartPoint): Double {
     var bestSquaredDistance = Double.POSITIVE_INFINITY
     var bestDistance = 0.0
     for (index in 1 until route.points.size) {
@@ -124,18 +152,204 @@ internal data class StartCellEvidence(
     val onRouteOffRouteFrames: Int,
     val opposedDirectionFrames: Int,
     val directionDependentGuidanceBeforeResolution: Int,
+    val unresolvedRuns: Int = 0,
+    val undecidedEvents: Int = 0,
+    val unresolvedWithoutExactlyOneTerminalEventRuns: Int = 0,
+    val hiddenArrivalReasonRuns: Int = 0,
+    val directionDependentEventCounts: Map<String, Int> = emptyMap(),
+    val sampleErrors: List<String> = emptyList(),
+    val allowedUnresolvedByEndpointRule: Boolean = false,
+    val remainingToEndpointMeters: Double? = null,
+    val unresolvedArrivalRuns: Int = 0,
+    val unresolvedOnRouteOffRouteFrames: Int = 0,
+    val unresolvedDirectionDependentGuidance: Int = 0,
+    val falseArrivalRuns: Int = 0,
+    val falseArrivalRunsMargin0: Int = 0,
+    val arrivalTimes: List<StartArrivalObservation> = emptyList(),
 )
+
+internal data class StartArrivalObservation(
+    val sample: Int,
+    val seed: Long,
+    val timeSeconds: Int,
+    val projectedMeters: Double,
+    val creditedMeters: Double,
+    val actualNoiseMeters: Double,
+    val falseArrivalMargin0: Boolean,
+    val falseArrivalAtActualNoise: Boolean,
+    val falseArrivalAt3Sigma: Boolean,
+    val falseArrivalSeverityMeters: Double,
+)
+
+internal data class D210ComparisonEvidence(
+    val label: String,
+    val samples: Int,
+    val arrivalRuns: Int,
+    val falseArrivalRuns: Int,
+    val falseArrivalObservations: List<StartArrivalObservation>,
+)
+
+internal data class D210ArrivalInput(
+    // Every distance supplied to this gate is expressed in RouteMath/engine metres.
+    val routeLengthMeters: Double,
+    val startMeters: Double,
+    val direction: Int,
+    val startTrajectoryMeters: Double,
+    val arrivalMinAdvanceMeters: Double,
+    val arrivalAdvanceFraction: Double,
+    val arriveRadiusMeters: Double,
+    val arrivalTimeSeconds: Int,
+    val standSeconds: Int,
+    val ingressMeters: Double,
+    val walkSpeedMps: Double,
+    val actualNoiseMeters: Double,
+    val sigmaMeters: Double,
+    val unresolved: Boolean = false,
+)
+
+internal data class D210ArrivalEvidence(
+    val remainingMeters: Double,
+    val minimumRemainingMeters: Double,
+    val generatedWalkingMeters: Double,
+    val actualNoiseMeters: Double,
+    val endpointReachable: Boolean,
+    val walkingReachesArrivalCircle: Boolean,
+    val falseArrival: Boolean,
+)
+
+internal fun d210FalseArrivalSeverityMeters(input: D210ArrivalInput, evidence: D210ArrivalEvidence): Double = max(
+    (evidence.minimumRemainingMeters - evidence.remainingMeters).coerceAtLeast(0.0),
+    (evidence.remainingMeters - input.arriveRadiusMeters - evidence.actualNoiseMeters - evidence.generatedWalkingMeters)
+        .coerceAtLeast(0.0),
+)
+
+internal fun evaluateD210Arrival(input: D210ArrivalInput): D210ArrivalEvidence {
+    require(input.direction == 1 || input.direction == -1)
+    require(input.actualNoiseMeters >= 0.0)
+    val remainingMeters = if (input.direction == 1) {
+        input.routeLengthMeters - input.startMeters
+    } else {
+        input.startMeters
+    }
+    val minimumRemainingMeters = input.startTrajectoryMeters + minOf(
+        input.arrivalMinAdvanceMeters,
+        input.arrivalAdvanceFraction * input.routeLengthMeters,
+    )
+    val generatedWalkingMeters = max(
+        0.0,
+        (input.arrivalTimeSeconds - input.standSeconds) * input.walkSpeedMps - input.ingressMeters,
+    )
+    val endpointReachable = remainingMeters >= minimumRemainingMeters
+    val walkingReachesArrivalCircle = generatedWalkingMeters >=
+        remainingMeters - input.arriveRadiusMeters - input.actualNoiseMeters
+    return D210ArrivalEvidence(
+        remainingMeters = remainingMeters,
+        minimumRemainingMeters = minimumRemainingMeters,
+        generatedWalkingMeters = generatedWalkingMeters,
+        actualNoiseMeters = input.actualNoiseMeters,
+        endpointReachable = endpointReachable,
+        walkingReachesArrivalCircle = walkingReachesArrivalCircle,
+        falseArrival = input.unresolved || !(endpointReachable && walkingReachesArrivalCircle),
+    )
+}
+
+internal data class ShortRouteRunEvidence(
+    val arrivalTimeSeconds: Int?,
+    val resolvedAtSeconds: Int?,
+    val blockedArrivals: List<ArrivalBlockedRecord>,
+)
+
+internal fun measureShortRouteRuns(
+    lengthMeters: Double,
+    sigmaMeters: Double,
+    startupEnabled: Boolean,
+    sampleCount: Int,
+    seedBase: Long,
+): List<ShortRouteRunEvidence> {
+    require(lengthMeters > 0.0)
+    require(sigmaMeters >= 0.0)
+    require(sampleCount >= 1)
+    val route = StartRoute(
+        name = "short-$lengthMeters",
+        corners = listOf(StartPoint(0.0, 0.0), StartPoint(lengthMeters, 0.0)),
+        closed = false,
+    )
+    val config = GuideConfig()
+    val routeModel = RouteModel.fromGpx(route.xml, config)
+    return (0 until sampleCount).map { sample ->
+        val session = GuideSession(routeModel, config, startupEnabled = startupEnabled)
+        var arrivalTimeSeconds: Int? = null
+        var resolvedAtSeconds: Int? = null
+        syntheticTrack(
+            route = route,
+            startMeters = 0.0,
+            direction = 1,
+            standSeconds = 0,
+            sigmaMeters = sigmaMeters,
+            seconds = 300,
+            seed = seedBase + sample,
+        ).forEachIndexed { second, location ->
+            session.accept(location)
+            val snapshot = session.snapshot()
+            if (resolvedAtSeconds == null && snapshot.startupResolved) resolvedAtSeconds = second
+            if (arrivalTimeSeconds == null && snapshot.arrived) arrivalTimeSeconds = second
+        }
+        ShortRouteRunEvidence(
+            arrivalTimeSeconds = arrivalTimeSeconds,
+            resolvedAtSeconds = resolvedAtSeconds,
+            blockedArrivals = session.snapshot().arrivalBlockedRecords,
+        )
+    }
+}
 
 private data class StartRunEvidence(
     val arrived: Boolean,
     val onRouteOffRouteFrames: Int,
     val opposedDirectionFrames: Int,
     val directionDependentGuidanceBeforeResolution: Int,
+    val unresolved: Boolean,
+    val undecidedEvents: Int,
+    val unresolvedWithoutExactlyOneTerminalEvent: Boolean,
+    val hiddenArrivalReason: Boolean,
+    val directionDependentEventCounts: Map<String, Int>,
+    val unresolvedArrival: Boolean,
+    val unresolvedOnRouteOffRouteFrames: Int,
+    val unresolvedDirectionDependentGuidance: Int,
+    val arrivalTimeSeconds: Int?,
+    val arrivalProjectedMeters: Double?,
+    val arrivalCreditedMeters: Double?,
+    val arrivalNoiseMeters: Double?,
 )
 
+internal fun hasHiddenInsufficientAdvanceReason(
+    state: GuideState,
+    timestampMillis: Long,
+    config: GuideConfig,
+): Boolean {
+    if (!state.startupResolved) return false
+    if (state.arrivalBlockedRecords.none { it.reason == "direction-unknown" }) return false
+    if (state.arrivalBlockedRecords.any { it.reason == "insufficient-advance" }) return false
+    val match = state.lastMatch ?: return false
+    val endpoint = state.route.points.lastOrNull() ?: return false
+    val elapsed = state.sessionStartTimestamp?.let { (timestampMillis - it).coerceAtLeast(0L) / 1_000.0 } ?: 0.0
+    val distanceToEnd = hypot(match.projectedPoint.east - endpoint.east, match.projectedPoint.north - endpoint.north)
+    val candidate = elapsed >= config.minimumSessionSecondsBeforeArrival &&
+        match.distanceMeters < config.offRouteEnterDistMeters &&
+        distanceToEnd <= config.arriveRadiusMeters &&
+        match.projectedMeters > state.route.totalLengthMeters * config.arriveProgressFraction
+    val proportional = state.arrivalBaselineRemainingMeters?.let { config.arrivalAdvanceFraction * it } ?: 0.0
+    val absoluteFloor = minOf(config.arrivalMinAdvanceMeters, config.arrivalAdvanceFraction * state.route.totalLengthMeters)
+    val requiredAdvance = max(proportional, absoluteFloor)
+    val hasAdvance = state.arrivalBaselineRemainingMeters != null && state.advanceCreditedMeters >= requiredAdvance
+    return candidate && !hasAdvance
+}
+
 internal fun arrivalViolations(cells: List<StartCellEvidence>): List<String> = cells
-    .filter { it.arrivalRuns > 0 }
-    .map { "${it.label}: arrived in ${it.arrivalRuns}/${it.samples} runs" }
+    .filter { it.falseArrivalRuns > 0 }
+    .map { cell ->
+        cell.label + ": falseArrivalRuns=" + cell.falseArrivalRuns +
+            "/" + cell.samples + ", margin0=" + cell.falseArrivalRunsMargin0
+    }
 
 internal fun onRouteOffRouteViolations(cells: List<StartCellEvidence>): List<String> = cells
     .filter { it.onRouteOffRouteFrames > 0 }
@@ -148,6 +362,45 @@ internal fun oppositeDirectionViolations(cells: List<StartCellEvidence>): List<S
 internal fun prematureDirectionGuidanceViolations(cells: List<StartCellEvidence>): List<String> = cells
     .filter { it.directionDependentGuidanceBeforeResolution > 0 }
     .map { "${it.label}: premature direction-dependent guidance=${it.directionDependentGuidanceBeforeResolution}" }
+
+internal fun unresolvedAllowedByD209(
+    routeClosed: Boolean,
+    routeLengthMeters: Double,
+    startMeters: Double,
+    direction: Int,
+    startupTrajectoryMeters: Double,
+    offRouteEnterDistMeters: Double,
+): Boolean {
+    if (routeClosed) return false
+    require(direction == 1 || direction == -1)
+    val remainingToEndpoint = if (direction == 1) routeLengthMeters - startMeters else startMeters
+    return remainingToEndpoint < startupTrajectoryMeters + offRouteEnterDistMeters
+}
+
+internal fun unresolvedStartPhaseViolations(cells: List<StartCellEvidence>): List<String> {
+    val observed = cells.filter { it.unresolvedRuns > 0 }.associateBy { it.label }
+    val unexpected = observed.values.filterNot { it.allowedUnresolvedByEndpointRule }
+    val malformed = cells.filter { it.unresolvedWithoutExactlyOneTerminalEventRuns > 0 }
+        .map { "${it.label}: unresolved runs without exactly one terminal event=${it.unresolvedWithoutExactlyOneTerminalEventRuns}" }
+    return buildList {
+        if (unexpected.isNotEmpty()) {
+            add("unresolved cells outside D-209 endpoint allowance: ${unexpected.map { "${it.label} runs=${it.unresolvedRuns} remaining=${it.remainingToEndpointMeters}" }.sorted()}")
+        }
+        addAll(malformed)
+        val allowedWithArrival = observed.values.filter { it.allowedUnresolvedByEndpointRule && it.unresolvedArrivalRuns > 0 }
+        if (allowedWithArrival.isNotEmpty()) {
+            add("allowed unresolved cells with arrival runs: ${allowedWithArrival.map { "${it.label} runs=${it.unresolvedArrivalRuns}" }.sorted()}")
+        }
+
+        val allowedWithGuidance = observed.values.filter { it.allowedUnresolvedByEndpointRule && it.unresolvedDirectionDependentGuidance > 0 }
+        if (allowedWithGuidance.isNotEmpty()) {
+            add("allowed unresolved cells with direction-dependent guidance: ${allowedWithGuidance.map { "${it.label} events=${it.unresolvedDirectionDependentGuidance}" }.sorted()}")
+        }
+        val unresolvedRuns = cells.sumOf { it.unresolvedRuns }
+        val terminalEvents = cells.sumOf { it.undecidedEvents }
+        if (unresolvedRuns != terminalEvents) add("unresolved runs=$unresolvedRuns but direction.undecided-at-end events=$terminalEvents")
+    }
+}
 
 internal fun missingExpectedFailureSourceIds(expected: Set<String>, sourceIds: Set<String>): Set<String> = expected - sourceIds
 
@@ -164,17 +417,87 @@ internal fun assertExpectedFailureRuntimeConsistency(expected: Set<String>, obse
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class StartPhaseGridTest {
     @Test
-    fun sampleCountInputUsesDefaultAndRejectsInvalidValues() {
-        assertEquals(1_000, parseStartPhaseGridSampleCount(null))
-        assertEquals(250, parseStartPhaseGridSampleCount("250"))
-        for (invalid in listOf("", "abc", "0", "-1")) {
-            assertFailsWith<IllegalArgumentException>(invalid) {
-                parseStartPhaseGridSampleCount(invalid)
+    fun shortRouteStartupEnabledAndDisabledMeasurement() {
+        val defaultSamples = parseTask097ShortRouteSampleCount(System.getenv("TASK097_SHORT_ROUTE_N"))
+        for ((lengthIndex, lengthMeters) in listOf(70.0, 80.0, 82.0, 84.0, 90.0, 100.0, 105.0, 110.0, 120.0).withIndex()) {
+            for (startupEnabled in listOf(true, false)) {
+                for ((sigmaIndex, sigmaMeters) in listOf(0.0, 3.0, 5.0).withIndex()) {
+                    val samples = if (sigmaMeters == 0.0) defaultSamples else 1_000
+                    val seedBase = 97_011_111L + lengthIndex * 1_000_000L + sigmaIndex * 100_000L
+                    val runs = measureShortRouteRuns(
+                        lengthMeters = lengthMeters,
+                        sigmaMeters = sigmaMeters,
+                        startupEnabled = startupEnabled,
+                        sampleCount = samples,
+                        seedBase = seedBase,
+                    )
+                    val arrivals = runs.count { it.arrivalTimeSeconds != null }
+                    val blockedNoArrivalRuns = runs.filter { it.arrivalTimeSeconds == null }
+                    val blockedReasonRuns = blockedNoArrivalRuns
+                        .flatMap { run -> run.blockedArrivals.map { it.reason }.toSet() }
+                        .groupingBy { it }
+                        .eachCount()
+                        .toSortedMap()
+                    println(
+                        "TASK097-SHORT-ROUTE length=$lengthMeters startupEnabled=$startupEnabled sigma=$sigmaMeters " +
+                            "N=$samples arrivals=$arrivals ratio=$arrivals/$samples blockedNoArrivalRuns=" +
+                            blockedNoArrivalRuns.size + " blockedReasonRuns=" + blockedReasonRuns,
+                    )
+                }
             }
         }
     }
 
     @Test
+    fun sampleCountInputUsesDefaultAndRejectsInvalidValues() {
+        assertEquals(1_000, parseStartPhaseGridSampleCount(null))
+        assertEquals(250, parseStartPhaseGridSampleCount("250"))
+        assertEquals(5, parseTask097ShortRouteSampleCount(null))
+        assertEquals(250, parseTask097ShortRouteSampleCount("250"))
+        for (invalid in listOf("", "abc", "0", "-1")) {
+            assertFailsWith<IllegalArgumentException>(invalid) {
+                parseStartPhaseGridSampleCount(invalid)
+            }
+            assertFailsWith<IllegalArgumentException>(invalid) {
+                parseTask097ShortRouteSampleCount(invalid)
+            }
+        }
+    }
+
+    @Test
+    fun shortRouteStartupArrivalAdvanceGateMatchesD210Reproduction() {
+        data class Expected(
+            val lengthMeters: Double,
+            val arrivalTimeSeconds: Int?,
+            val creditedMeters: Double?,
+            val requiredMeters: Double?,
+        )
+        val expected = listOf(
+            Expected(60.0, null, 27.6, 47.9),
+            Expected(80.0, null, 46.7, 50.0),
+            Expected(82.0, 67, null, null),
+        )
+        for (row in expected) {
+            val run = measureShortRouteRuns(
+                lengthMeters = row.lengthMeters,
+                sigmaMeters = 0.0,
+                startupEnabled = true,
+                sampleCount = 1,
+                seedBase = 97_011_111L,
+            ).single()
+            assertEquals(25, run.resolvedAtSeconds, "length=" + row.lengthMeters)
+            assertEquals(row.arrivalTimeSeconds, run.arrivalTimeSeconds, "length=" + row.lengthMeters)
+            if (row.arrivalTimeSeconds == null) {
+                val blocked = run.blockedArrivals.firstOrNull { it.reason == "insufficient-advance" }
+                assertTrue(blocked != null, "length=" + row.lengthMeters + " blocked=" + run.blockedArrivals)
+                assertEquals(row.creditedMeters!!, blocked!!.creditedMeters, 0.2, "length=" + row.lengthMeters)
+                assertEquals(row.requiredMeters!!, blocked.requiredMeters, 0.2, "length=" + row.lengthMeters)
+            }
+        }
+    }
+
+    @Test
+    // After the loop-end start resolves, the directed projection wraps toward the GPX start and never reaches the missing-advance candidate gate.
     fun startPhaseArrivalAdvanceGuardRejectsNearLoopEndStartMutation() {
         assertFalse(
             StartPhaseGrid.deterministicLoopNearEndDidArrive(),
@@ -184,10 +507,30 @@ class StartPhaseGridTest {
 
     @Test
     fun startPhaseNoFalseArrivalWithinFiveMinutes() {
-        expectedFailureAware("startPhaseNoFalseArrivalWithinFiveMinutes") {
-            val violations = arrivalViolations(StartPhaseGrid.cells)
-            assertTrue(violations.isEmpty(), violations.take(30).joinToString("\n"))
+        val violations = StartPhaseGrid.cells
+            .filter { it.sigmaMeters <= 5.0 && it.falseArrivalRuns > 0 }
+            .map { cell -> cell.label + ": falseArrivalRuns=" + cell.falseArrivalRuns + "/" + cell.samples }
+        assertTrue(violations.isEmpty(), violations.take(30).joinToString("\n"))
+    }
+
+    @Test
+    fun startPhaseD210LowSigmaFalseArrivalGate() {
+        val violations = StartPhaseGrid.cells
+            .filter { it.sigmaMeters <= 5.0 && it.falseArrivalRuns > 0 }
+            .map { cell -> cell.label + ": falseArrivalRuns=" + cell.falseArrivalRuns + "/" + cell.samples }
+        assertTrue(violations.isEmpty(), violations.take(30).joinToString("\n"))
+    }
+
+    @Test
+    fun startPhaseHighSigmaFalseArrivalCountsAreMeasurementOnly() {
+        StartPhaseGrid.cells.filter { it.sigmaMeters >= 10.0 }.forEach { cell ->
+            println(
+                "D210-MEASUREMENT " + cell.label +
+                    " falseArrivalRuns=" + cell.falseArrivalRuns +
+                    " falseArrivalRunsMargin0=" + cell.falseArrivalRunsMargin0,
+            )
         }
+        StartPhaseGrid.printD210ComparisonsAndWorstSigma15SamplesIfN1000()
     }
 
     @Test
@@ -221,10 +564,62 @@ class StartPhaseGridTest {
 
     @Test
     fun startPhaseDirectionDependentGuidanceWaitsForResolution() {
-        expectedFailureAware("startPhaseDirectionDependentGuidanceWaitsForResolution") {
-            val violations = prematureDirectionGuidanceViolations(StartPhaseGrid.cells)
-            assertTrue(violations.isEmpty(), violations.joinToString("\n"))
-        }
+        val violations = prematureDirectionGuidanceViolations(StartPhaseGrid.cells)
+        assertTrue(violations.isEmpty(), violations.joinToString("\n"))
+    }
+
+    @Test
+    fun unresolvedStartPhaseRunsHaveOneTerminalEventAndExpectedCells() {
+        val violations = unresolvedStartPhaseViolations(StartPhaseGrid.cells)
+        assertTrue(violations.isEmpty(), violations.joinToString("\n"))
+    }
+
+    @Test
+    fun unresolvedStartPhaseAllowanceUsesRouteEndpointAndWalkingDirection() {
+        val length = 2_200.0
+        fun allowed(start: Double, direction: Int, closed: Boolean = false) = unresolvedAllowedByD209(
+            routeClosed = closed,
+            routeLengthMeters = length,
+            startMeters = start,
+            direction = direction,
+            startupTrajectoryMeters = 30.0,
+            offRouteEnterDistMeters = 25.0,
+        )
+
+        assertFalse(allowed(0.0, 1))
+        assertTrue(allowed(0.0, -1))
+        assertFalse(allowed(5.0, 1))
+        assertTrue(allowed(5.0, -1))
+        assertFalse(allowed(20.0, 1))
+        assertTrue(allowed(20.0, -1))
+        assertTrue(allowed(length - 5.0, 1))
+        assertFalse(allowed(length - 5.0, -1))
+        assertTrue(allowed(length - 20.0, 1))
+        assertFalse(allowed(length - 20.0, -1))
+        assertFalse(allowed(length * 0.10, 1))
+        assertFalse(allowed(length * 0.10, -1))
+        assertFalse(allowed(length - 55.0, 1))
+        assertFalse(allowed(length - 50.0, 1, closed = true))
+    }
+
+    @Test
+    fun unresolvedStartupCandidateIsNotMisclassifiedAsHiddenInsufficientAdvance() {
+        val route = RouteModel.fromGpx(StartProbeRoutes.oneWay().xml, GuideConfig())
+        val endpoint = route.points.last()
+        val state = GuideState.starting(route).copy(
+            sessionStartTimestamp = 0L,
+            lastMatch = MatchResult(
+                distanceMeters = 0.0,
+                projectedMeters = route.totalLengthMeters,
+                segmentIndex = route.cumulativeMeters.lastIndex - 1,
+                projectedPoint = endpoint,
+            ),
+            arrivalBlockedRecords = listOf(
+                ArrivalBlockedRecord(0.0, 50.0, 20.0, route.totalLengthMeters, "direction-unknown"),
+            ),
+        )
+
+        assertFalse(hasHiddenInsufficientAdvanceReason(state, 20_000L, GuideConfig()))
     }
 
     @Test
@@ -237,17 +632,184 @@ class StartPhaseGridTest {
 
     @Test
     fun startPhaseEarlyEventsHaveJustifiedTargets() {
-        expectedFailureAware("startPhaseEarlyEventsHaveJustifiedTargets") {
-            val violations = StartPhaseEarlyEventProbe.violations()
-            assertTrue(violations.isEmpty(), violations.joinToString("\n"))
-        }
+        val violations = StartPhaseEarlyEventProbe.violations()
+        assertTrue(violations.isEmpty(), violations.joinToString("\n"))
     }
 
     @Test
     fun startPhasePreDecisionOffRouteUsesWholeRouteMinimum() {
-        expectedFailureAware("startPhasePreDecisionOffRouteUsesWholeRouteMinimum") {
-            val violations = StartPhasePreDecisionProbe.violations()
-            assertTrue(violations.isEmpty(), violations.joinToString("\n"))
+        val route = StartProbeRoutes.oneWay()
+        val cases = listOf(
+            Triple("vertex", route.lengthMeters * 0.50, 80.0 * kotlin.math.sqrt(0.5)),
+            Triple("segment", 200.0, 80.0),
+        )
+        val planarResults = cases.map { (name, startMeters, handExpected) ->
+            val entry = route.pointAt(startMeters)
+            val tangent = route.tangentAt(startMeters)
+            val point = StartPoint(
+                east = entry.east - tangent.north * 80.0,
+                north = entry.north + tangent.east * 80.0,
+            )
+            val planarMinimum = independentWholeRouteMinimum(route.points, point)
+            val withinTolerance = abs(planarMinimum - handExpected) <= 1e-6
+            println(
+                "PREDECISION-HAND position=" + name +
+                    " startMeters=" + startMeters +
+                    " planarMinimum=" + planarMinimum +
+                    " handExpected=" + handExpected +
+                    " within1e-6=" + withinTolerance,
+            )
+            assertTrue(
+                withinTolerance,
+                "independent whole-route minimum mismatch at " + name +
+                    ": calculated=" + planarMinimum + " hand=" + handExpected,
+            )
+            Triple(name, startMeters, planarMinimum)
+        }
+        val engineDistanceScale = StartProbeRoutes.engineDistanceScale
+        val expectedDistances = planarResults.map { (name, startMeters, planarMinimum) ->
+            val engineExpected = planarMinimum * engineDistanceScale
+            println(
+                "PREDECISION-EXPECTED position=" + name +
+                    " planar=" + planarMinimum +
+                    " engineScale=" + engineDistanceScale +
+                    " expected=" + engineExpected,
+            )
+            Triple(name, startMeters, engineExpected)
+        }
+        val violations = expectedDistances.flatMap { (name, startMeters, expected) ->
+            val caseViolations = StartPhasePreDecisionProbe.violations(startMeters, expected)
+            println(
+                "PREDECISION-RESULT position=" + name +
+                    " startMeters=" + startMeters +
+                    " expected=" + expected +
+                    " violations=" + caseViolations,
+            )
+            caseViolations
+        }
+        assertTrue(violations.isEmpty(), violations.joinToString("\n"))
+    }
+
+
+    @Test
+    fun d210FalseArrivalMatchesHandCalculatedCasesAndActualNoise() {
+        fun input(
+            remainingMeters: Double,
+            walkedMeters: Double,
+            actualNoiseMeters: Double,
+            routeLengthMeters: Double = 2_200.0,
+        ) = D210ArrivalInput(
+            routeLengthMeters = routeLengthMeters,
+            startMeters = routeLengthMeters - remainingMeters,
+            direction = 1,
+            startTrajectoryMeters = 30.0,
+            arrivalMinAdvanceMeters = 50.0,
+            arrivalAdvanceFraction = 0.8,
+            arriveRadiusMeters = 25.0,
+            arrivalTimeSeconds = 1,
+            standSeconds = 0,
+            ingressMeters = 0.0,
+            walkSpeedMps = walkedMeters,
+            actualNoiseMeters = actualNoiseMeters,
+            sigmaMeters = 0.0,
+        )
+        data class Expected(
+            val row: Int,
+            val remainingMeters: Double,
+            val walkedMeters: Double,
+            val actualNoiseMeters: Double,
+            val thresholdMeters: Double?,
+            val falseArrival: Boolean,
+            val routeLengthMeters: Double = 2_200.0,
+        )
+        val engineScale = StartProbeRoutes.engineDistanceScale
+        val engineRouteLength = 2_200.0 * engineScale
+        val engineStartMeters = (2_200.0 - 220.0) * engineScale
+        val engineRemainingMeters = engineRouteLength - engineStartMeters
+        val rows9To12 = listOf(
+            Expected(
+                9,
+                engineRemainingMeters,
+                190.0 * engineScale,
+                3.0 * engineScale,
+                engineRemainingMeters - 25.0 - 3.0 * engineScale,
+                true,
+                routeLengthMeters = engineRouteLength,
+            ),
+            Expected(
+                10,
+                engineRemainingMeters,
+                193.2 * engineScale,
+                1.792622 * engineScale,
+                engineRemainingMeters - 25.0 - 1.792622 * engineScale,
+                false,
+                routeLengthMeters = engineRouteLength,
+            ),
+            Expected(
+                11,
+                engineRemainingMeters,
+                190.8 * engineScale,
+                4.190294 * engineScale,
+                engineRemainingMeters - 25.0 - 4.190294 * engineScale,
+                false,
+                routeLengthMeters = engineRouteLength,
+            ),
+            Expected(
+                12,
+                engineRemainingMeters,
+                190.8 * engineScale,
+                4.192951 * engineScale,
+                engineRemainingMeters - 25.0 - 4.192951 * engineScale,
+                false,
+                routeLengthMeters = engineRouteLength,
+            ),
+        )
+        val rows = listOf(
+            Expected(1, 220.0, 220.0, 0.0, 195.0, false),
+            Expected(2, 220.0, 190.0, 3.0, 192.0, true),
+            Expected(3, 220.0, 150.0, 10.0, 185.0, true),
+            Expected(4, 220.0, 150.0, 40.0, 155.0, true),
+            Expected(5, 220.0, 150.0, 70.0, 125.0, false),
+            Expected(6, 60.0, 500.0, 0.0, null, true),
+            Expected(7, 80.0, 60.0, 0.0, 55.0, false, routeLengthMeters = 300.0),
+            Expected(8, 79.9, 60.0, 0.0, null, true, routeLengthMeters = 300.0),
+        ) + rows9To12
+        for (row in rows) {
+            val evidence = evaluateD210Arrival(
+                input(row.remainingMeters, row.walkedMeters, row.actualNoiseMeters, row.routeLengthMeters),
+            )
+            assertEquals(row.remainingMeters, evidence.remainingMeters, "row=${row.row}")
+            assertEquals(80.0, evidence.minimumRemainingMeters, "row=${row.row}")
+            assertEquals(row.walkedMeters, evidence.generatedWalkingMeters, 1e-9, "row=${row.row}")
+            assertEquals(row.actualNoiseMeters, evidence.actualNoiseMeters, "row=${row.row}")
+            if (row.thresholdMeters == null) {
+                assertFalse(evidence.endpointReachable, "row=${row.row}")
+            } else {
+                assertEquals(row.thresholdMeters, row.remainingMeters - 25.0 - row.actualNoiseMeters, "row=${row.row}")
+                assertTrue(evidence.walkingReachesArrivalCircle == !row.falseArrival, "row=${row.row}")
+            }
+            assertEquals(row.falseArrival, evidence.falseArrival, "row=${row.row}")
+        }
+
+        val equality = evaluateD210Arrival(input(220.0, 195.0, 0.0))
+        assertEquals(195.0, equality.remainingMeters - 25.0 - equality.actualNoiseMeters)
+        assertEquals(195.0, equality.generatedWalkingMeters, 1e-9)
+        assertFalse(equality.falseArrival, "A(t) equal to the threshold is legitimate")
+
+        val reverse = input(220.0, 195.0, 0.0).copy(direction = -1, startMeters = 220.0)
+        assertEquals(220.0, evaluateD210Arrival(reverse).remainingMeters)
+    }
+
+    @Test
+    fun d210ActualNoiseGateIsDeterministicAndRetainsTwoKnownFalseSeeds() {
+        val label = "C-oneway/start/on-route/stand-35/forward/sigma-15m"
+        for (seed in listOf(91_299_438L, 91_299_636L)) {
+            val first = StartPhaseGrid.d210ViolationForSeed(label, seed)
+            val second = StartPhaseGrid.d210ViolationForSeed(label, seed)
+            assertEquals(first.size, second.size, "seed=$seed violation count")
+            assertEquals(first, second, "seed=$seed violation list")
+            assertEquals(1, first.size, "known false arrival must remain detected, seed=$seed")
+            println("D210-DETERMINISM seed=$seed result=${first.single()}")
         }
     }
 
@@ -259,12 +821,39 @@ class StartPhaseGridTest {
         assertTrue(oppositeDirectionViolations(listOf(clean)).isEmpty())
         assertTrue(prematureDirectionGuidanceViolations(listOf(clean)).isEmpty())
 
-        assertTrue(arrivalViolations(listOf(clean.copy(arrivalRuns = 1))).isNotEmpty())
+        assertTrue(arrivalViolations(listOf(clean.copy(falseArrivalRuns = 1))).isNotEmpty())
         assertTrue(onRouteOffRouteViolations(listOf(clean.copy(onRouteOffRouteFrames = 1))).isNotEmpty())
         assertTrue(oppositeDirectionViolations(listOf(clean.copy(opposedDirectionFrames = 1))).isNotEmpty())
         assertTrue(
             prematureDirectionGuidanceViolations(
                 listOf(clean.copy(directionDependentGuidanceBeforeResolution = 1)),
+            ).isNotEmpty(),
+        )
+
+        val allowedUnresolved = clean.copy(
+            allowedUnresolvedByEndpointRule = true,
+            unresolvedRuns = 1,
+            undecidedEvents = 1,
+        )
+        assertTrue(unresolvedStartPhaseViolations(listOf(allowedUnresolved)).isEmpty())
+        assertTrue(
+            unresolvedStartPhaseViolations(
+                listOf(allowedUnresolved.copy(unresolvedArrivalRuns = 1)),
+            ).isNotEmpty(),
+        )
+        assertTrue(
+            unresolvedStartPhaseViolations(
+                listOf(allowedUnresolved.copy(unresolvedOnRouteOffRouteFrames = 1)),
+            ).isEmpty(),
+        )
+        assertTrue(
+            unresolvedStartPhaseViolations(
+                listOf(allowedUnresolved.copy(unresolvedDirectionDependentGuidance = 1)),
+            ).isNotEmpty(),
+        )
+        assertTrue(
+            unresolvedStartPhaseViolations(
+                listOf(clean.copy(unresolvedRuns = 1, undecidedEvents = 1)),
             ).isNotEmpty(),
         )
     }
@@ -285,6 +874,14 @@ class StartPhaseGridTest {
     }
 }
 
+internal fun parseTask097ShortRouteSampleCount(raw: String?): Int {
+    val value = raw ?: "5"
+    val parsed = value.toIntOrNull()
+        ?: throw IllegalArgumentException("TASK-097 short-route sample count must be an integer, got '$value'")
+    require(parsed >= 1) { "TASK-097 short-route sample count must be at least 1, got $parsed" }
+    return parsed
+}
+
 internal fun parseStartPhaseGridSampleCount(raw: String?): Int {
     val value = raw ?: "1000"
     val parsed = value.toIntOrNull()
@@ -293,7 +890,7 @@ internal fun parseStartPhaseGridSampleCount(raw: String?): Int {
     return parsed
 }
 
-private object StartPhaseGrid {
+internal object StartPhaseGrid {
     private val sampleCount = parseStartPhaseGridSampleCount(
         System.getProperty("trailnav.startPhaseGrid.sampleCount"),
     )
@@ -323,6 +920,44 @@ private object StartPhaseGrid {
     }
 
     val cells: List<StartCellEvidence> by lazy(::run)
+
+    fun printD210ComparisonsAndWorstSigma15SamplesIfN1000() {
+        if (sampleCount != 1_000) return
+        val falseArrivalCells = cells.filter { it.falseArrivalRuns > 0 }
+        println("D210-COMPARISON-CELLS count=" + falseArrivalCells.size)
+        val startupDisabled = compareFalseArrivalCellsWithStartupDisabled(falseArrivalCells)
+        val currentCounts = falseArrivalCells.associate { it.label to it.falseArrivalRuns }
+        startupDisabled.forEach { comparison ->
+            println(
+                "D210-COMPARISON " + comparison.label +
+                    " N=" + comparison.samples +
+                    " current096=" + currentCounts.getValue(comparison.label) +
+                    " startupDisabled=" + comparison.falseArrivalRuns +
+                    " disabledArrivals=" + comparison.arrivalRuns,
+            )
+        }
+        val worstSamples = cells
+            .filter { it.sigmaMeters == 15.0 }
+            .flatMap { cell ->
+                cell.arrivalTimes.filter { it.falseArrivalAtActualNoise }.map { cell.label to it }
+            }
+            .sortedByDescending { it.second.falseArrivalSeverityMeters }
+            .take(3)
+        worstSamples.forEachIndexed { index, (label, sample) ->
+            println(
+                "D210-WORST-SIGMA15 rank=" + (index + 1) +
+                    " cell=" + label +
+                    " sample=" + sample.sample +
+                    " seed=" + sample.seed +
+                    " time=" + sample.timeSeconds +
+                    " projectionMeters=" + sample.projectedMeters +
+                    " creditedAdvanceMeters=" + sample.creditedMeters +
+                    " actualNoiseMeters=" + sample.actualNoiseMeters +
+                    " falseMargin0=" + sample.falseArrivalMargin0 +
+                    " shortfallMeters=" + sample.falseArrivalSeverityMeters,
+            )
+        }
+    }
 
     fun deterministicLoopNearEndDidArrive(): Boolean {
         val scenario = StartScenario(
@@ -410,20 +1045,155 @@ private object StartPhaseGrid {
         }
     }
 
+    fun compareFalseArrivalCellsWithStartupDisabled(referenceCells: List<StartCellEvidence>): List<D210ComparisonEvidence> {
+        val allScenarios = scenarios()
+        val scenariosByLabel = allScenarios.associateBy { it.label() }
+        return referenceCells.map { reference ->
+            val scenario = scenariosByLabel[reference.label] ?: error("unknown D-210 cell: " + reference.label)
+            val cellIndex = allScenarios.indexOf(scenario)
+            var arrivals = 0
+            var falseArrivals = 0
+            val falseObservations = mutableListOf<StartArrivalObservation>()
+            for (sample in 0 until 1_000) {
+                val seed = SEED_BASE + cellIndex * 10_000L + sample
+                val run = runScenario(scenario, seed, startupEnabled = false)
+                if (run.arrived) arrivals++
+                run.arrivalTimeSeconds?.let { timeSeconds ->
+                    val input = d210Input(scenario, run, timeSeconds)
+                    val margin0 = evaluateD210Arrival(input.copy(actualNoiseMeters = 0.0))
+                    val actualNoise = evaluateD210Arrival(input)
+                    if (actualNoise.falseArrival) falseArrivals++
+                    if (actualNoise.falseArrival) {
+                        falseObservations += StartArrivalObservation(
+                            sample = sample,
+                            seed = seed,
+                            timeSeconds = timeSeconds,
+                            projectedMeters = run.arrivalProjectedMeters ?: error("arrived run has no projection"),
+                            creditedMeters = run.arrivalCreditedMeters ?: error("arrived run has no credited advance"),
+                            actualNoiseMeters = input.actualNoiseMeters,
+                            falseArrivalMargin0 = margin0.falseArrival,
+                            falseArrivalAtActualNoise = actualNoise.falseArrival,
+                            falseArrivalAt3Sigma = evaluateD210Arrival(
+                                input.copy(actualNoiseMeters = 3.0 * input.sigmaMeters),
+                            ).falseArrival,
+                            falseArrivalSeverityMeters = d210FalseArrivalSeverityMeters(input, actualNoise),
+                        )
+                    }
+                }
+            }
+            D210ComparisonEvidence(
+                label = reference.label,
+                samples = 1_000,
+                arrivalRuns = arrivals,
+                falseArrivalRuns = falseArrivals,
+                falseArrivalObservations = falseObservations,
+            )
+        }
+    }
+
+    internal fun d210ViolationForSeed(label: String, seed: Long): List<String> {
+        val scenario = scenarios().single { it.label() == label }
+        val run = runScenario(scenario, seed)
+        val timeSeconds = run.arrivalTimeSeconds ?: return emptyList()
+        val evidence = evaluateD210Arrival(d210Input(scenario, run, timeSeconds))
+        return if (evidence.falseArrival) {
+            listOf(label + " seed=" + seed + " e_t=" + evidence.actualNoiseMeters)
+        } else {
+            emptyList()
+        }
+    }
+
+    private fun d210Input(scenario: StartScenario, run: StartRunEvidence, timeSeconds: Int): D210ArrivalInput {
+        val engineScale = StartProbeRoutes.engineDistanceScale
+        return D210ArrivalInput(
+            routeLengthMeters = scenario.route.lengthMeters * engineScale,
+            startMeters = scenario.startMeters * engineScale,
+            direction = scenario.direction,
+            startTrajectoryMeters = config.startTrajectoryMeters,
+            arrivalMinAdvanceMeters = config.arrivalMinAdvanceMeters,
+            arrivalAdvanceFraction = config.arrivalAdvanceFraction,
+            arriveRadiusMeters = config.arriveRadiusMeters,
+            arrivalTimeSeconds = timeSeconds,
+            standSeconds = scenario.standSeconds,
+            ingressMeters = scenario.ingressMeters * engineScale,
+            walkSpeedMps = WALK_SPEED_MPS * engineScale,
+            actualNoiseMeters = (run.arrivalNoiseMeters ?: error("arrived run has no measured noise")) * engineScale,
+            sigmaMeters = scenario.sigmaMeters * engineScale,
+            unresolved = run.unresolved,
+        )
+    }
+
     private fun run(): List<StartCellEvidence> {
         val cells = scenarios().mapIndexed { cellIndex, scenario ->
-            val samplesForCell = if (scenario.sigmaMeters == 0.0) 1 else sampleCount
+            val samplesForCell = sampleCount
             var arrivals = 0
+            var falseArrivalRuns = 0
+            var falseArrivalRunsMargin0 = 0
+            val arrivalTimes = mutableListOf<StartArrivalObservation>()
             var offRouteFrames = 0
             var opposedFrames = 0
             var prematureFrames = 0
+            var unresolvedRuns = 0
+            var undecidedEvents = 0
+            var unresolvedWithoutExactlyOneTerminalEventRuns = 0
+            var hiddenArrivalReasonRuns = 0
+            var unresolvedArrivalRuns = 0
+            var unresolvedOnRouteOffRouteFrames = 0
+            var unresolvedDirectionDependentGuidance = 0
+            val eventCounts = (DIRECTION_DEPENDENT_EVENTS + "other").associateWith { 0 }.toMutableMap()
+            val sampleErrors = mutableListOf<String>()
             for (sample in 0 until samplesForCell) {
                 val seed = SEED_BASE + cellIndex * 10_000L + sample
-                val run = runScenario(scenario, seed)
+                val run = try {
+                    runScenario(scenario, seed)
+                } catch (error: Exception) {
+                    sampleErrors += "sample=$sample ${error.javaClass.simpleName}: ${error.message}"
+                    continue
+                }
                 if (run.arrived) arrivals++
+                run.arrivalTimeSeconds?.let { timeSeconds ->
+                    val input = d210Input(scenario, run, timeSeconds)
+                    val margin0 = evaluateD210Arrival(input.copy(actualNoiseMeters = 0.0))
+                    val actualNoise = evaluateD210Arrival(input)
+                    val priorThreeSigma = evaluateD210Arrival(
+                        input.copy(actualNoiseMeters = 3.0 * input.sigmaMeters),
+                    )
+                    if (margin0.falseArrival) falseArrivalRunsMargin0++
+                    if (actualNoise.falseArrival) falseArrivalRuns++
+                    if (scenario.sigmaMeters <= 5.0 && priorThreeSigma.falseArrival) {
+                        println(
+                            "D210-097-LOW-SIGMA label=${scenario.label()} sample=$sample seed=$seed " +
+                                "time=$timeSeconds actualNoiseMeters=${input.actualNoiseMeters} " +
+                                "priorThreeSigmaFalse=true actualNoiseFalse=${actualNoise.falseArrival}",
+                        )
+                    }
+                    arrivalTimes += StartArrivalObservation(
+                        sample = sample,
+                        seed = seed,
+                        timeSeconds = timeSeconds,
+                        projectedMeters = run.arrivalProjectedMeters ?: error("arrived run has no projection"),
+                        creditedMeters = run.arrivalCreditedMeters ?: error("arrived run has no credited advance"),
+                        actualNoiseMeters = input.actualNoiseMeters,
+                        falseArrivalMargin0 = margin0.falseArrival,
+                        falseArrivalAtActualNoise = actualNoise.falseArrival,
+                        falseArrivalAt3Sigma = priorThreeSigma.falseArrival,
+                        falseArrivalSeverityMeters = d210FalseArrivalSeverityMeters(input, actualNoise),
+                    )
+                }
                 offRouteFrames += run.onRouteOffRouteFrames
                 opposedFrames += run.opposedDirectionFrames
                 prematureFrames += run.directionDependentGuidanceBeforeResolution
+                if (run.unresolved) unresolvedRuns++
+                undecidedEvents += run.undecidedEvents
+                if (run.unresolvedWithoutExactlyOneTerminalEvent) unresolvedWithoutExactlyOneTerminalEventRuns++
+                if (run.hiddenArrivalReason) hiddenArrivalReasonRuns++
+                if (run.unresolvedArrival) unresolvedArrivalRuns++
+                unresolvedOnRouteOffRouteFrames += run.unresolvedOnRouteOffRouteFrames
+                unresolvedDirectionDependentGuidance += run.unresolvedDirectionDependentGuidance
+                run.directionDependentEventCounts.forEach { (event, count) ->
+                    val key = if (event in DIRECTION_DEPENDENT_EVENTS) event else "other"
+                    eventCounts[key] = eventCounts.getValue(key) + count
+                }
             }
             StartCellEvidence(
                 label = scenario.label(),
@@ -433,15 +1203,68 @@ private object StartPhaseGrid {
                 onRouteOffRouteFrames = offRouteFrames,
                 opposedDirectionFrames = opposedFrames,
                 directionDependentGuidanceBeforeResolution = prematureFrames,
+                unresolvedRuns = unresolvedRuns,
+                undecidedEvents = undecidedEvents,
+                unresolvedWithoutExactlyOneTerminalEventRuns = unresolvedWithoutExactlyOneTerminalEventRuns,
+                hiddenArrivalReasonRuns = hiddenArrivalReasonRuns,
+                directionDependentEventCounts = eventCounts,
+                sampleErrors = sampleErrors,
+                allowedUnresolvedByEndpointRule = unresolvedAllowedByD209(
+                    routeClosed = scenario.route.closed,
+                    routeLengthMeters = scenario.route.lengthMeters,
+                    startMeters = scenario.startMeters,
+                    direction = scenario.direction,
+                    startupTrajectoryMeters = config.startTrajectoryMeters,
+                    offRouteEnterDistMeters = config.offRouteEnterDistMeters,
+                ),
+                remainingToEndpointMeters = if (scenario.route.closed) null else if (scenario.direction == 1) {
+                    scenario.route.lengthMeters - scenario.startMeters
+                } else {
+                    scenario.startMeters
+                },
+                unresolvedArrivalRuns = unresolvedArrivalRuns,
+                unresolvedOnRouteOffRouteFrames = unresolvedOnRouteOffRouteFrames,
+                unresolvedDirectionDependentGuidance = unresolvedDirectionDependentGuidance,
+                falseArrivalRuns = falseArrivalRuns,
+                falseArrivalRunsMargin0 = falseArrivalRunsMargin0,
+                arrivalTimes = arrivalTimes,
             )
         }
-        cells.filter {
-            it.arrivalRuns > 0 || it.onRouteOffRouteFrames > 0 ||
-                it.opposedDirectionFrames > 0 || it.directionDependentGuidanceBeforeResolution > 0
-        }.forEach { cell ->
+        cells.forEach { cell ->
+            val eventCounts = (DIRECTION_DEPENDENT_EVENTS + "other").joinToString(" ") { event ->
+                val count = if (event == "other") {
+                    cell.directionDependentEventCounts.filterKeys { it !in DIRECTION_DEPENDENT_EVENTS }.values.sum()
+                } else {
+                    cell.directionDependentEventCounts[event] ?: 0
+                }
+                "$event=$count"
+            }
             println(
-                "START-PHASE-CELL ${cell.label} n=${cell.samples} arrivals=${cell.arrivalRuns} " +
-                    "onRouteOff=${cell.onRouteOffRouteFrames} opposed=${cell.opposedDirectionFrames}",
+                "START-PHASE-CELL ${cell.label} N=${cell.samples} arrivalRuns=${cell.arrivalRuns} " +
+                    "offRoute=${cell.onRouteOffRouteFrames} opposed=${cell.opposedDirectionFrames} " +
+                    "premature=${cell.directionDependentGuidanceBeforeResolution} " +
+                    "unresolved=${cell.unresolvedRuns} undecidedEvents=${cell.undecidedEvents} " +
+                    "unresolvedWithoutOneTerminal=${cell.unresolvedWithoutExactlyOneTerminalEventRuns} " +
+                "unresolvedAllowed=${cell.allowedUnresolvedByEndpointRule} " +
+                "endRemaining=${cell.remainingToEndpointMeters} " +
+                "unresolvedArrival=${cell.unresolvedArrivalRuns} " +
+                "unresolvedOffRoute=${cell.unresolvedOnRouteOffRouteFrames} " +
+                "unresolvedGuidance=${cell.unresolvedDirectionDependentGuidance} " +
+                    "hiddenInsufficientAdvance=${cell.hiddenArrivalReasonRuns} " +
+                    "events={$eventCounts} sampleErrors=${cell.sampleErrors.size}" +
+                    if (cell.sampleErrors.isEmpty()) "" else " errors=${cell.sampleErrors.joinToString(" | ")}",
+            )
+        }
+        cells.filter { it.arrivalTimes.isNotEmpty() }.forEach { cell ->
+            println(
+                "D210-ARRIVAL " + cell.label + " times=" +
+                    cell.arrivalTimes.joinToString(",") { arrival ->
+                        arrival.sample.toString() + ":" + arrival.seed + ":" + arrival.timeSeconds + ":" +
+                            arrival.projectedMeters + ":" + arrival.creditedMeters + ":" +
+                            arrival.actualNoiseMeters + ":" + arrival.falseArrivalMargin0 + ":" +
+                            arrival.falseArrivalAtActualNoise + ":" + arrival.falseArrivalAt3Sigma + ":" +
+                            arrival.falseArrivalSeverityMeters
+                    },
             )
         }
         val arrivalCells = arrivalViolations(cells).size
@@ -449,28 +1272,57 @@ private object StartPhaseGrid {
         val directionCells = oppositeDirectionViolations(cells).size
         val prematureCells = prematureDirectionGuidanceViolations(cells).size
         val arrivalRuns = cells.sumOf { it.arrivalRuns }
+        val falseArrivalRuns = cells.sumOf { it.falseArrivalRuns }
+        val falseArrivalRunsMargin0 = cells.sumOf { it.falseArrivalRunsMargin0 }
         val offRouteFrames = cells.sumOf { it.onRouteOffRouteFrames }
         val opposedFrames = cells.sumOf { it.opposedDirectionFrames }
         val prematureFrames = cells.sumOf { it.directionDependentGuidanceBeforeResolution }
+        val unresolvedRuns = cells.sumOf { it.unresolvedRuns }
+        val undecidedEvents = cells.sumOf { it.undecidedEvents }
+        val unresolvedWithoutExactlyOneTerminalEventRuns = cells.sumOf { it.unresolvedWithoutExactlyOneTerminalEventRuns }
+        val hiddenArrivalReasonRuns = cells.sumOf { it.hiddenArrivalReasonRuns }
+        val sampleErrors = cells.sumOf { it.sampleErrors.size }
+        val eventCounts = (DIRECTION_DEPENDENT_EVENTS + "other").joinToString(" ") { event ->
+            val count = if (event == "other") {
+                cells.sumOf { cell -> cell.directionDependentEventCounts.filterKeys { it !in DIRECTION_DEPENDENT_EVENTS }.values.sum() }
+            } else {
+                cells.sumOf { it.directionDependentEventCounts[event] ?: 0 }
+            }
+            "$event=$count"
+        }
         println(
             "START-PHASE-GRID cells=${cells.size} samples=${cells.sumOf { it.samples }} " +
-                "arrivalCells=$arrivalCells arrivalRuns=$arrivalRuns " +
+                "arrivalCells=$arrivalCells arrivalRuns=$arrivalRuns falseArrivalRuns=$falseArrivalRuns falseArrivalRunsMargin0=$falseArrivalRunsMargin0 " +
                 "offRouteCells=$offRouteCells offRouteFrames=$offRouteFrames " +
                 "directionCells=$directionCells opposedFrames=$opposedFrames " +
-                "prematureCells=$prematureCells prematureFrames=$prematureFrames",
+                "prematureCells=$prematureCells prematureFrames=$prematureFrames " +
+                "unresolvedRuns=$unresolvedRuns undecidedEvents=$undecidedEvents " +
+                "unresolvedWithoutOneTerminal=$unresolvedWithoutExactlyOneTerminalEventRuns " +
+                "hiddenInsufficientAdvanceRuns=$hiddenArrivalReasonRuns " +
+                "sampleErrors=$sampleErrors events={$eventCounts}",
         )
         return cells
     }
 
-    private fun runScenario(scenario: StartScenario, seed: Long): StartRunEvidence {
+    private fun runScenario(
+        scenario: StartScenario,
+        seed: Long,
+        startupEnabled: Boolean = true,
+    ): StartRunEvidence {
         val route = scenario.route
-        val coordinator = RouteStartupCoordinator(route.xml, config, BASE_MILLIS)
-        var session: GuideSession? = null
+        val session = GuideSession(RouteModel.fromGpx(route.xml, config), config, startupEnabled = startupEnabled)
         var resolvedAtSeconds: Int? = null
         var arrived = false
+        var arrivalTimeSeconds: Int? = null
+        var arrivalProjectedMeters: Double? = null
+        var arrivalCreditedMeters: Double? = null
+        var arrivalNoiseMeters: Double? = null
+        var noiseMetersAtCurrentFrame = 0.0
         var offRouteFrames = 0
         var opposedFrames = 0
         var prematureGuidance = 0
+        var hiddenArrivalReason = false
+        val eventCounts = DIRECTION_DEPENDENT_EVENTS.associateWith { 0 }.toMutableMap()
         val random = Random(seed)
 
         fun truth(timeSeconds: Int): Pair<Double, Boolean> {
@@ -495,8 +1347,11 @@ private object StartPhaseGrid {
                     point.north + tangent.east * ingressLeft,
                 )
             }
-            val east = point.east + if (scenario.sigmaMeters > 0.0) random.nextGaussian() * scenario.sigmaMeters else 0.0
-            val north = point.north + if (scenario.sigmaMeters > 0.0) random.nextGaussian() * scenario.sigmaMeters else 0.0
+            val eastNoise = if (scenario.sigmaMeters > 0.0) random.nextGaussian() * scenario.sigmaMeters else 0.0
+            val northNoise = if (scenario.sigmaMeters > 0.0) random.nextGaussian() * scenario.sigmaMeters else 0.0
+            noiseMetersAtCurrentFrame = hypot(eastNoise, northNoise)
+            val east = point.east + eastNoise
+            val north = point.north + northNoise
             val moving = timeSeconds >= scenario.standSeconds
             return TrailLocation(
                 timestampMillis = BASE_MILLIS + timeSeconds * 1_000L,
@@ -509,51 +1364,67 @@ private object StartPhaseGrid {
             )
         }
 
-        fun process(location: TrailLocation, sampleTimeSeconds: Int) {
-            val active = session ?: return
-            val decision = active.accept(location)
-            if (decision.result.nextState.arrived && sampleTimeSeconds <= SECONDS) arrived = true
-            val (_, onRoute) = truth(sampleTimeSeconds)
+        for (time in 0..SECONDS) {
+            val location = locationAt(time)
+            val previous = session.snapshot()
+            val decision = session.accept(location)
+            if (!hiddenArrivalReason && hasHiddenInsufficientAdvanceReason(decision.result.nextState, location.timestampMillis, config)) {
+                hiddenArrivalReason = true
+            }
+            if (!previous.startupResolved && decision.result.nextState.startupResolved) {
+                resolvedAtSeconds = time
+            }
+            if (!previous.startupResolved) {
+                val observedEvents = findDirectionDependentGuidanceEvents(decision.result)
+                if (observedEvents.any { it in DIRECTION_DEPENDENT_EVENTS }) prematureGuidance++
+                observedEvents.forEach { event -> eventCounts[event] = eventCounts.getOrDefault(event, 0) + 1 }
+            }
+            if (decision.result.nextState.arrived && time <= SECONDS) {
+                arrived = true
+                if (arrivalTimeSeconds == null) {
+                    arrivalTimeSeconds = time
+                    arrivalProjectedMeters = decision.result.nextState.lastMatch?.projectedMeters
+                    arrivalCreditedMeters = decision.result.nextState.advanceCreditedMeters
+                    arrivalNoiseMeters = noiseMetersAtCurrentFrame
+                }
+            }
+            val (_, onRoute) = truth(time)
             if (onRoute && decision.result.nextState.offRoute) offRouteFrames++
             if (onRoute && decision.result.nextState.direction == ProgressDirection.REVERSE) opposedFrames++
         }
-
-        for (time in 0..SECONDS) {
-            val location = locationAt(time)
-            if (session == null) {
-                val update = if (time >= STARTUP_TIMEOUT_SECONDS) {
-                    coordinator.timeout(location.timestampMillis)
-                } else {
-                    coordinator.accept(location, location.timestampMillis)
-                }
-                val orientation = update.orientation
-                if (orientation == null) {
-                    if (findDirectionDependentGuidance(update)) prematureGuidance++
-                    continue
-                }
-                resolvedAtSeconds = time
-                session = GuideSession(RouteModel.fromGpx(orientation.gpxXml, config), config)
-                update.replayLocations.forEach { buffered ->
-                    val sampleTime = ((buffered.timestampMillis - BASE_MILLIS) / 1_000L).toInt()
-                    process(buffered, sampleTime)
-                }
-                // Match the investigation harness: the timeout-triggering fix is not in the buffer.
-                continue
-            }
-            process(location, time)
-        }
-        check(resolvedAtSeconds != null) { "startup did not resolve for ${scenario.label()}" }
-        return StartRunEvidence(arrived, offRouteFrames, opposedFrames, prematureGuidance)
+        val unresolved = startupEnabled && resolvedAtSeconds == null
+        val undecidedEvents = session.finish().count { it.kind == "direction.undecided-at-end" }
+        return StartRunEvidence(
+            arrived,
+            offRouteFrames,
+            opposedFrames,
+            prematureGuidance,
+            unresolved,
+            undecidedEvents,
+            unresolved && undecidedEvents != 1,
+            hiddenArrivalReason,
+            eventCounts,
+            unresolvedArrival = unresolved && arrived,
+            unresolvedOnRouteOffRouteFrames = if (unresolved) offRouteFrames else 0,
+            unresolvedDirectionDependentGuidance = if (unresolved) prematureGuidance else 0,
+            arrivalTimeSeconds = arrivalTimeSeconds,
+            arrivalProjectedMeters = arrivalProjectedMeters,
+            arrivalCreditedMeters = arrivalCreditedMeters,
+            arrivalNoiseMeters = arrivalNoiseMeters,
+        )
     }
 
-    private fun findDirectionDependentGuidance(root: Any): Boolean {
+    private fun findDirectionDependentGuidanceEvents(root: Any): Set<String> {
         val visited = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Any, Boolean>())
         val queue = ArrayDeque<Pair<Any, Int>>()
+        val events = linkedSetOf<String>()
         queue.add(root to 0)
         while (queue.isNotEmpty()) {
             val (value, depth) = queue.removeFirst()
             if (!visited.add(value)) continue
-            if (value is GuideResult && value.guidance != null && value.reason.details["event"] in DIRECTION_DEPENDENT_EVENTS) return true
+            if (value is GuideResult && value.guidance != null) {
+                value.reason.details["event"]?.let(events::add)
+            }
             if (depth >= 3) continue
             for (field in value.javaClass.declaredFields) {
                 if (field.isSynthetic || field.type.isPrimitive || field.type.name.startsWith("java.")) continue
@@ -566,10 +1437,10 @@ private object StartPhaseGrid {
                 if (child.javaClass.name.startsWith("com.trailnav")) queue.add(child to depth + 1)
             }
         }
-        return false
+        return events
     }
 
-    private val DIRECTION_DEPENDENT_EVENTS = setOf("E1", "E3", "E4", "E6")
+    private val DIRECTION_DEPENDENT_EVENTS = setOf("E1", "E3", "E4", "E6", "TURN_AHEAD", "TURN_NOW")
 
     private fun StartScenario.label(): String = listOf(
         route.name,
@@ -581,7 +1452,6 @@ private object StartPhaseGrid {
     ).joinToString("/")
 
     private const val WALK_SPEED_MPS = 1.2
-    private const val STARTUP_TIMEOUT_SECONDS = 30
 }
 
 private object StartPhaseMilestoneProbe {
@@ -600,20 +1470,11 @@ private object StartPhaseMilestoneProbe {
     fun violations(): List<String> {
         val route = StartProbeRoutes.oneWay()
         val startMeters = route.lengthMeters * 0.50
-        val coordinator = RouteStartupCoordinator(route.xml, config, START_MILLIS)
+        val session = GuideSession(RouteModel.fromGpx(route.xml, config), config, startupEnabled = true)
         val locations = syntheticTrack(route, startMeters, direction = 1, standSeconds = 0, sigmaMeters = 0.0, seconds = 900, seed = 84_159_177L)
-        var session: GuideSession? = null
         val violations = mutableListOf<String>()
         for (location in locations) {
-            if (session == null) {
-                val update = coordinator.accept(location, location.timestampMillis)
-                val orientation = update.orientation ?: continue
-                println("START-EARLY-DIRECTION ${route.name} outcome=${update.observation.outcome} displacement=${update.observation.netDisplacementMeters}")
-                session = GuideSession(RouteModel.fromGpx(orientation.gpxXml, config), config)
-                update.replayLocations.forEach { buffered -> checkMilestone(session, buffered, violations) }
-            } else {
-                checkMilestone(session, location, violations)
-            }
+            checkMilestone(session, location, violations)
         }
         return violations
     }
@@ -634,7 +1495,6 @@ private object StartPhaseMilestoneProbe {
 
 private object StartPhaseEarlyEventProbe {
     private const val DURATION_SECONDS = 60
-    private const val STARTUP_TIMEOUT_SECONDS = 30
     private const val START_MILLIS = 0L
     private const val METERS_PER_DEGREE = 111_320.0
     private val latitudeOrigin = 37.0
@@ -697,32 +1557,11 @@ private object StartPhaseEarlyEventProbe {
         startMillis: Long,
         config: GuideConfig = fieldConfig,
     ): List<TimedDecision> {
-        val coordinator = RouteStartupCoordinator(route.xml, config, startMillis)
         val locations = syntheticTrack(route, startMeters, direction = 1, standSeconds = 0, sigmaMeters = 0.0, seconds = DURATION_SECONDS, seed = 84_159_178L, startMillis = startMillis)
-        var session: GuideSession? = null
+        val session = GuideSession(RouteModel.fromGpx(route.xml, config), config, startupEnabled = true)
         val output = mutableListOf<TimedDecision>()
-        fun accept(sessionValue: GuideSession, location: TrailLocation) {
-            output += TimedDecision(location.timestampMillis, sessionValue.accept(location).result)
-        }
         for (location in locations) {
-            if (session == null) {
-                val elapsedSeconds = (location.timestampMillis - startMillis) / 1_000L
-                val update = if (elapsedSeconds >= STARTUP_TIMEOUT_SECONDS) {
-                    coordinator.timeout(location.timestampMillis)
-                } else {
-                    coordinator.accept(location, location.timestampMillis)
-                }
-                val orientation = update.orientation ?: continue
-                val model = RouteModel.fromGpx(orientation.gpxXml, config)
-                println(
-                    "START-EARLY-ROUTE ${route.name} outcome=${update.observation.outcome} reversed=${orientation.reversed} " +
-                        "elevation=${model.elevationUse} peaks=${model.peaks} waypoints=${model.waypoints}",
-                )
-                session = GuideSession(model, config)
-                update.replayLocations.forEach { accept(session!!, it) }
-            } else {
-                accept(session!!, location)
-            }
+            output += TimedDecision(location.timestampMillis, session.accept(location).result)
         }
         output.filter { it.result.guidance != null }.forEach { decision ->
             println("START-EARLY-GUIDANCE ${route.name} t=${(decision.timestampMillis - startMillis) / 1_000} rule=${decision.result.reason.rule} details=${decision.result.reason.details} guidance=${decision.result.guidance}")
@@ -827,6 +1666,22 @@ private object StartPhaseEarlyEventProbe {
     }
 }
 
+private fun independentWholeRouteMinimum(points: List<StartPoint>, point: StartPoint): Double =
+    points.zipWithNext { start, end ->
+        val deltaEast = end.east - start.east
+        val deltaNorth = end.north - start.north
+        val lengthSquared = deltaEast * deltaEast + deltaNorth * deltaNorth
+        val fraction = if (lengthSquared == 0.0) {
+            0.0
+        } else {
+            (((point.east - start.east) * deltaEast + (point.north - start.north) * deltaNorth) /
+                lengthSquared).coerceIn(0.0, 1.0)
+        }
+        val nearestEast = start.east + fraction * deltaEast
+        val nearestNorth = start.north + fraction * deltaNorth
+        hypot(point.east - nearestEast, point.north - nearestNorth)
+    }.minOrNull() ?: error("whole-route minimum requires at least one segment")
+
 private object StartPhasePreDecisionProbe {
     private const val START_MILLIS = 0L
     private val config = GuideConfig().copy(
@@ -840,14 +1695,25 @@ private object StartPhasePreDecisionProbe {
         sunriseEnabled = true,
     )
 
-    fun violations(): List<String> {
+    fun violations(startMeters: Double, nearestWholeRouteDistance: Double): List<String> {
         val route = StartProbeRoutes.oneWay()
-        val startMeters = route.lengthMeters * 0.50
-        val coordinator = RouteStartupCoordinator(route.xml, config, START_MILLIS)
+        val session = GuideSession(RouteModel.fromGpx(route.xml, config), config, startupEnabled = true)
         val entry = route.pointAt(startMeters)
         val tangent = route.tangentAt(startMeters)
         var preDecisionGuidance: Guidance.OffRoute? = null
         var seenAtSeconds: Int? = null
+        val onRoutePoint = route.pointAt(startMeters)
+        session.accept(
+            TrailLocation(
+                timestampMillis = START_MILLIS,
+                latitude = StartProbeRoutes.latitude + onRoutePoint.north / StartProbeRoutes.METERS_PER_DEGREE,
+                longitude = StartProbeRoutes.longitude + onRoutePoint.east / StartProbeRoutes.metersPerDegreeLongitude,
+                accuracyMeters = 5f,
+                speedMps = 0f,
+                bearingDegrees = null,
+                provider = "synthetic-predecision",
+            ),
+        )
         for (second in 0 until 30) {
             val metersAway = 80.0
             val location = TrailLocation(
@@ -859,51 +1725,56 @@ private object StartPhasePreDecisionProbe {
                 bearingDegrees = null,
                 provider = "synthetic-predecision",
             )
-            val update = coordinator.accept(location, location.timestampMillis)
-            if (update.orientation != null) continue
-            preDecisionGuidance = findOffRouteGuidance(update)
+            val result = session.accept(location).result
+            if (result.nextState.startupResolved) continue
+            preDecisionGuidance = result.guidance as? Guidance.OffRoute
             if (preDecisionGuidance != null) {
-                seenAtSeconds = second
+                seenAtSeconds = second + 1
                 break
             }
         }
-        val nearestWholeRouteDistance = 80.0
         return when (val guidance = preDecisionGuidance) {
-            null -> listOf("no decision-before off-route guidance was exposed while nearest whole-route distance was $nearestWholeRouteDistance m")
+            null -> {
+                println(
+                    "PREDECISION-ENGINE startMeters=" + startMeters +
+                        " distance=none expected=" + nearestWholeRouteDistance +
+                        " seenAt=" + seenAtSeconds,
+                )
+                listOf("no decision-before off-route guidance was exposed while nearest whole-route distance was $nearestWholeRouteDistance m")
+            }
             else -> {
                 val delta = abs(guidance.distance - nearestWholeRouteDistance)
+                println(
+                    "PREDECISION-ENGINE startMeters=" + startMeters +
+                        " distance=" + guidance.distance +
+                        " expected=" + nearestWholeRouteDistance +
+                        " delta=" + delta +
+                        " seenAt=" + seenAtSeconds,
+                )
                 if (delta <= 1.0) emptyList() else listOf("pre-decision off-route distance=${guidance.distance}; whole-route minimum=$nearestWholeRouteDistance at second=$seenAtSeconds")
             }
         }
     }
 
-    private fun findOffRouteGuidance(root: Any): Guidance.OffRoute? {
-        val visited = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Any, Boolean>())
-        val queue = ArrayDeque<Pair<Any, Int>>()
-        queue.add(root to 0)
-        while (queue.isNotEmpty()) {
-            val (value, depth) = queue.removeFirst()
-            if (!visited.add(value)) continue
-            if (value is Guidance.OffRoute) return value
-            if (depth >= 3) continue
-            for (method in value.javaClass.methods) {
-                if (method.parameterCount != 0 || !method.name.startsWith("get")) continue
-                val name = method.name.lowercase()
-                if (!name.contains("guidance") && !name.contains("result") && !Guidance::class.java.isAssignableFrom(method.returnType)) continue
-                val child = runCatching { method.invoke(value) }.getOrNull() ?: continue
-                if (child is Guidance.OffRoute) return child
-                if (child.javaClass.name.startsWith("com.trailnav")) queue.add(child to depth + 1)
-            }
-        }
-        return null
-    }
 }
 
-private object StartProbeRoutes {
+internal object StartProbeRoutes {
     const val METERS_PER_DEGREE = 111_320.0
     const val latitude = 37.0
     const val longitude = 127.0
     val metersPerDegreeLongitude: Double = METERS_PER_DEGREE * cos(Math.toRadians(latitude))
+    val engineDistanceScale: Double by lazy {
+        val origin = StartPoint(0.0, 0.0)
+        fun routeMathDistance(point: StartPoint): Double =
+            RouteModel.fromGpx(routeGpx(listOf(origin, point))).totalLengthMeters
+
+        val northScale = routeMathDistance(StartPoint(0.0, 100.0)) / 100.0
+        val eastScale = routeMathDistance(StartPoint(100.0, 0.0)) / 100.0
+        require(abs(northScale - eastScale) <= 1e-9) {
+            "StartPhaseGrid requires direction-specific engine distance conversion when axes differ: north=$northScale east=$eastScale"
+        }
+        northScale
+    }
 
     fun oneWay(): StartRoute = StartRoute(
         "C-oneway",
@@ -913,6 +1784,26 @@ private object StartProbeRoutes {
             StartPoint(1_200.0, 1_000.0),
         ),
         closed = false,
+    )
+
+    fun loop(): StartRoute = StartRoute(
+        "A-loop",
+        listOf(
+            StartPoint(0.0, 0.0), StartPoint(300.0, 0.0), StartPoint(300.0, 300.0),
+            StartPoint(0.0, 300.0), StartPoint(0.0, 0.0),
+        ),
+        closed = true,
+    )
+
+    fun lollipop(offsetMeters: Double = 0.0): StartRoute = StartRoute(
+        "B-lollipop-offset-${offsetMeters.toInt()}m",
+        listOf(
+            StartPoint(0.0, 0.0), StartPoint(0.0, 200.0), StartPoint(200.0, 200.0),
+            StartPoint(200.0, 400.0), StartPoint(offsetMeters, 400.0), StartPoint(offsetMeters, 200.0),
+            StartPoint(0.0, 200.0),
+            StartPoint(0.0, 0.0),
+        ),
+        closed = true,
     )
 
     fun raisedLoop(waypoints: List<Pair<Double, String>>): StartRoute {
@@ -930,7 +1821,7 @@ private object StartProbeRoutes {
     }
 }
 
-private fun syntheticTrack(
+internal fun syntheticTrack(
     route: StartRoute,
     startMeters: Double,
     direction: Int,
@@ -960,7 +1851,7 @@ private fun syntheticTrack(
     }
 }
 
-private fun routeGpx(points: List<StartPoint>, waypoints: List<Pair<StartPoint, String>> = emptyList()): String = buildString {
+internal fun routeGpx(points: List<StartPoint>, waypoints: List<Pair<StartPoint, String>> = emptyList()): String = buildString {
     append("<gpx version=\"1.1\"><trk><trkseg>")
     for (point in points) {
         append("<trkpt lat=\"").append(37.0 + point.north / 111_320.0)

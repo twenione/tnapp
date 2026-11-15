@@ -40,6 +40,81 @@ class DynamicGuidanceTest {
     }
 
     @Test
+    fun startupStationaryMilestoneIsConsumedAndRecordedWithoutAnnouncement() {
+        val route = remainingEventRoute()
+        val result = stationaryStartupCrossing(
+            route,
+            fromMeters = 98.0,
+            toMeters = 101.0,
+            config = GuideConfig(
+                milestoneEnabled = true,
+                milestoneIntervalMeters = 100.0,
+                eventMinIntervalSeconds = 0.0,
+                sunsetEnabled = false,
+                sunriseEnabled = false,
+            ),
+        )
+
+        check(result.guidance == null)
+        check(result.reason.rule == "startup.direction-pending")
+        check(result.nextState.direction == ProgressDirection.STATIONARY)
+        check(!result.nextState.startupResolved)
+        check(1 in result.nextState.consumedMilestoneIndices)
+        val record = result.nextState.discardedEvents.single { it.event == "E1" }
+        check(record.threshold == "1")
+        check(record.reason == "direction-unknown")
+    }
+
+    @Test
+    fun startupStationaryRemainingCrossingIsDiscardedAsDirectionUnknown() {
+        val route = remainingEventRoute()
+        val threshold = route.totalLengthMeters - 100.0
+        val result = stationaryStartupCrossing(
+            route,
+            fromMeters = 98.0,
+            toMeters = 101.0,
+            config = GuideConfig(
+                remainingEnabled = true,
+                remainingAnnounceMeters = listOf(threshold),
+                eventMinIntervalSeconds = 0.0,
+                sunsetEnabled = false,
+                sunriseEnabled = false,
+            ),
+        )
+
+        check(result.guidance == null)
+        check(result.reason.rule == "startup.direction-pending")
+        check(result.nextState.direction == ProgressDirection.STATIONARY)
+        check(!result.nextState.startupResolved)
+        check(threshold in result.nextState.consumedRemainingThresholds)
+        check(result.nextState.pendingRemainingThresholds.isEmpty())
+        val record = result.nextState.discardedEvents.single { it.event == "E3" }
+        check(record.threshold == threshold.toBigDecimal().stripTrailingZeros().toPlainString())
+        check(record.reason == "direction-unknown")
+    }
+
+    @Test
+    fun startupStationaryRemainingCrossingDoesNotEnterPendingQueue() {
+        val route = remainingEventRoute()
+        val threshold = route.totalLengthMeters - 100.0
+        val result = stationaryStartupCrossing(
+            route,
+            fromMeters = 98.0,
+            toMeters = 101.0,
+            config = GuideConfig(
+                remainingEnabled = true,
+                remainingAnnounceMeters = listOf(threshold),
+                eventMinIntervalSeconds = 0.0,
+                sunsetEnabled = false,
+                sunriseEnabled = false,
+            ),
+        )
+
+        check(result.nextState.pendingRemainingThresholds.isEmpty())
+        check(threshold in result.nextState.consumedRemainingThresholds)
+    }
+
+    @Test
     fun remainingThresholds() {
         val config = GuideConfig(remainingEnabled = true, remainingAnnounceMeters = listOf(3000.0, 2800.0, 2400.0), eventMinIntervalSeconds = 0.0)
         var state = GuideState.initial(route)
@@ -541,6 +616,27 @@ class DynamicGuidanceTest {
     private fun frameAtProgress(progressMeters: Double, timestamp: Long, lateralMeters: Double = 0.0) =
         SensorFrame(timestamp, 10.0 + progressMeters / 111_195.0, 20.0 + lateralMeters / (111_195.0 * kotlin.math.cos(Math.toRadians(10.0))), 5f, 1f, null)
 
+    private fun stationaryStartupCrossing(
+        route: RouteModel,
+        fromMeters: Double,
+        toMeters: Double,
+        config: GuideConfig,
+    ): GuideResult {
+        val first = guide(
+            GuideState.starting(route, config),
+            frameAtProgress(fromMeters, 0L).copy(speed = 0f),
+            config,
+        )
+        check(first.nextState.startupEnabled && !first.nextState.startupResolved)
+        val crossed = guide(
+            first.nextState,
+            frameAtProgress(toMeters, 1_000L).copy(speed = 0f),
+            config,
+        )
+        check(crossed.nextState.startupEnabled && !crossed.nextState.startupResolved)
+        return crossed
+    }
+
     private fun remainingEventRoute(): RouteModel = RouteModel.fromGpx(
         "<gpx><trk><trkseg><trkpt lat=\"10.0\" lon=\"20.0\"/>" +
             "<trkpt lat=\"10.01\" lon=\"20.0\"/></trkseg></trk></gpx>"
@@ -668,6 +764,34 @@ class DynamicGuidanceTest {
         val later = guide(passed.nextState, frameAtProgress(peak.s + 30.0, 61_000L), config)
         check(later.guidance !is Guidance.Slope)
         check(later.nextState.discardedSlopePeaks.size == 1)
+    }
+
+    @Test
+    fun startupStationaryPeakIsConsumedAndRecordedWithoutAnnouncement() {
+        val route = peakEventRoute()
+        val peak = route.peaks.first()
+        val result = stationaryStartupCrossing(
+            route,
+            fromMeters = peak.s - 102.0,
+            toMeters = peak.s - 99.0,
+            config = GuideConfig(
+                slopeEnabled = true,
+                peakAnnounceLeadMeters = 100.0,
+                eventMinIntervalSeconds = 0.0,
+                sunsetEnabled = false,
+                sunriseEnabled = false,
+            ),
+        )
+
+        check(result.guidance == null)
+        check(result.reason.rule == "startup.direction-pending")
+        check(result.nextState.direction == ProgressDirection.STATIONARY)
+        check(0 in result.nextState.consumedSlopeIndices)
+        check(result.nextState.pendingSlopePeaks.isEmpty())
+        val record = result.nextState.discardedSlopePeaks.single()
+        check(record.index == 0)
+        check(record.peakS == peak.s)
+        check(record.reason == "direction-unknown")
     }
 
     @Test
@@ -801,6 +925,36 @@ class DynamicGuidanceTest {
         )
         val result = guide(primed, SensorFrame(1_000L, 10.00045, 20.0, 5f, 1f, null), config)
         check(result.guidance is Guidance.Waypoint)
+    }
+
+    @Test
+    fun startupStationaryWaypointIsConsumedAndRecordedWithoutAnnouncement() {
+        val route = RouteModel.fromGpx(
+            "<gpx><wpt lat=\"10.005\" lon=\"20.0\"><name>View</name></wpt>" +
+                "<trk><trkseg><trkpt lat=\"10.0\" lon=\"20.0\"/>" +
+                "<trkpt lat=\"10.01\" lon=\"20.0\"/></trkseg></trk></gpx>"
+        )
+        val waypoint = route.waypoints.single()
+        val result = stationaryStartupCrossing(
+            route,
+            fromMeters = waypoint.s - 77.0,
+            toMeters = waypoint.s - 74.0,
+            config = GuideConfig(
+                waypointEnabled = true,
+                waypointAnnounceLeadMeters = 75.0,
+                eventMinIntervalSeconds = 0.0,
+                sunsetEnabled = false,
+                sunriseEnabled = false,
+            ),
+        )
+
+        check(result.guidance == null)
+        check(result.reason.rule == "startup.direction-pending")
+        check(result.nextState.direction == ProgressDirection.STATIONARY)
+        check(0 in result.nextState.consumedWaypointIndices)
+        val record = result.nextState.discardedWaypoints.single()
+        check(record.index == 0)
+        check(record.reason == "direction-unknown")
     }
 
     @Test

@@ -16,6 +16,8 @@ import kotlin.math.sin
 object Engine {
     fun guide(state: GuideState, frame: SensorFrame, config: GuideConfig = GuideConfig()): GuideResult =
         guideFrame(state, frame, config)
+
+    fun finish(state: GuideState): GuideState = finishGuideSession(state)
 }
 
 /** Kotlin-friendly top-level entry point matching the roadmap interface. */
@@ -27,7 +29,7 @@ internal fun interpolateElevation(route: RouteModel, projectedMeters: Double): D
 }
 
 private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfig): GuideResult {
-    val initializedState = if (state.sessionStartTimestamp == null) {
+    var initializedState = if (state.sessionStartTimestamp == null) {
         state.copy(sessionStartTimestamp = frame.timestamp)
     } else {
         state
@@ -50,7 +52,14 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
             )
         )
     }
-    val match = RouteMatcher.nearest(initializedState.route, frame, initializedState.lastMatch?.projectedMeters, config)
+    var startupPending = initializedState.startupEnabled && !initializedState.startupResolved
+    val walkedBeforeFrame = initializedState.trajectoryWalkedMeters
+    var match = RouteMatcher.nearest(
+        initializedState.route,
+        frame,
+        if (startupPending) null else initializedState.lastMatch?.projectedMeters,
+        config,
+    )
     if (match == null) {
         val sunset = evaluateSunsetStandalone(initializedState, frame, config, higherPriority = false)
         val sunriseState = evaluateSunriseStandalone(sunset.state, frame, config)
@@ -59,8 +68,102 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         }
         return GuideResult(null, sunriseState, Reason("matching.no-route-segment"))
     }
-    val directedMatch = RouteMatcher.withDirection(initializedState, match, frame, config)
-    val ema = RouteMatcher.updatedEma(initializedState, directedMatch, frame, config)
+
+    var startupResolvedThisFrame = false
+    if (startupPending || initializedState.directionObservationActive) {
+        initializedState = updateStartTrajectory(initializedState, match, frame, config)
+    }
+    if (startupPending) {
+        val trajectoryMatch = StartTrajectoryMatcher.match(
+            initializedState.route,
+            initializedState.trajectorySamples,
+            config,
+        )
+        if (trajectoryMatch != null) {
+            val originalRoute = initializedState.route
+            val reverse = trajectoryMatch.direction == ProgressDirection.REVERSE
+            val orientedRoute = if (reverse) originalRoute.reversed(config) else originalRoute
+            val expectedProgress = if (reverse) {
+                (orientedRoute.totalLengthMeters - trajectoryMatch.currentProgressMeters).coerceIn(0.0, orientedRoute.totalLengthMeters)
+            } else {
+                trajectoryMatch.currentProgressMeters.coerceIn(0.0, orientedRoute.totalLengthMeters)
+            }
+            val orientedMatch = RouteMatcher.nearest(orientedRoute, frame, expectedProgress, config) ?: match
+            val orientedMatchForward = orientedMatch.copy(direction = ProgressDirection.FORWARD)
+            val previousBaseline = initializedState.arrivalBaselineRemainingMeters
+            val newBaseline = (orientedRoute.totalLengthMeters - orientedMatchForward.projectedMeters).coerceAtLeast(0.0)
+            val decisionElapsed = initializedState.trajectoryStartTimestampMillis?.let {
+                (frame.timestamp - it).coerceAtLeast(0L) / 1_000.0
+            } ?: 0.0
+            val routeOrientation = EngineSystemEvent(
+                kind = "route.orientation",
+                fields = mapOf(
+                    "reversed" to reverse.toString(),
+                    "reason" to "trajectory-match",
+                    "observed_net_displacement_m" to abs(trajectoryMatch.netDisplacementMeters).toString(),
+                    "observation_elapsed_seconds" to decisionElapsed.toString(),
+                ),
+            )
+            val directionDecided = EngineSystemEvent(
+                kind = "direction.decided",
+                fields = mapOf(
+                    "frames_before_decision" to initializedState.trajectoryFrameCount.toString(),
+                    "seconds_before_decision" to decisionElapsed.toString(),
+                    "walked_meters" to initializedState.trajectoryWalkedMeters.toString(),
+                    "trajectory_meters_config" to config.startTrajectoryMeters.toString(),
+                ),
+            )
+            val baselineReset = EngineSystemEvent(
+                kind = "arrival.baseline-reset",
+                fields = mapOf(
+                    "previous_baseline_remaining_m" to (previousBaseline?.toString() ?: "none"),
+                    "new_baseline_remaining_m" to newBaseline.toString(),
+                    "reason" to "trajectory-first-match",
+                ),
+            )
+            val originalStart = if (reverse) {
+                (originalRoute.totalLengthMeters - trajectoryMatch.startProgressMeters).coerceAtLeast(0.0)
+            } else {
+                trajectoryMatch.startProgressMeters
+            }
+            initializedState = initializedState.copy(
+                route = orientedRoute,
+                startupResolved = true,
+                direction = ProgressDirection.FORWARD,
+                lastMatch = null,
+                firstMatchProgressMeters = originalStart,
+                emaDeltaMeters = 0.0,
+                reverseSince = null,
+                reverseStatusIssued = false,
+                routeReversed = reverse,
+                consumedWaypointIndices = if (reverse) emptySet() else initializedState.consumedWaypointIndices,
+                directionDecidedAtMillis = frame.timestamp,
+                decidedDirection = trajectoryMatch.direction,
+                directionObservationActive = config.directionSuspectEnabled,
+                directionObservationStartWalkedMeters = initializedState.trajectoryWalkedMeters,
+                directionObservationStartProgressMeters = expectedProgress,
+                directionObservationOverlapExitWalkedMeters = if (
+                    orientedRoute.isProgressInOverlap(expectedProgress)
+                ) null else initializedState.trajectoryWalkedMeters,
+                directionObservationLastRefitWalkedMeters = initializedState.trajectoryWalkedMeters,
+                directionSuspectRecorded = false,
+                arrivalBaselineRemainingMeters = newBaseline,
+                advanceHighWaterMeters = orientedMatchForward.projectedMeters,
+                advanceCreditedMeters = 0.0,
+                systemEvents = initializedState.systemEvents + listOf(routeOrientation, directionDecided, baselineReset),
+            )
+            match = orientedMatchForward
+            startupPending = false
+            startupResolvedThisFrame = true
+        }
+    }
+
+    val directedMatch = when {
+        startupPending -> match.copy(direction = ProgressDirection.UNKNOWN)
+        startupResolvedThisFrame -> match.copy(direction = ProgressDirection.FORWARD)
+        else -> RouteMatcher.withDirection(initializedState, match, frame, config)
+    }
+    val ema = if (startupResolvedThisFrame) 0.0 else RouteMatcher.updatedEma(initializedState, directedMatch, frame, config)
     val stationary = frame.speed != null && frame.speed.toDouble() < config.stationarySpeedMps
     val resumeSince = when {
         stationary -> null
@@ -94,30 +197,43 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         }
     )
 
-    next = updateArrivalAdvance(
-        state = next,
-        match = directedMatch,
-        previousMatch = initializedState.lastMatch,
-        previousTimestamp = initializedState.lastTimestamp,
-        timestamp = frame.timestamp,
-        config = config,
-    )
+    next = updateDirectionSuspect(next, frame, walkedBeforeFrame, config)
+
+    if (!startupPending) {
+        next = updateArrivalAdvance(
+            state = next,
+            match = directedMatch,
+            previousMatch = if (startupResolvedThisFrame) null else initializedState.lastMatch,
+            previousTimestamp = if (startupResolvedThisFrame) null else initializedState.lastTimestamp,
+            timestamp = frame.timestamp,
+            config = config,
+        )
+    }
     val arrivalCandidate = isArrivalCandidate(next.route, directedMatch, frame.timestamp, next.sessionStartTimestamp, config)
     val requiredArrivalAdvance = requiredArrivalAdvance(next.route, next.arrivalBaselineRemainingMeters, config)
     val arrivalHasAdvance = next.arrivalBaselineRemainingMeters != null &&
         next.advanceCreditedMeters >= requiredArrivalAdvance
-    if (arrivalCandidate && !arrivalHasAdvance && next.arrivalBlockedRecords.isEmpty()) {
+    val arrivalBlockReason = when {
+        startupPending -> "direction-unknown"
+        !arrivalHasAdvance -> "insufficient-advance"
+        else -> null
+    }
+    if (
+        arrivalCandidate && arrivalBlockReason != null &&
+        next.arrivalBlockedRecords.none { it.reason == arrivalBlockReason }
+    ) {
         next = next.copy(
             arrivalBlockedRecords = next.arrivalBlockedRecords + ArrivalBlockedRecord(
                 creditedMeters = next.advanceCreditedMeters,
                 requiredMeters = requiredArrivalAdvance,
                 baselineRemainingMeters = next.arrivalBaselineRemainingMeters,
                 projectedMeters = directedMatch.projectedMeters,
+                reason = arrivalBlockReason,
             ),
         )
     }
 
-    if (arrivalCandidate && arrivalHasAdvance) {
+    if (arrivalCandidate && !startupPending && arrivalHasAdvance) {
         next = next.copy(
             arrived = true,
             offRoute = false,
@@ -187,7 +303,19 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
     if (next.offRoute) {
         // Advance and consume ordinary event thresholds while off-route, but
         // keep E7 pending for a later safety announcement.
-        next = evaluateDynamicGuidance(initializedState, next, directedMatch, frame, config, suppressAnnouncements = true).state
+        val dynamic = evaluateDynamicGuidance(
+            initializedState,
+            next,
+            directedMatch,
+            frame,
+            config,
+            suppressAnnouncements = true,
+            startupPending = startupPending,
+        )
+        next = dynamic.state
+        if (dynamic.guidance != null) {
+            return GuideResult(dynamic.guidance, dynamic.state, dynamic.reason)
+        }
         val shouldAnnounce = next.lastAnnouncementAt == null ||
             elapsedSeconds(frame.timestamp, next.lastAnnouncementAt) >= config.reannounceIntervalSeconds ||
             (next.lastAnnouncementDistance != null && (
@@ -222,6 +350,22 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
             null,
             sunset.state,
             Reason("off-route.holding", details = mapOf("distanceMeters" to directedMatch.distanceMeters.toString()))
+        )
+    }
+
+    if (startupPending) {
+        val dynamic = evaluateDynamicGuidance(
+            initializedState,
+            next,
+            directedMatch,
+            frame,
+            config,
+            startupPending = true,
+        )
+        return GuideResult(
+            dynamic.guidance,
+            dynamic.state,
+            if (dynamic.guidance == null) Reason("startup.direction-pending") else dynamic.reason,
         )
     }
 
@@ -277,6 +421,223 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
     )
 }
 
+private fun updateStartTrajectory(
+    state: GuideState,
+    match: MatchResult,
+    frame: SensorFrame,
+    config: GuideConfig,
+): GuideState {
+    val entered = state.hasEnteredRoute || match.distanceMeters < config.offRouteExitDistMeters
+    var next = state.copy(
+        startupHasMatch = state.startupHasMatch || entered,
+        hasEnteredRoute = entered,
+    )
+    val eligible = if (state.startupResolved) {
+        state.directionObservationActive
+    } else {
+        entered && match.distanceMeters < config.offRouteExitDistMeters
+    }
+    if (!eligible) return next
+
+    val point = GeoPoint(frame.lat, frame.lon)
+    val previousPoint = next.lastTrajectoryPoint
+    val previousTimestamp = next.lastTrajectoryTimestampMillis
+    val previousSpeed = next.lastTrajectorySpeedMps
+    val previousAccuracy = next.lastTrajectoryAccuracyMeters
+    val currentSpeed = frame.speed?.toDouble()
+    val elapsedSeconds = previousTimestamp?.let { (frame.timestamp - it).coerceAtLeast(0L) / 1_000.0 } ?: 0.0
+    val geographicDistance = previousPoint?.let { RouteMath.distance(next.route.toEnu(it), next.route.toEnu(point)) } ?: 0.0
+    val stepMeters = when {
+        previousTimestamp == null || elapsedSeconds <= 0.0 -> 0.0
+        previousSpeed != null && currentSpeed != null -> {
+            if (previousSpeed < config.stationarySpeedMps || currentSpeed < config.stationarySpeedMps) 0.0
+            else minOf((previousSpeed + currentSpeed) / 2.0, config.arrivalWalkMaxSpeedMps) * elapsedSeconds
+        }
+        previousSpeed == null && currentSpeed == null && previousAccuracy != null &&
+            geographicDistance > max(previousAccuracy, frame.accuracy.toDouble()) ->
+            minOf(geographicDistance, config.arrivalWalkMaxSpeedMps * elapsedSeconds)
+        else -> 0.0
+    }
+    val walked = next.trajectoryWalkedMeters + stepMeters
+    val isFirst = next.trajectoryStartTimestampMillis == null
+    var samples = if (isFirst || stepMeters > 0.0) {
+        next.trajectorySamples + StartTrajectorySample(
+            point = point,
+            timestampMillis = frame.timestamp,
+            walkedMeters = walked,
+            accuracyMeters = frame.accuracy.toDouble(),
+        )
+    } else {
+        next.trajectorySamples
+    }
+    if (state.startupResolved && state.directionObservationActive && samples.isNotEmpty()) {
+        val cutoff = walked - config.startTrajectoryMeters
+        val retainedIndex = samples.indexOfLast { it.walkedMeters <= cutoff }.coerceAtLeast(0)
+        samples = samples.drop(retainedIndex)
+    }
+    next = next.copy(
+        trajectorySamples = samples,
+        trajectoryWalkedMeters = walked,
+        trajectoryMetersConfig = config.startTrajectoryMeters,
+        trajectoryFrameCount = next.trajectoryFrameCount + 1,
+        trajectoryStartTimestampMillis = next.trajectoryStartTimestampMillis ?: frame.timestamp,
+        lastTrajectoryTimestampMillis = frame.timestamp,
+        lastTrajectoryPoint = point,
+        lastTrajectorySpeedMps = currentSpeed,
+        lastTrajectoryAccuracyMeters = frame.accuracy.toDouble(),
+    )
+    return next
+}
+
+private fun updateDirectionSuspect(
+    state: GuideState,
+    frame: SensorFrame,
+    walkedBeforeFrame: Double,
+    config: GuideConfig,
+): GuideState {
+    val decidedAt = state.directionDecidedAtMillis ?: return state
+    if (!state.startupEnabled || !state.startupResolved || !state.directionObservationActive || frame.timestamp <= decidedAt) {
+        return state
+    }
+    val startWalked = state.directionObservationStartWalkedMeters ?: return state
+    val startProgress = state.directionObservationStartProgressMeters ?: return state
+    val currentWalked = state.trajectoryWalkedMeters
+    var next = state
+    if (next.directionObservationOverlapExitWalkedMeters == null) {
+        val fromProgress = observationProgress(state.route, startProgress, walkedBeforeFrame - startWalked, config)
+        val toProgress = observationProgress(state.route, startProgress, currentWalked - startWalked, config)
+        if (!state.route.isProgressInOverlap(toProgress)) {
+            val exitWalked = if (state.route.isProgressInOverlap(fromProgress)) {
+                findOverlapExitWalked(
+                    state.route,
+                    startProgress,
+                    startWalked,
+                    walkedBeforeFrame,
+                    currentWalked,
+                    config,
+                )
+            } else {
+                currentWalked
+            }
+            next = next.copy(directionObservationOverlapExitWalkedMeters = exitWalked)
+        }
+    }
+    val overlapExit = next.directionObservationOverlapExitWalkedMeters
+    if (overlapExit != null && currentWalked >= overlapExit + config.directionObservationAfterOverlapMeters) {
+        return next.copy(directionObservationActive = false)
+    }
+    val lastRefit = next.directionObservationLastRefitWalkedMeters ?: startWalked
+    if (currentWalked - lastRefit < config.directionRefitIntervalMeters) return next
+    val windowStart = currentWalked - config.startTrajectoryMeters
+    val firstIndex = next.trajectorySamples.indexOfLast { it.walkedMeters <= windowStart }
+    if (firstIndex < 0) return next.copy(directionObservationLastRefitWalkedMeters = currentWalked)
+    val recent = next.trajectorySamples.drop(firstIndex)
+    if (recent.size < 2 || recent.last().walkedMeters - recent.first().walkedMeters < config.startTrajectoryMeters) {
+        return next.copy(directionObservationLastRefitWalkedMeters = currentWalked)
+    }
+    val refit = StartTrajectoryMatcher.match(next.route, recent, config)
+        ?: return next.copy(directionObservationLastRefitWalkedMeters = currentWalked)
+    val decidedStartAtWindow = observationProgress(
+        next.route,
+        startProgress,
+        recent.first().walkedMeters - startWalked,
+        config,
+    )
+    var shift = -config.directionDecidedShiftToleranceMeters
+    var decidedError: Double? = null
+    while (shift <= config.directionDecidedShiftToleranceMeters + 1e-9) {
+        val shiftedError = StartTrajectoryMatcher.rootMeanSquareError(
+            next.route,
+            recent,
+            decidedStartAtWindow + shift,
+            ProgressDirection.FORWARD,
+            config,
+        )
+        if (shiftedError != null && shiftedError.isFinite()) {
+            decidedError = minOf(decidedError ?: Double.POSITIVE_INFINITY, shiftedError)
+        }
+        shift += 1.0
+    }
+    val minimumDecidedError = decidedError ?: return next.copy(directionObservationLastRefitWalkedMeters = currentWalked)
+    val excessError = minimumDecidedError - refit.minimumRootMeanSquareErrorMeters
+    val updated = next.copy(directionObservationLastRefitWalkedMeters = currentWalked)
+    if (excessError <= config.directionSuspectMarginMeters) return updated
+    val event = EngineSystemEvent(
+        kind = "direction.suspect",
+        fields = mapOf(
+            "decided_direction" to ProgressDirection.FORWARD.name,
+            "decided_start_progress_m" to startProgress.toString(),
+            "refit_direction" to refit.direction.name,
+            "refit_progress_m" to refit.currentProgressMeters.toString(),
+            "excess_rmse_m" to excessError.toString(),
+            "walked_since_decision_m" to (currentWalked - startWalked).toString(),
+            "window_meters" to (recent.last().walkedMeters - recent.first().walkedMeters).toString(),
+        ),
+    )
+    return updated.copy(
+        directionSuspectRecorded = true,
+        directionObservationActive = false,
+        systemEvents = updated.systemEvents + event,
+    )
+}
+
+private fun observationProgress(
+    route: RouteModel,
+    startProgress: Double,
+    walkedSinceDecision: Double,
+    config: GuideConfig,
+): Double {
+    val progress = startProgress + walkedSinceDecision
+    val closed = route.points.size >= 2 &&
+        RouteMath.distance(route.points.first(), route.points.last()) <= config.minimumPointSpacingMeters
+    return if (closed && route.totalLengthMeters > 0.0) {
+        ((progress % route.totalLengthMeters) + route.totalLengthMeters) % route.totalLengthMeters
+    } else {
+        progress.coerceIn(0.0, route.totalLengthMeters)
+    }
+}
+
+private fun findOverlapExitWalked(
+    route: RouteModel,
+    startProgress: Double,
+    startWalked: Double,
+    walkedBefore: Double,
+    walkedAfter: Double,
+    config: GuideConfig,
+): Double {
+    var inside = walkedBefore
+    var outside = walkedAfter
+    repeat(24) {
+        val middle = (inside + outside) / 2.0
+        val progress = observationProgress(route, startProgress, middle - startWalked, config)
+        if (route.isProgressInOverlap(progress)) inside = middle else outside = middle
+    }
+    return outside
+}
+
+/** Adds the required end diagnostic without consulting a clock or writing I/O. */
+fun finishGuideSession(state: GuideState): GuideState {
+    if (!state.startupEnabled || state.startupResolved || state.systemEvents.any { it.kind == "direction.undecided-at-end" }) {
+        return state
+    }
+    val elapsedSeconds = if (state.sessionStartTimestamp != null && state.lastTimestamp != null) {
+        (state.lastTimestamp - state.sessionStartTimestamp).coerceAtLeast(0L) / 1_000.0
+    } else {
+        0.0
+    }
+    return state.copy(
+        systemEvents = state.systemEvents + EngineSystemEvent(
+            kind = "direction.undecided-at-end",
+            fields = mapOf(
+                "frames_before_decision" to state.trajectoryFrameCount.toString(),
+                "seconds_before_decision" to elapsedSeconds.toString(),
+                "walked_meters" to state.trajectoryWalkedMeters.toString(),
+                "trajectory_meters_config" to state.trajectoryMetersConfig.toString(),
+            ),
+        ),
+    )
+}
+
 private data class DynamicEvaluation(
     val state: GuideState,
     val guidance: Guidance?,
@@ -316,6 +677,7 @@ private fun evaluateDynamicGuidance(
     config: GuideConfig,
     suppressAnnouncements: Boolean = false,
     suppressionReason: String? = null,
+    startupPending: Boolean = false,
 ): DynamicEvaluation {
     var next = state
     val oldProgress = previous.lastMatch?.projectedMeters
@@ -351,6 +713,7 @@ private fun evaluateDynamicGuidance(
         val discardReason = when {
             !config.milestoneEnabled -> "disabled"
             !onRoute -> "offroute"
+            startupPending -> "direction-unknown"
             state.direction == ProgressDirection.REVERSE -> "reverse"
             state.direction == ProgressDirection.UNKNOWN -> "direction-unknown"
             else -> null
@@ -404,6 +767,7 @@ private fun evaluateDynamicGuidance(
     val newCrossedRemaining = crossedRemaining.filterNot { it in previous.consumedRemainingThresholds }
     val discardReason = when {
         !config.remainingEnabled -> "disabled"
+        startupPending -> "direction-unknown"
         state.direction == ProgressDirection.REVERSE -> "reverse"
         state.direction == ProgressDirection.UNKNOWN -> "direction-unknown"
         else -> null
@@ -413,7 +777,7 @@ private fun evaluateDynamicGuidance(
             record("E3", threshold.toBigDecimal().stripTrailingZeros().toPlainString(), discardReason)
         }
     }
-    val retainCrossedRemaining = config.remainingEnabled && forward && crossedRemaining.isNotEmpty()
+    val retainCrossedRemaining = config.remainingEnabled && forward && !startupPending && crossedRemaining.isNotEmpty()
     val pendingRemainingBefore = next.pendingRemainingThresholds
     val pendingRemaining = if (retainCrossedRemaining) {
         pendingRemainingBefore + crossedRemaining
@@ -520,6 +884,17 @@ private fun evaluateDynamicGuidance(
             when {
                 !onRoute -> pendingSlopePeaks.putIfAbsent(index, PendingSlopePeak(index, peak.s, "off-route"))
                 !eventIntervalOpen -> pendingSlopePeaks.putIfAbsent(index, PendingSlopePeak(index, peak.s, "event-min-interval"))
+                startupPending -> {
+                    pendingSlopePeaks.remove(index)
+                    consumedSlopeIndices += index
+                    discardedSlopePeaks += DiscardedSlopePeak(
+                        index = index,
+                        peakS = peak.s,
+                        passedProjectedMeters = match.projectedMeters,
+                        delayReason = pending?.delayReason ?: "none",
+                        reason = "direction-unknown",
+                    )
+                }
                 else -> {
                     val details = linkedMapOf(
                         "peakIndex" to index.toString(),
@@ -566,7 +941,7 @@ private fun evaluateDynamicGuidance(
             }
         } else if (distance <= config.waypointAnnounceLeadMeters) {
             consumedWaypointIndices += index
-            if (config.waypointEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedWaypointIndices) {
+            if (config.waypointEnabled && onRoute && forward && eventIntervalOpen && !startupPending && index !in previous.consumedWaypointIndices) {
                 candidates += DynamicCandidate(
                     EventPriority.WAYPOINT,
                     "event.waypoint",
@@ -578,6 +953,7 @@ private fun evaluateDynamicGuidance(
                 val discardReason = when {
                     !config.waypointEnabled -> "disabled"
                     !onRoute -> "offroute"
+                    startupPending -> "direction-unknown"
                     state.direction == ProgressDirection.REVERSE -> "reverse"
                     state.direction == ProgressDirection.UNKNOWN -> "direction-unknown"
                     !eventIntervalOpen -> "interval"
@@ -608,6 +984,7 @@ private fun evaluateDynamicGuidance(
         config,
         onRoute = onRoute,
         eventIntervalOpen = eventIntervalOpen,
+        suppressAnnouncement = startupPending,
     )
     next = elevationEvaluation.state
     elevationEvaluation.candidate?.let { candidates += it }
@@ -655,9 +1032,10 @@ private fun evaluateDynamicGuidance(
                 reason = "priority",
             )
         }
+        val directionIndependent = startupPending && selected.kind in setOf("event.sunset", "event.sunrise")
         return DynamicEvaluation(
             next.copy(pendingSlopePeaks = pendingSlopePeaks, discardedWaypoints = discardedWaypoints),
-            null,
+            if (directionIndependent) selected.guidance else null,
             selected.reason,
         )
     }
@@ -717,6 +1095,7 @@ private fun evaluateElevationBoundary(
     config: GuideConfig,
     onRoute: Boolean,
     eventIntervalOpen: Boolean,
+    suppressAnnouncement: Boolean = false,
 ): ElevationEvaluation {
     val route = state.route
     if (!route.elevationUse.used || route.smoothedElevationMeters.isEmpty()) {
@@ -739,7 +1118,7 @@ private fun evaluateElevationBoundary(
         band -= 1
     }
     val next = state.copy(elevationBand = band)
-    if (band == previousBand || !config.elevationEnabled || !onRoute || !eventIntervalOpen) {
+    if (band == previousBand || !config.elevationEnabled || !onRoute || !eventIntervalOpen || suppressAnnouncement) {
         return ElevationEvaluation(next, null)
     }
     val ascending = band > previousBand
@@ -1047,6 +1426,17 @@ private fun evaluateTurnGuidance(
     // voice. This also handles a session that starts after a turn.
     state.route.turns.forEachIndexed { index, turn ->
         if (turn.s < match.projectedMeters) {
+            if (direction == ProgressDirection.UNKNOWN) {
+                val records = buildList {
+                    if (index !in next.completedTurnAheadIndices) add("TURN_AHEAD")
+                    if (index !in next.completedTurnNowIndices) add("TURN_NOW")
+                }.map { event ->
+                    DiscardedEvent(event, index.toString(), "direction-unknown", match.projectedMeters)
+                }
+                if (records.isNotEmpty()) {
+                    next = next.copy(discardedEvents = next.discardedEvents + records)
+                }
+            }
             next = next.copy(
                 completedTurnAheadIndices = next.completedTurnAheadIndices + index,
                 completedTurnNowIndices = next.completedTurnNowIndices + index

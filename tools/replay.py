@@ -123,7 +123,10 @@ def details_match(recorded: object, actual: object, *, tolerance: float = 1e-6) 
 def contract_probe(cli: Path) -> int:
     """Check D-033 dwell and caller-config contracts through the real CLI."""
     dwell = invoke_probe(cli, ["offRouteEnterDwellSeconds=20"])
-    dwell_decisions = [item.get("decision") for item in dwell]
+    # Startup sensitivity probes share the CLI output stream but are not frames
+    # from the D-033 dwell probe. Keep this contract scoped to emitted frames.
+    dwell_frames = [item for item in dwell if item.get("kind") == "frame"]
+    dwell_decisions = [item.get("decision") for item in dwell_frames]
     expected_dwell = [
         "CONTINUE",   # frame 0: first on-route fix initializes matching state
         "CONTINUE",   # frame 1: the 30 m candidate has lasted only one second
@@ -147,12 +150,12 @@ def contract_probe(cli: Path) -> int:
         7: "matching.on-route",
         8: "turn.now",
     }
-    actual_reasons = {index: dwell[index].get("reason_rule") for index in expected_reasons}
+    actual_reasons = {index: dwell_frames[index].get("reason_rule") for index in expected_reasons}
     if actual_reasons != expected_reasons:
         print(f"FAIL: D-033 dwell/turn reasons actual={actual_reasons} expected={expected_reasons}")
         return 1
     config = invoke_probe(cli, ["offRouteEnterDistMeters=100", "offRouteEnterDwellSeconds=0"])
-    config_decisions = [item.get("decision") for item in config]
+    config_decisions = [item.get("decision") for item in config if item.get("kind") == "frame"]
     if any(decision == "OFF_ROUTE" for decision in config_decisions):
         print(f"FAIL: D-033 config contract actual={config_decisions}")
         return 1
@@ -185,6 +188,32 @@ def replay(root: Path, cli: Path, strict: bool, overrides: list[str] | None = No
     trace = invoke(cli, root, overrides=effective_overrides)
     comparisons = [item for item in trace if item.get("kind") == "guide"]
     trigger_trace = [item for item in trace if item.get("kind") == "trigger"]
+    startup_oracle = manifest.get("startup_oracle") if isinstance(manifest, dict) else None
+    if startup_oracle is not None:
+        if not isinstance(startup_oracle, dict):
+            print("FAIL: manifest startup_oracle must be an object")
+            return 1
+        expected_source_seq = startup_oracle.get("decision_source_seq")
+        expected_direction = startup_oracle.get("direction")
+        expected_reversed = startup_oracle.get("route_reversed")
+        resolved = next((item for item in comparisons if item.get("startup_resolved") is True), None)
+        if resolved is None:
+            print("FAIL: startup oracle expected a resolved direction, but replay stayed pending")
+            return 1
+        actual = {
+            "decision_source_seq": resolved.get("source_seq"),
+            "direction": resolved.get("decided_direction"),
+            "route_reversed": resolved.get("route_reversed"),
+        }
+        expected = {
+            "decision_source_seq": expected_source_seq,
+            "direction": expected_direction,
+            "route_reversed": expected_reversed,
+        }
+        if actual != expected:
+            print(f"FAIL: startup oracle actual={actual} expected={expected}")
+            return 1
+        print(f"startup oracle=PASS {actual}")
     if len(comparisons) != len(frame_guide_events):
         print(f"FAIL: engine comparison count {len(comparisons)} does not match frame guide event count {len(frame_guide_events)}")
         return 1

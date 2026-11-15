@@ -219,9 +219,10 @@ class SessionLoggerTest {
         assertEquals(1, captured.size)
         assertEquals("arrival.blocked", captured.single().first)
         assertEquals(
-            setOf("creditedMeters", "requiredMeters", "baselineRemainingMeters", "projectedMeters"),
+            setOf("creditedMeters", "requiredMeters", "baselineRemainingMeters", "projectedMeters", "reason"),
             captured.single().second.keys,
         )
+        assertEquals("insufficient-advance", captured.single().second["reason"])
         assertTrue(captured.single().second.keys.none { it in setOf("lat", "lon", "timestamp", "t", "name") })
 
         val failingSink = object : SessionEventSink by sink {

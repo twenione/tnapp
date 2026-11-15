@@ -1,5 +1,5 @@
 {"accuracy": 5.0, "bearing_deg": 0.0, "lat": 10.0, "lon": 20.0, "provider": "synthetic", "seq": 0, "speed_mps": 1.0, "stream": "loc", "t": 0.0}
-{"decision": "CONTINUE", "inputs": {"frame_count": 1, "rng_seed": 2042}, "reason": {"details": {"distanceMeters": "0.0", "projectedMeters": "0.0"}, "rule": "matching.on-route"}, "seq": 1, "src_seq": 0, "state_hash": "sha256:synthetic", "stream": "guide", "t": 0.1}
+{"decision": "CONTINUE", "inputs": {"frame_count": 1, "rng_seed": 2042}, "reason": {"details": {}, "rule": "startup.direction-pending"}, "seq": 1, "src_seq": 0, "state_hash": "sha256:synthetic", "stream": "guide", "t": 0.1}
 {"accuracy": 5.0, "bearing_deg": 0.0, "lat": 10.001, "lon": 20.0, "provider": "synthetic", "seq": 2, "speed_mps": 1.0, "stream": "loc", "t": 60.0}
 {"decision": "CONTINUE", "inputs": {"frame_count": 2, "rng_seed": 2042}, "reason": {"details": {"distanceMeters": "0.0", "projectedMeters": "111.19508023347129"}, "rule": "matching.on-route"}, "seq": 3, "src_seq": 2, "state_hash": "sha256:synthetic", "stream": "guide", "t": 60.1}
 {"accuracy": 5.0, "bearing_deg": 0.0, "lat": 10.002, "lon": 20.0, "provider": "synthetic", "seq": 4, "speed_mps": 1.0, "stream": "loc", "t": 120.0}

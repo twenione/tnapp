@@ -129,6 +129,24 @@ data class GuideConfig(
     val etaMinAverageSpeedMps: Double = 0.10,
     val elevationSpikeMaxRatio: Double = 0.02,
     val directionResumeHoldSeconds: Double = 3.0,
+    /** Walked route distance required before the start trajectory is matched. */
+    val startTrajectoryMeters: Double = 30.0,
+    /** Maximum RMS-fit error gap treated as an equivalent trajectory interpretation. */
+    val startTrajectoryMatchToleranceMeters: Double = 1.0,
+    /** Distance between full-route refits while checking the decided route interpretation. */
+    val directionRefitIntervalMeters: Double = 10.0,
+    /** Excess RMS fit error that marks the decided interpretation as suspect. */
+    val directionSuspectMarginMeters: Double = 5.0,
+    /** Enables post-decision direction observation and its diagnostic record. */
+    val directionSuspectEnabled: Boolean = true,
+    /** Position shift allowed when checking the fit of the already-decided interpretation. */
+    val directionDecidedShiftToleranceMeters: Double = 15.0,
+    /** Minimum route-progress separation used to identify overlapping route portions. */
+    val overlapMinRouteGapMeters: Double = 100.0,
+    /** Maximum spatial separation considered an overlapping route portion. */
+    val overlapNearMeters: Double = 15.0,
+    /** Distance observed after leaving an overlap before ending direction verification. */
+    val directionObservationAfterOverlapMeters: Double = 150.0,
     val routeQualityGapWarnMeters: Double = 100.0,
     val routeQualityShortSegmentMeters: Double = 6.0,
 ) {
@@ -174,6 +192,14 @@ data class GuideConfig(
         require(elevationMeanHalfWindowMeters > 0.0)
         require(elevationSpikeMaxRatio in 0.0..1.0)
         require(directionResumeHoldSeconds >= 0.0)
+        require(startTrajectoryMeters > 0.0)
+        require(startTrajectoryMatchToleranceMeters >= 0.0)
+        require(directionRefitIntervalMeters > 0.0)
+        require(directionSuspectMarginMeters >= 0.0)
+        require(directionDecidedShiftToleranceMeters >= 0.0)
+        require(overlapMinRouteGapMeters > 0.0)
+        require(overlapNearMeters >= 0.0)
+        require(directionObservationAfterOverlapMeters >= 0.0)
         require(etaWindowSeconds > 0.0)
         require(etaMinWindowMeters >= 0.0)
         require(etaMinMovingSpeedMps >= 0.0)
@@ -197,7 +223,16 @@ data class GuideConfig(
             "reannounceIntervalSeconds",
             "turnAheadDistanceMeters",
             "turnNowDistanceMeters",
-            "turnOnRouteMaxOffsetMeters"
+            "turnOnRouteMaxOffsetMeters",
+            "startTrajectoryMeters",
+            "startTrajectoryMatchToleranceMeters",
+            "directionRefitIntervalMeters",
+            "directionSuspectMarginMeters",
+            "directionSuspectEnabled",
+            "directionDecidedShiftToleranceMeters",
+            "overlapMinRouteGapMeters",
+            "overlapNearMeters",
+            "directionObservationAfterOverlapMeters",
         )
 
         /** Explicit exclusions required by D-029 for non-sensitivity fields. */
@@ -308,6 +343,7 @@ data class ArrivalBlockedRecord(
     val requiredMeters: Double,
     val baselineRemainingMeters: Double?,
     val projectedMeters: Double,
+    val reason: String,
 )
 
 data class MatchResult(
@@ -318,9 +354,47 @@ data class MatchResult(
     val direction: ProgressDirection = ProgressDirection.UNKNOWN
 )
 
+/** One accepted on-route observation used by the pure start-trajectory matcher. */
+data class StartTrajectorySample(
+    val point: GeoPoint,
+    val timestampMillis: Long,
+    val walkedMeters: Double,
+    val accuracyMeters: Double,
+)
+
+/** A deterministic engine diagnostic for the host to append to the sys stream. */
+data class EngineSystemEvent(
+    val kind: String,
+    val fields: Map<String, String>,
+)
+
 /** Immutable state carried from one frame to the next. */
 data class GuideState(
     val route: RouteModel,
+    /** Direct engine callers may start after an already-oriented route; app and replay use [starting]. */
+    val startupEnabled: Boolean = false,
+    val startupResolved: Boolean = true,
+    val startupHasMatch: Boolean = false,
+    val trajectorySamples: List<StartTrajectorySample> = emptyList(),
+    val trajectoryWalkedMeters: Double = 0.0,
+    val trajectoryMetersConfig: Double = 50.0,
+    val trajectoryFrameCount: Int = 0,
+    val trajectoryStartTimestampMillis: Long? = null,
+    val lastTrajectoryTimestampMillis: Long? = null,
+    val lastTrajectoryPoint: GeoPoint? = null,
+    val lastTrajectorySpeedMps: Double? = null,
+    val lastTrajectoryAccuracyMeters: Double? = null,
+    val directionDecidedAtMillis: Long? = null,
+    /** Direction inferred on the imported route before the engine normalizes the route. */
+    val decidedDirection: ProgressDirection? = null,
+    val routeReversed: Boolean = false,
+    val directionObservationActive: Boolean = false,
+    val directionObservationStartWalkedMeters: Double? = null,
+    val directionObservationStartProgressMeters: Double? = null,
+    val directionObservationOverlapExitWalkedMeters: Double? = null,
+    val directionObservationLastRefitWalkedMeters: Double? = null,
+    val directionSuspectRecorded: Boolean = false,
+    val systemEvents: List<EngineSystemEvent> = emptyList(),
     val hasEnteredRoute: Boolean = false,
     val lastMatch: MatchResult? = null,
     val firstMatchProgressMeters: Double? = null,
@@ -371,6 +445,14 @@ data class GuideState(
 ) {
     companion object {
         fun initial(route: RouteModel): GuideState = GuideState(route)
+
+        /** Start an un-oriented session. Direction and first match are resolved by [Engine]. */
+        fun starting(route: RouteModel, config: GuideConfig = GuideConfig()): GuideState = GuideState(
+            route = route,
+            startupEnabled = true,
+            startupResolved = false,
+            trajectoryMetersConfig = config.startTrajectoryMeters,
+        )
     }
 }
 
@@ -393,6 +475,7 @@ data class RouteStatus(
 
 /** Pure state report shared by on-demand voice and the route ribbon. */
 fun routeStatus(state: GuideState, config: GuideConfig = GuideConfig()): RouteStatus? {
+    if (state.startupEnabled && !state.startupResolved) return null
     val match = state.lastMatch ?: return null
     val nextTurn = if (state.direction == ProgressDirection.REVERSE) {
         null

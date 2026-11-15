@@ -48,7 +48,6 @@ class TrailForegroundService : Service() {
     private var onRouteVoiceMode = NavigationPreferences.PeriodicVoiceMode.OFF
     private var currentRoute: RouteModel? = null
     private var currentGuideConfig: GuideConfig? = null
-    private var routeStartupCoordinator: RouteStartupCoordinator? = null
     private var previousOffRoute = false
     private var sessionStarted = false
     private var paused = false
@@ -86,12 +85,6 @@ class TrailForegroundService : Service() {
                 announceGpsSignal(it)
             }
         }
-    }
-
-    private val routeOrientationTimeout = Runnable {
-        val coordinator = routeStartupCoordinator ?: return@Runnable
-        routeStartupCoordinator = null
-        finishRouteStartup(coordinator.timeout(SystemClock.elapsedRealtime()))
     }
 
     override fun onCreate() {
@@ -226,10 +219,9 @@ class TrailForegroundService : Service() {
             onFinished = ::onVoiceFinished,
         )
         tonePlayer = TonePlayer()
-        guideSession = null
-        currentRoute = null
+        guideSession = GuideSession(parsedRoute, config, startupEnabled = true)
+        currentRoute = parsedRoute
         currentGuideConfig = config
-        routeStartupCoordinator = RouteStartupCoordinator(xml, config, SystemClock.elapsedRealtime())
         previousOffRoute = false
         paused = false
         pausedRecoveryNotificationState.onResume()
@@ -309,7 +301,6 @@ class TrailForegroundService : Service() {
             )
         }
         mainHandler.postDelayed(noLocationWarning, LOCATION_FIX_TIMEOUT_MILLIS)
-        mainHandler.postDelayed(routeOrientationTimeout, ROUTE_ORIENTATION_TIMEOUT_MILLIS)
     }
 
     private fun beginUserEnd(startId: Int) {
@@ -318,7 +309,6 @@ class TrailForegroundService : Service() {
         endReason = "user-end"
         endStartId = startId
         mainHandler.removeCallbacks(noLocationWarning)
-        mainHandler.removeCallbacks(routeOrientationTimeout)
         source?.stop()
         source = null
         uninstallOnDemandTriggers()
@@ -377,16 +367,6 @@ class TrailForegroundService : Service() {
         lastLocation = location
         lastLocationSeq = locationSeq
         stopGate.onLocation(SystemClock.elapsedRealtime(), location.speedMps, location.accuracyMeters)
-        val startup = routeStartupCoordinator
-        if (startup != null) {
-            val update = startup.accept(location, SystemClock.elapsedRealtime(), locationSeq)
-            publishRoutePreparation(update.stage)
-            if (update.orientation != null) {
-                routeStartupCoordinator = null
-                finishRouteStartup(update)
-            }
-            return
-        }
         processGuidance(location, locationSeq)
     }
 
@@ -526,45 +506,31 @@ class TrailForegroundService : Service() {
         "protected" to item.protected.toString(),
     )
 
-    private fun finishRouteStartup(update: RouteStartupUpdate) {
-        val orientation = update.orientation ?: return
-        mainHandler.removeCallbacks(routeOrientationTimeout)
-        val config = currentGuideConfig ?: return
-        val route = try {
-            RouteModel.fromGpx(orientation.gpxXml, config)
-        } catch (error: Throwable) {
-            logger?.appendError("route-parse", error.message ?: error::class.java.simpleName)
-            stopSelf()
-            return
-        }
-        currentRoute = route
-        guideSession = GuideSession(route, config)
-        previousOffRoute = false
-        logger?.appendSystem(
-            "route.orientation",
-            mapOf(
-                "reversed" to orientation.reversed.toString(),
-                "reason" to orientation.reason,
-                "observed_net_displacement_m" to formatDistance(orientation.observedNetDisplacementMeters),
-                "observation_elapsed_seconds" to "%.3f".format(orientation.observationElapsedSeconds),
-            ),
-        )
-        publishRoutePreparation(RoutePreparationStage.DIRECTION_CONFIRMED)
-        enqueueVoice("안내를 시작합니다", source = "system")
-        update.replayLocations.forEachIndexed { index, replayLocation ->
-            processGuidance(replayLocation, update.replaySourceSeqs.getOrNull(index))
-        }
-    }
-
     private fun processGuidance(location: TrailLocation, sourceSeq: Long?) {
         val session = guideSession ?: return
+        val previousState = session.snapshot()
         val decision = session.accept(location)
+        logger.appendEngineSystemEvents(decision.newlyEmittedSystemEvents)
         logger.appendDiscardedEvents(
                     decision.newlyDiscardedSlopePeaks,
                     decision.newlyDiscardedWaypoints,
                     decision.newlyDiscardedEvents,
                 )
         logger.appendArrivalBlockedEvents(decision.newlyBlockedArrivals)
+        val nextState = decision.result.nextState
+        currentRoute = nextState.route
+        val previousPreparation = when {
+            !previousState.startupHasMatch -> RoutePreparationStage.PREPARING
+            !previousState.startupResolved -> RoutePreparationStage.START_FOUND
+            else -> RoutePreparationStage.DIRECTION_CONFIRMED
+        }
+        val nextPreparation = when {
+            !nextState.startupHasMatch -> RoutePreparationStage.PREPARING
+            !nextState.startupResolved -> RoutePreparationStage.START_FOUND
+            else -> RoutePreparationStage.DIRECTION_CONFIRMED
+        }
+        if (nextPreparation != previousPreparation) publishRoutePreparation(nextPreparation)
+        if (decision.startupJustResolved) enqueueVoice("안내를 시작합니다", source = "system")
         publishRouteRibbon(location, decision)
         val guidance = decision.result.guidance
         val currentOffRoute = decision.result.nextState.offRoute
@@ -590,7 +556,11 @@ class TrailForegroundService : Service() {
             // Cadence is an app playback concern, so use a monotonic clock for
             // the one-minute/three-minute/five-minute interval.
             timestampMillis = SystemClock.elapsedRealtime(),
-            onRoute = !decision.result.nextState.offRoute && !gpsAccuracyRejected,
+            onRoute = (if (nextState.startupEnabled && !nextState.startupResolved) {
+                nextState.hasEnteredRoute && !nextState.offRoute
+            } else {
+                !nextState.offRoute
+            }) && !gpsAccuracyRejected,
             arrived = decision.result.nextState.arrived,
         ) == true
         val frameSpeech = listOfNotNull(
@@ -656,7 +626,6 @@ class TrailForegroundService : Service() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(noLocationWarning)
-        mainHandler.removeCallbacks(routeOrientationTimeout)
         mainHandler.removeCallbacks(endTimeout)
         turnExpiryCallbacks.values.forEach(mainHandler::removeCallbacks)
         turnExpiryCallbacks.clear()
@@ -670,6 +639,7 @@ class TrailForegroundService : Service() {
             logger?.appendSystem("voice.dropped", voiceItemFields(drop.item) + ("reason" to drop.reason))
         }
         voiceCompletionCallbacks.clear()
+        logger.appendEngineSystemEvents(guideSession?.finish().orEmpty())
         if (sessionStarted) logger?.appendSystem(
             "service.stopped",
             mapOf("battery_pct" to batteryPercent(), "reason" to endReason),
@@ -687,7 +657,6 @@ class TrailForegroundService : Service() {
         logger = null
         currentRoute = null
         currentGuideConfig = null
-        routeStartupCoordinator = null
         previousOffRoute = false
         paused = false
         pauseAvailability.reset()
@@ -931,7 +900,9 @@ class TrailForegroundService : Service() {
         val session = guideSession
         val location = lastLocation
         val sourceSeq = lastLocationSeq
-        if (session == null || location == null || sourceSeq == null) {
+        if (session == null || location == null || sourceSeq == null ||
+            (session.snapshot().startupEnabled && !session.snapshot().startupResolved)
+        ) {
             val text = GuidancePhrases.noLocationStatus()
             enqueueOnDemandVoice(text)
             logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-location", "paused" to paused.toString()))
@@ -1093,7 +1064,6 @@ class TrailForegroundService : Service() {
         const val EXTRA_RIBBON_NEXT_TURN_DISTANCE_METERS = "ribbon_next_turn_distance_meters"
         const val EXTRA_RIBBON_NEXT_TURN_SIDE = "ribbon_next_turn_side"
         private const val LOCATION_FIX_TIMEOUT_MILLIS = 15_000L
-        private const val ROUTE_ORIENTATION_TIMEOUT_MILLIS = 30_000L
         private const val END_TTS_TIMEOUT_MILLIS = 3_000L
         private const val TURN_STALE_RECHECK_MILLIS = 1_000L
         private const val CHANNEL_ID = "trailnav.navigation"

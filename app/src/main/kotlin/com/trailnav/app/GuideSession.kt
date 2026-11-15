@@ -5,6 +5,8 @@ import com.trailnav.core.ArrivalBlockedRecord
 import com.trailnav.core.DiscardedEvent
 import com.trailnav.core.DiscardedSlopePeak
 import com.trailnav.core.DiscardedWaypoint
+import com.trailnav.core.Engine
+import com.trailnav.core.EngineSystemEvent
 import com.trailnav.core.GuideState
 import com.trailnav.core.RouteEtaTracker
 import com.trailnav.core.RouteModel
@@ -12,14 +14,27 @@ import com.trailnav.core.RouteStatus
 import com.trailnav.core.guide
 
 /** Stateful host-side bridge; the core engine remains a pure function. */
-class GuideSession(route: RouteModel, private val config: GuideConfig = GuideConfig()) {
-    private var state: GuideState = GuideState.initial(route)
-    private val etaTracker = RouteEtaTracker(route, config)
+class GuideSession(
+    route: RouteModel,
+    private val config: GuideConfig = GuideConfig(),
+    startupEnabled: Boolean = false,
+) {
+    private data class StartupEtaObservation(
+        val timestampMillis: Long,
+        val projectedMeters: Double,
+        val onRoute: Boolean,
+    )
+
+    private var state: GuideState = if (startupEnabled) GuideState.starting(route, config) else GuideState.initial(route)
+    private var etaRoute: RouteModel = route
+    private var etaTracker = RouteEtaTracker(route, config)
+    private val startupEtaObservations = mutableListOf<StartupEtaObservation>()
 
     /** Immutable snapshot used by app-layer status surfaces and on-demand voice. */
     fun snapshot(): GuideState = state
 
     fun routeStatus(): RouteStatus? {
+        if (state.startupEnabled && !state.startupResolved) return null
         val status = com.trailnav.core.routeStatus(state, config) ?: return null
         val match = state.lastMatch ?: return status
         return status.copy(target = etaTracker.estimate(match.projectedMeters, state.direction, state.arrived))
@@ -31,21 +46,90 @@ class GuideSession(route: RouteModel, private val config: GuideConfig = GuideCon
         val previousDiscardedWaypointCount = state.discardedWaypoints.size
         val previousDiscardedEventCount = state.discardedEvents.size
         val previousArrivalBlockedCount = state.arrivalBlockedRecords.size
+        val previousSystemEventCount = state.systemEvents.size
+        val previousState = state
         val result = guide(state, frame, config)
         val newlyDiscardedSlopePeaks = result.nextState.discardedSlopePeaks.drop(previousDiscardCount)
         val newlyDiscardedWaypoints = result.nextState.discardedWaypoints.drop(previousDiscardedWaypointCount)
         val newlyDiscardedEvents = result.nextState.discardedEvents.drop(previousDiscardedEventCount)
         val newlyBlockedArrivals = result.nextState.arrivalBlockedRecords.drop(previousArrivalBlockedCount)
+        val newlyEmittedSystemEvents = result.nextState.systemEvents.drop(previousSystemEventCount)
         state = result.nextState
-        state.lastMatch?.let { match ->
-            etaTracker.observe(
-                timestampMillis = location.timestampMillis,
-                projectedMeters = match.projectedMeters,
-                direction = state.direction,
-                onRoute = !state.offRoute,
-            )
+        if (state.route !== etaRoute) {
+            etaRoute = state.route
+            etaTracker = RouteEtaTracker(etaRoute, config)
         }
-        return SessionDecision(location, result, newlyDiscardedSlopePeaks, newlyDiscardedWaypoints, newlyBlockedArrivals, newlyDiscardedEvents)
+        if (previousState.startupEnabled && !previousState.startupResolved) {
+            if (!state.startupResolved) {
+                state.lastMatch?.let { match ->
+                    startupEtaObservations += StartupEtaObservation(
+                        timestampMillis = location.timestampMillis,
+                        projectedMeters = match.projectedMeters,
+                        onRoute = !state.offRoute,
+                    )
+                }
+            } else {
+                val reversed = state.routeReversed
+                // The first buffered fix seeds the tracker but cannot represent a speed interval.
+                startupEtaObservations.drop(1).forEach { observation ->
+                    etaTracker.observe(
+                        timestampMillis = observation.timestampMillis,
+                        projectedMeters = if (reversed) {
+                            (state.route.totalLengthMeters - observation.projectedMeters).coerceIn(0.0, state.route.totalLengthMeters)
+                        } else {
+                            observation.projectedMeters
+                        },
+                        direction = com.trailnav.core.ProgressDirection.FORWARD,
+                        onRoute = observation.onRoute,
+                    )
+                }
+                startupEtaObservations.clear()
+                state.lastMatch?.let { match ->
+                    etaTracker.observe(
+                        timestampMillis = location.timestampMillis,
+                        projectedMeters = match.projectedMeters,
+                        direction = state.direction,
+                        onRoute = !state.offRoute,
+                    )
+                }
+            }
+        } else if (state.startupResolved) {
+            state.lastMatch?.let { match ->
+                etaTracker.observe(
+                    timestampMillis = location.timestampMillis,
+                    projectedMeters = match.projectedMeters,
+                    direction = state.direction,
+                    onRoute = !state.offRoute,
+                )
+            }
+        }
+        return SessionDecision(
+            location = location,
+            result = result,
+            newlyDiscardedSlopePeaks = newlyDiscardedSlopePeaks,
+            newlyDiscardedWaypoints = newlyDiscardedWaypoints,
+            newlyBlockedArrivals = newlyBlockedArrivals,
+            newlyDiscardedEvents = newlyDiscardedEvents,
+            newlyEmittedSystemEvents = newlyEmittedSystemEvents,
+            startupJustResolved = previousState.startupEnabled && !previousState.startupResolved && state.startupResolved,
+        )
+    }
+
+    fun finish(): List<EngineSystemEvent> {
+        val previousSystemEventCount = state.systemEvents.size
+        state = Engine.finish(state)
+        return state.systemEvents.drop(previousSystemEventCount)
+    }
+}
+
+internal fun SessionEventSink?.appendEngineSystemEvents(records: Iterable<EngineSystemEvent>) {
+    val sink = this ?: return
+    records.forEach { record ->
+        try {
+            sink.appendSystem(record.kind, record.fields)
+        } catch (_: Exception) {
+            // A failed diagnostic write must not change guidance behavior.
+        }
     }
 }
 
@@ -123,6 +207,7 @@ internal fun SessionEventSink?.appendArrivalBlockedEvents(records: Iterable<Arri
                     "requiredMeters" to record.requiredMeters.toString(),
                     "baselineRemainingMeters" to (record.baselineRemainingMeters?.toString() ?: "none"),
                     "projectedMeters" to record.projectedMeters.toString(),
+                    "reason" to record.reason,
                 ),
             )
         } catch (_: Exception) {
@@ -138,4 +223,6 @@ data class SessionDecision(
     val newlyDiscardedWaypoints: List<DiscardedWaypoint> = emptyList(),
     val newlyBlockedArrivals: List<ArrivalBlockedRecord> = emptyList(),
     val newlyDiscardedEvents: List<DiscardedEvent> = emptyList(),
+    val newlyEmittedSystemEvents: List<EngineSystemEvent> = emptyList(),
+    val startupJustResolved: Boolean = false,
 )

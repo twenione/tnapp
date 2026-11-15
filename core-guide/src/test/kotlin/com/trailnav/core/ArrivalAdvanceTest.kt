@@ -271,6 +271,55 @@ class ArrivalAdvanceTest {
     }
 
     @Test
+    fun blockedArrivalRecordsAreWrittenOncePerReason() {
+        val route = lineRoute(518.0)
+        val config = GuideConfig(minimumSessionSecondsBeforeArrival = 0.0)
+        var state = GuideState.starting(route, config)
+
+        state = guide(state, frameAt(route, 470.0, 0L, speed = 1f), config).nextState
+        val unknownDirection = guide(state, frameAt(route, 495.0, 25_000L, speed = 1f), config)
+        state = unknownDirection.nextState
+        assertEquals(listOf("direction-unknown"), state.arrivalBlockedRecords.map { it.reason })
+        assertFalse(unknownDirection.guidance == Guidance.Arrived)
+
+        val insufficientAdvance = guide(state, frameAt(route, 500.0, 30_000L, speed = 1f), config)
+        state = insufficientAdvance.nextState
+        assertEquals(
+            listOf("direction-unknown", "insufficient-advance"),
+            state.arrivalBlockedRecords.map { it.reason },
+        )
+        assertFalse(insufficientAdvance.guidance == Guidance.Arrived)
+    }
+
+    @Test
+    fun repeatedBlockedArrivalReasonIsRecordedOnlyOnce() {
+        val route = lineRoute(518.0)
+        val config = GuideConfig(minimumSessionSecondsBeforeArrival = 0.0)
+        var state = GuideState.initial(route)
+        state = guide(state, frameAt(route, 480.0, 0L, speed = 0f), config).nextState
+
+        for (timestamp in listOf(10_000L, 20_000L, 30_000L)) {
+            val result = guide(state, frameAt(route, 495.0, timestamp, speed = 0f), config)
+            state = result.nextState
+            assertFalse(result.guidance == Guidance.Arrived)
+        }
+
+        assertEquals(1, state.arrivalBlockedRecords.size)
+        assertEquals("insufficient-advance", state.arrivalBlockedRecords.single().reason)
+    }
+
+    @Test
+    fun nonArrivalCandidateDoesNotWriteBlockedArrivalRecord() {
+        val route = lineRoute(518.0)
+        val config = GuideConfig(minimumSessionSecondsBeforeArrival = 0.0)
+        var state = GuideState.initial(route)
+        state = guide(state, frameAt(route, 100.0, 0L), config).nextState
+        state = guide(state, frameAt(route, 110.0, 10_000L), config).nextState
+
+        assertTrue(state.arrivalBlockedRecords.isEmpty())
+    }
+
+    @Test
     fun offRouteArrivalReproductionRequiresLateralDistanceBelowThreshold() {
         val route = lineRoute(1_000.0)
         val config = GuideConfig()

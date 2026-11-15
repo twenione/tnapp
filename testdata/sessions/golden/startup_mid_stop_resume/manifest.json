@@ -1,0 +1,63 @@
+{
+  "session_id": "83d4eb0e-823f-4b01-9ed4-376e2524f84d",
+  "schema_version": "0.1.0-draft",
+  "started_at_wall": "2026-01-01T00:00:00Z",
+  "app": {
+    "version": "0.1.0",
+    "build": 0,
+    "code_hash": "sha256:synthetic"
+  },
+  "engine": {
+    "config": {
+      "stub": false,
+      "variant": "startup_mid_stop_resume",
+      "implementation": "core-guide",
+      "events": {
+        "E1": false,
+        "E2": false,
+        "E3": false,
+        "E4": false,
+        "E5": false,
+        "E6": false,
+        "E7": false,
+        "E8": false
+      }
+    },
+    "rng_seed": 93001
+  },
+  "route": {
+    "gpx_id": "startup_mid_stop_resume",
+    "gpx_hash": "sha256:9c87e9a981d706ae389791c3ebebc7b2f43c163f634424b885441eb9504e3ac1",
+    "point_count": 7,
+    "elevation_use": {
+      "used": false,
+      "reason": "absent"
+    },
+    "waypoint_count": 0
+  },
+  "clock": {
+    "monotonic_source": "synthetic-sequence",
+    "timestamp_unit": "seconds"
+  },
+  "privacy": {
+    "upload_default": false
+  },
+  "device": {
+    "model": "synthetic",
+    "os": "test",
+    "sensors": [
+      "gps"
+    ]
+  },
+  "scenario": {
+    "family": "start-phase-golden",
+    "description": "startup mid stop resume"
+  },
+  "golden_status": "verified-engine-output",
+  "golden_verification": "replay+independent-startup-oracle",
+  "startup_oracle": {
+    "decision_source_seq": 122,
+    "direction": "forward",
+    "route_reversed": false
+  }
+}

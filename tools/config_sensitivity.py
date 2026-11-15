@@ -50,7 +50,7 @@ def engine_output(cli: Path, overrides: dict[str, float]) -> tuple[tuple[str, st
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"engine exited {result.returncode}")
     frames = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-    return tuple((str(frame.get("decision", "")), str(frame.get("reason_rule", ""))) for frame in frames)
+    return tuple(json.dumps(frame, sort_keys=True, separators=(",", ":")) for frame in frames)
 
 
 def main() -> int:
@@ -77,6 +77,15 @@ def main() -> int:
         "turnAheadDistanceMeters": {"turnAheadDistanceMeters": 20.0},
         "turnNowDistanceMeters": {"turnNowDistanceMeters": 5.0},
         "turnOnRouteMaxOffsetMeters": {"turnOnRouteMaxOffsetMeters": 1.0},
+        "startTrajectoryMeters": {"startTrajectoryMeters": 75.0},
+        "startTrajectoryMatchToleranceMeters": {"startTrajectoryMatchToleranceMeters": 5.0},
+        "directionRefitIntervalMeters": {"directionRefitIntervalMeters": 20.0},
+        "directionSuspectMarginMeters": {"directionSuspectMarginMeters": 1_000.0},
+        "directionSuspectEnabled": {"directionSuspectEnabled": 0.0},
+        "directionDecidedShiftToleranceMeters": {"directionDecidedShiftToleranceMeters": 0.0},
+        "overlapMinRouteGapMeters": {"overlapMinRouteGapMeters": 2_000.0},
+        "overlapNearMeters": {"overlapNearMeters": 1.0},
+        "directionObservationAfterOverlapMeters": {"directionObservationAfterOverlapMeters": 10.0},
     }
     missing_probes = required - probes.keys()
     if missing_probes:
@@ -84,11 +93,11 @@ def main() -> int:
     extra_probes = set(probes) - required
     if extra_probes:
         raise AssertionError(f"probe list contains non-required fields: {sorted(extra_probes)}")
-    print("parameter | baseline_engine_trace | changed_engine_trace | changed")
+    print("parameter | baseline_records | changed_records | changed")
     for name, overrides in probes.items():
         changed = engine_output(cli, overrides)
         did_change = baseline != changed
-        print(f"{name} | {json.dumps(baseline, sort_keys=True)} | {json.dumps(changed, sort_keys=True)} | {did_change}")
+        print(f"{name} | {len(baseline)} | {len(changed)} | {did_change}")
         if not did_change:
             raise AssertionError(f"config value {name} did not change actual engine output")
     omitted = set(declared)

@@ -1,0 +1,12 @@
+{"accuracy":5.0,"bearing_deg":90.0,"lat":37.0,"lon":127.0,"provider":"synthetic","seq":0,"speed_mps":1.0,"stream":"loc","t":0.0}
+{"decision":"CONTINUE","inputs":{"frame_count":1,"rng_seed":100},"reason":{"details":{},"rule":"startup.direction-pending"},"seq":1,"src_seq":0,"state_hash":"sha256:synthetic","stream":"guide","t":0.1}
+{"accuracy":5.0,"bearing_deg":90.0,"lat":37.0,"lon":127.0001687211,"provider":"synthetic","seq":2,"speed_mps":1.0,"stream":"loc","t":15.0}
+{"decision":"CONTINUE","inputs":{"frame_count":2,"rng_seed":100},"reason":{"details":{},"rule":"startup.direction-pending"},"seq":3,"src_seq":2,"state_hash":"sha256:synthetic","stream":"guide","t":15.1}
+{"accuracy":5.0,"bearing_deg":90.0,"lat":37.0,"lon":127.0003374422,"provider":"synthetic","seq":4,"speed_mps":1.0,"stream":"loc","t":30.0}
+{"decision":"CONTINUE","inputs":{"frame_count":3,"rng_seed":100},"reason":{"details":{"distanceMeters":"0.0","projectedMeters":"29.966331730497192"},"rule":"matching.on-route"},"seq":5,"src_seq":4,"state_hash":"sha256:synthetic","stream":"guide","t":30.1}
+{"accuracy":5.0,"bearing_deg":90.0,"lat":37.0,"lon":127.0010685671,"provider":"synthetic","seq":6,"speed_mps":1.0,"stream":"loc","t":95.0}
+{"decision":"TURN_AHEAD","inputs":{"frame_count":4,"rng_seed":100},"reason":{"details":{"angleDegrees":"90.0","remainingMeters":"54.93817419274079","side":"LEFT","turnIndex":"0","turnS":"149.83156984529953"},"rule":"turn.ahead"},"seq":7,"src_seq":6,"state_hash":"sha256:synthetic","stream":"guide","t":95.1}
+{"accuracy":5.0,"bearing_deg":90.0,"lat":37.0,"lon":127.0015747304,"provider":"synthetic","seq":8,"speed_mps":1.0,"stream":"loc","t":140.0}
+{"decision":"TURN_NOW","inputs":{"frame_count":5,"rng_seed":100},"reason":{"details":{"angleDegrees":"90.0","remainingMeters":"9.98867659888802","side":"LEFT","turnIndex":"0","turnS":"149.83156984529953"},"rule":"turn.now"},"seq":9,"src_seq":8,"state_hash":"sha256:synthetic","stream":"guide","t":140.1}
+{"accuracy":5.0,"bearing_deg":90.0,"lat":37.0012576356,"lon":127.0016872112,"provider":"synthetic","seq":10,"speed_mps":1.0,"stream":"loc","t":290.0}
+{"decision":"ARRIVED","inputs":{"frame_count":6,"rng_seed":100},"reason":{"details":{"projectedMeters":"289.6744612916525"},"rule":"arrival.radius-and-progress"},"seq":11,"src_seq":10,"state_hash":"sha256:synthetic","stream":"guide","t":290.1}

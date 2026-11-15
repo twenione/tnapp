@@ -65,8 +65,10 @@ VARIANTS = {
                                     '    }'),
  'arrival-backward-highwater-retained': ('return state.copy(advanceHighWaterMeters = projected)',
                                          'return state /* TASK-079 backward high-water retained */'),
- 'arrival-record-every-frame': ('if (arrivalCandidate && !arrivalHasAdvance && next.arrivalBlockedRecords.isEmpty()) {',
-                                'if (arrivalCandidate && !arrivalHasAdvance) { /* TASK-079 record every frame */'),
+ 'arrival-record-every-frame': ('next.arrivalBlockedRecords.none { it.reason == arrivalBlockReason }',
+                                'true /* TASK-096 record every blocked frame */'),
+ 'task096-d204-slot-shared': ('next.arrivalBlockedRecords.none { it.reason == arrivalBlockReason }',
+                              'next.arrivalBlockedRecords.isEmpty() /* TASK-096 D-204 reasons share one slot */'),
  'arrival-fraction-hardcoded': ('val proportional = baselineRemainingMeters?.let { config.arrivalAdvanceFraction * it } ?: 0.0',
                                 'val proportional = baselineRemainingMeters?.let { 0.8 * it } ?: 0.0 /* TASK-079 fraction hardcoded */'),
  'arrival-baseline-approach-frame': ('if (state.arrivalBaselineRemainingMeters == null && match.distanceMeters < config.offRouteExitDistMeters) {',
@@ -141,17 +143,8 @@ VARIANTS = {
                           'if (frame.accuracy.toDouble() > config.accuracyRejectMeters) {\n'
                           '        val sunset = StandaloneSunsetEvaluation(initializedState, null, '
                           'Reason("event.none")) /* D-033 skip E7 on accuracy frames */'),
- 'event-offroute-gate': ('if (next.offRoute) {\n'
-                         '        // Advance and consume ordinary event thresholds while off-route, but\n'
-                         '        // keep E7 pending for a later safety announcement.\n'
-                         '        next = evaluateDynamicGuidance(initializedState, next, directedMatch, '
-                         'frame, config, suppressAnnouncements = true).state',
-                         'if (next.offRoute) {\n'
-                         '        // Advance and consume ordinary event thresholds while off-route, but\n'
-                         '        // keep E7 pending for a later safety announcement.\n'
-                         '        next = evaluateDynamicGuidance(initializedState, next.copy(offRoute = '
-                         'false), directedMatch, frame, config, suppressAnnouncements = false).state /* '
-                         'D-033 off-route event gate removed */'),
+ 'event-offroute-gate': ('    if (next.offRoute) {',
+                         '    if (false) { /* D-033 off-route event gate removed */'),
  'event-reverse-gate': ('if (!config.slopeEnabled || !forward) {',
                         'if (!config.slopeEnabled) { /* D-033 reverse E4 gate removed */'),
  'event-min-interval': ('        } else if (!eventIntervalOpen) {\n'
@@ -257,10 +250,10 @@ VARIANTS = {
                                    '        pendingSunsetThresholds = pending,\n'
                                    '        pendingSunsetDelayReason = if (selected.sunsetThresholds.isNotEmpty()) null else next.pendingSunsetDelayReason,\n'
                                    '        pendingRemainingThresholds = next.pendingRemainingThresholds /* D-071 pending not cleared */,'),
- 'remaining-reverse-pending': ('val retainCrossedRemaining = config.remainingEnabled && forward && crossedRemaining.isNotEmpty()',
-                               'val retainCrossedRemaining = config.remainingEnabled && crossedRemaining.isNotEmpty() /* D-071 reverse retained */'),
- 'remaining-toggle-ignored': ('val retainCrossedRemaining = config.remainingEnabled && forward && crossedRemaining.isNotEmpty()',
-                              'val retainCrossedRemaining = forward && crossedRemaining.isNotEmpty() /* TASK-040 E3 toggle ignored */'),
+ 'remaining-reverse-pending': ('val retainCrossedRemaining = config.remainingEnabled && forward && !startupPending && crossedRemaining.isNotEmpty()',
+                               'val retainCrossedRemaining = config.remainingEnabled && !startupPending && crossedRemaining.isNotEmpty() /* D-071 reverse retained */'),
+ 'remaining-toggle-ignored': ('val retainCrossedRemaining = config.remainingEnabled && forward && !startupPending && crossedRemaining.isNotEmpty()',
+                              'val retainCrossedRemaining = forward && !startupPending && crossedRemaining.isNotEmpty() /* TASK-040 E3 toggle ignored */'),
  'slope-toggle-ignored': ('if (!config.slopeEnabled || !forward) {',
                           'if (!forward) { /* TASK-040 E4 toggle ignored */'),
  'slope-defer-ignored': ('val pendingSlopePeaks = next.pendingSlopePeaks.toMutableMap()\n'
@@ -310,8 +303,8 @@ VARIANTS = {
                                          'false -> "disabled" /* TASK-080 E1 disabled record omitted */'),
   'task080-e1-offroute-record-omitted': ('!config.milestoneEnabled -> "disabled"\n            !onRoute -> "offroute"',
                                          '!config.milestoneEnabled -> "disabled"\n            false -> "offroute" /* TASK-080 E1 offroute record omitted */'),
-  'task080-e1-reverse-record-omitted': ('!onRoute -> "offroute"\n            state.direction == ProgressDirection.REVERSE -> "reverse"',
-                                        '!onRoute -> "offroute"\n            false -> "reverse" /* TASK-080 E1 reverse record omitted */'),
+  'task080-e1-reverse-record-omitted': ('!onRoute -> "offroute"\n            startupPending -> "direction-unknown"\n            state.direction == ProgressDirection.REVERSE -> "reverse"',
+                                        '!onRoute -> "offroute"\n            startupPending -> "direction-unknown"\n            false -> "reverse" /* TASK-080 E1 reverse record omitted */'),
   'task080-e1-direction-unknown-record-omitted': ('state.direction == ProgressDirection.REVERSE -> "reverse"\n            state.direction == ProgressDirection.UNKNOWN -> "direction-unknown"',
                                                    'state.direction == ProgressDirection.REVERSE -> "reverse"\n            false -> "direction-unknown" /* TASK-080 E1 direction-unknown record omitted */'),
   'task080-e1-interval-record-omitted': ('freshCrossed.forEach { record("E1", it.toString(), "interval") }',
@@ -332,8 +325,8 @@ VARIANTS = {
                                     '/* TASK-080 E2 jump record omitted */'),
   'task080-e3-disabled-record-omitted': ('!config.remainingEnabled -> "disabled"',
                                          'false -> "disabled" /* TASK-080 E3 disabled record omitted */'),
-  'task080-e3-reverse-record-omitted': ('!config.remainingEnabled -> "disabled"\n        state.direction == ProgressDirection.REVERSE -> "reverse"',
-                                        '!config.remainingEnabled -> "disabled"\n        false -> "reverse" /* TASK-080 E3 reverse record omitted */'),
+  'task080-e3-reverse-record-omitted': ('!config.remainingEnabled -> "disabled"\n        startupPending -> "direction-unknown"\n        state.direction == ProgressDirection.REVERSE -> "reverse"',
+                                        '!config.remainingEnabled -> "disabled"\n        startupPending -> "direction-unknown"\n        false -> "reverse" /* TASK-080 E3 reverse record omitted */'),
   'task080-e3-direction-unknown-record-omitted': ('state.direction == ProgressDirection.REVERSE -> "reverse"\n        state.direction == ProgressDirection.UNKNOWN -> "direction-unknown"',
                                                    'state.direction == ProgressDirection.REVERSE -> "reverse"\n        false -> "direction-unknown" /* TASK-080 E3 direction-unknown record omitted */'),
   'task080-e8-disabled-record-omitted': ('!config.sunriseEnabled -> "disabled"',
@@ -356,9 +349,9 @@ VARIANTS = {
                                       '                progressMeters = match.projectedMeters,\n            ),\n        )\n        if (next.discardedEvents.isNotEmpty()) {\n            next = next.copy(discardedEvents = next.discardedEvents + next.discardedEvents.last())\n        }\n    }\n\n    // E1: distance milestones are based on projected route distance. /* TASK-080 duplicate record */'),
   'task080-invalid-e3-record-reason': ('record("E3", threshold.toBigDecimal().stripTrailingZeros().toPlainString(), discardReason)',
                                        'record("E3", threshold.toBigDecimal().stripTrailingZeros().toPlainString(), "interval") /* TASK-080 invalid reason */'),
- 'waypoint-toggle-ignored': ('if (config.waypointEnabled && onRoute && forward && eventIntervalOpen && index '
+ 'waypoint-toggle-ignored': ('if (config.waypointEnabled && onRoute && forward && eventIntervalOpen && !startupPending && index '
                              '!in previous.consumedWaypointIndices) {',
-                             'if (onRoute && forward && eventIntervalOpen && index !in '
+                             'if (onRoute && forward && eventIntervalOpen && !startupPending && index !in '
                              'previous.consumedWaypointIndices) { /* TASK-040 E6 toggle ignored */'),
  'sunset-toggle-ignored': ('if (!config.sunsetEnabled) return SunsetEvaluation(state, null)',
                            'if (false) return SunsetEvaluation(state, null) /* TASK-040 E7 toggle ignored '
@@ -434,10 +427,215 @@ VARIANTS = {
                                   '        }\n'
                                   '        if (!dynamic.state.reverseStatusIssued) {')}
 
+VARIANTS.update({
+    "task093-m1-premature-direction-guidance": (
+        "suppressAnnouncement = startupPending",
+        "suppressAnnouncement = false /* TASK-093 M-1 */",
+    ),
+    "task093-m2-predecision-offroute-nearest-match": (
+        "if (startupPending) null else initializedState.lastMatch?.projectedMeters",
+        "initializedState.lastMatch?.projectedMeters /* TASK-093 M-2 */",
+    ),
+    "task093-m3-startup-fit-length-gate-removed": (
+        "if (walkedTotal < config.startTrajectoryMeters) return null",
+        "if (false) return null /* TASK-093 M-3 */",
+    ),
+    "task093-m4-tie-break-order-reversed": (
+        "compareBy<StartTrajectoryMatch> { directionTieOrder(it.direction) }\n"
+        "                    .thenBy { it.startProgressMeters }",
+        "compareBy<StartTrajectoryMatch> { it.startProgressMeters }\n"
+        "                    .thenBy { directionTieOrder(it.direction) } /* TASK-093 M-4 */",
+    ),
+    "task093-m5-suspect-record-removed": (
+        "systemEvents = updated.systemEvents + event",
+        "systemEvents = updated.systemEvents /* TASK-093 M-5 */",
+    ),
+    "task093-m6-arrival-baseline-reset-removed": (
+        "systemEvents = initializedState.systemEvents + listOf(routeOrientation, directionDecided, baselineReset),",
+        "systemEvents = initializedState.systemEvents + listOf(routeOrientation, directionDecided), /* TASK-093 M-6 */",
+    ),
+    "task093-m7-fixed-observation-distance": (
+        "currentWalked >= overlapExit + config.directionObservationAfterOverlapMeters",
+        "currentWalked >= startWalked + 150.0 /* TASK-093 M-7 */",
+    ),
+    "task093-m8-refit-uses-only-current-match-window": (
+        "StartTrajectoryMatcher.match(next.route, recent, config)",
+        "StartTrajectoryMatcher.match(next.route, listOf(recent.first(), recent.last()), config) /* TASK-093 M-8 */",
+    ),
+    "task093-m9-circular-overlap-distance": (
+        "abs(progress - otherProgress) >= config.overlapMinRouteGapMeters",
+        "min(abs(progress - otherProgress), total - abs(progress - otherProgress)) >= config.overlapMinRouteGapMeters /* TASK-093 M-9 */",
+    ),
+    "task093-m10-zero-fit-width": (
+        "val startTrajectoryMatchToleranceMeters: Double = 1.0,",
+        "val startTrajectoryMatchToleranceMeters: Double = 0.0, /* TASK-093 M-10 */",
+    ),
+    "task093-m11-record-obligation-test-50m": (
+        "const val RECORD_OBLIGATION_METERS = 25.0",
+        "const val RECORD_OBLIGATION_METERS = 50.0 /* TASK-093 M-11 */",
+    ),
+    "task093-m14-suspect-changes-direction": (
+        "directionSuspectRecorded = true,\n        directionObservationActive = false,",
+        "directionSuspectRecorded = true,\n        direction = ProgressDirection.REVERSE, /* TASK-093 M-14 */\n        directionObservationActive = false,",
+    ),
+})
+
+VARIANTS.update({
+    "task094-m1-e1-direction-unknown-record-omitted": (
+        'if (discardReason != null) {\n            freshCrossed.forEach { record("E1", it.toString(), discardReason) }',
+        'if (discardReason != null) {\n            if (!startupPending) freshCrossed.forEach { record("E1", it.toString(), discardReason) } /* TASK-094 M1 */',
+    ),
+    "task094-m1-e3-direction-unknown-record-omitted": (
+        'newCrossedRemaining.forEach { threshold ->\n            record("E3", threshold.toBigDecimal().stripTrailingZeros().toPlainString(), discardReason)',
+        'newCrossedRemaining.filterNot { startupPending }.forEach { threshold ->\n            record("E3", threshold.toBigDecimal().stripTrailingZeros().toPlainString(), discardReason) /* TASK-094 M1 */',
+    ),
+    "task094-m1-e4-direction-unknown-record-omitted": (
+        'if ((distance >= 0.0 && distance <= config.peakAnnounceLeadMeters) || pending != null) {',
+        'if (!startupPending && ((distance >= 0.0 && distance <= config.peakAnnounceLeadMeters) || pending != null)) { /* TASK-094 M1 */',
+    ),
+    "task094-m1-e6-direction-unknown-record-omitted": (
+        '                if (discardReason != null) {\n                    discardedWaypoints += DiscardedWaypoint(index, waypoint.s, distance, discardReason)',
+        '                if (discardReason != null) {\n                    if (!startupPending) discardedWaypoints += DiscardedWaypoint(index, waypoint.s, distance, discardReason) /* TASK-094 M1 */',
+    ),
+    "task094-m1-turn-ahead-direction-unknown-record-omitted": (
+        'if (index !in next.completedTurnAheadIndices) add("TURN_AHEAD")',
+        'if (false) add("TURN_AHEAD") /* TASK-094 M1 */',
+    ),
+    "task094-m1-turn-now-direction-unknown-record-omitted": (
+        'if (index !in next.completedTurnNowIndices) add("TURN_NOW")',
+        'if (false) add("TURN_NOW") /* TASK-094 M1 */',
+    ),
+    "task095-a-no-eta-carryover": (
+        "                startupEtaObservations.drop(1).forEach { observation ->",
+        "                startupEtaObservations.clear() /* TASK-095 A */\n"
+        "                startupEtaObservations.drop(1).forEach { observation ->",
+    ),
+})
+
+VARIANTS.update({
+    "task095-m1-e1-startup-pending-discard-gate-removed": (
+        "        val discardReason = when {\n"
+        "            !config.milestoneEnabled -> \"disabled\"\n"
+        "            !onRoute -> \"offroute\"\n"
+        "            startupPending -> \"direction-unknown\"\n"
+        "            state.direction == ProgressDirection.REVERSE -> \"reverse\"\n"
+        "            state.direction == ProgressDirection.UNKNOWN -> \"direction-unknown\"\n"
+        "            else -> null\n"
+        "        }",
+        "        val discardReason = when {\n"
+        "            !config.milestoneEnabled -> \"disabled\"\n"
+        "            !onRoute -> \"offroute\"\n"
+        "            false -> \"direction-unknown\" /* TASK-095 M1 E1 */\n"
+        "            state.direction == ProgressDirection.REVERSE -> \"reverse\"\n"
+        "            state.direction == ProgressDirection.UNKNOWN -> \"direction-unknown\"\n"
+        "            else -> null\n"
+        "        }",
+    ),
+    "task095-m1-e1-unknown-direction-discard-gate-removed": (
+        "        val discardReason = when {\n"
+        "            !config.milestoneEnabled -> \"disabled\"\n"
+        "            !onRoute -> \"offroute\"\n"
+        "            startupPending -> \"direction-unknown\"\n"
+        "            state.direction == ProgressDirection.REVERSE -> \"reverse\"\n"
+        "            state.direction == ProgressDirection.UNKNOWN -> \"direction-unknown\"\n"
+        "            else -> null\n"
+        "        }",
+        "        val discardReason = when {\n"
+        "            !config.milestoneEnabled -> \"disabled\"\n"
+        "            !onRoute -> \"offroute\"\n"
+        "            startupPending -> \"direction-unknown\"\n"
+        "            state.direction == ProgressDirection.REVERSE -> \"reverse\"\n"
+        "            false -> \"direction-unknown\" /* TASK-095 M1 E1 */\n"
+        "            else -> null\n"
+        "        }",
+    ),
+    "task095-m1-e3-startup-pending-discard-gate-removed": (
+        "    val discardReason = when {\n"
+        "        !config.remainingEnabled -> \"disabled\"\n"
+        "        startupPending -> \"direction-unknown\"\n"
+        "        state.direction == ProgressDirection.REVERSE -> \"reverse\"\n"
+        "        state.direction == ProgressDirection.UNKNOWN -> \"direction-unknown\"\n"
+        "        else -> null\n"
+        "    }",
+        "    val discardReason = when {\n"
+        "        !config.remainingEnabled -> \"disabled\"\n"
+        "        false -> \"direction-unknown\" /* TASK-095 M1 E3 */\n"
+        "        state.direction == ProgressDirection.REVERSE -> \"reverse\"\n"
+        "        state.direction == ProgressDirection.UNKNOWN -> \"direction-unknown\"\n"
+        "        else -> null\n"
+        "    }",
+    ),
+    "task095-m1-e3-unknown-direction-discard-gate-removed": (
+        "    val discardReason = when {\n"
+        "        !config.remainingEnabled -> \"disabled\"\n"
+        "        startupPending -> \"direction-unknown\"\n"
+        "        state.direction == ProgressDirection.REVERSE -> \"reverse\"\n"
+        "        state.direction == ProgressDirection.UNKNOWN -> \"direction-unknown\"\n"
+        "        else -> null\n"
+        "    }",
+        "    val discardReason = when {\n"
+        "        !config.remainingEnabled -> \"disabled\"\n"
+        "        startupPending -> \"direction-unknown\"\n"
+        "        state.direction == ProgressDirection.REVERSE -> \"reverse\"\n"
+        "        false -> \"direction-unknown\" /* TASK-095 M1 E3 */\n"
+        "        else -> null\n"
+        "    }",
+    ),
+    "task095-m1-e1-forward-gate-removed": (
+        "else if (config.milestoneEnabled && onRoute && forward && eventIntervalOpen && freshCrossed.isNotEmpty()) {",
+        "else if (config.milestoneEnabled && onRoute && eventIntervalOpen && freshCrossed.isNotEmpty()) { /* TASK-095 M1 E1 */",
+    ),
+    "task095-m1-e3-pending-retention-gate-removed": (
+        "val retainCrossedRemaining = config.remainingEnabled && forward && !startupPending && crossedRemaining.isNotEmpty()",
+        "val retainCrossedRemaining = config.remainingEnabled && forward && crossedRemaining.isNotEmpty() /* TASK-095 M1 E3 */",
+    ),
+    "task095-m1-e3-forward-gate-removed": (
+        "        config.remainingEnabled && onRoute && forward && eventIntervalOpen &&\n        next.pendingRemainingThresholds.isNotEmpty()",
+        "        config.remainingEnabled && onRoute && eventIntervalOpen &&\n        next.pendingRemainingThresholds.isNotEmpty() /* TASK-095 M1 E3 */",
+    ),
+    "task095-m1-e4-forward-gate-removed": (
+        "if (!config.slopeEnabled || !forward) {",
+        "if (!config.slopeEnabled) { /* TASK-095 M1 E4 */",
+    ),
+    "task095-m1-e4-startup-pending-gate-removed": (
+        "                startupPending -> {",
+        "                false -> { /* TASK-095 M1 E4 */",
+    ),
+    "task095-m1-e6-forward-gate-removed": (
+        "if (config.waypointEnabled && onRoute && forward && eventIntervalOpen && !startupPending && index !in previous.consumedWaypointIndices) {",
+        "if (config.waypointEnabled && onRoute && eventIntervalOpen && !startupPending && index !in previous.consumedWaypointIndices) { /* TASK-095 M1 E6 */",
+    ),
+    "task095-m1-e6-startup-pending-gate-removed": (
+        "if (config.waypointEnabled && onRoute && forward && eventIntervalOpen && !startupPending && index !in previous.consumedWaypointIndices) {",
+        "if (config.waypointEnabled && onRoute && forward && eventIntervalOpen && index !in previous.consumedWaypointIndices) { /* TASK-095 M1 E6 */",
+    ),
+    "task095-m1-turn-ahead-direction-gate-removed": (
+        "if (direction != ProgressDirection.FORWARD || match.distanceMeters >= config.turnOnRouteMaxOffsetMeters) {",
+        "if (match.distanceMeters >= config.turnOnRouteMaxOffsetMeters) { /* TASK-095 M1 TURN_AHEAD */",
+    ),
+    "task095-m1-turn-now-direction-gate-removed": (
+        "if (direction != ProgressDirection.FORWARD || match.distanceMeters >= config.turnOnRouteMaxOffsetMeters) {",
+        "if (match.distanceMeters >= config.turnOnRouteMaxOffsetMeters) { /* TASK-095 M1 TURN_NOW */",
+    ),
+    "task095-m1-turn-ahead-startup-return-gate-removed": (
+        "    if (startupPending) {\n        val dynamic = evaluateDynamicGuidance(",
+        "    if (false) { /* TASK-095 M1 TURN_AHEAD */\n        val dynamic = evaluateDynamicGuidance(",
+    ),
+    "task095-m1-turn-now-startup-return-gate-removed": (
+        "    if (startupPending) {\n        val dynamic = evaluateDynamicGuidance(",
+        "    if (false) { /* TASK-095 M1 TURN_NOW */\n        val dynamic = evaluateDynamicGuidance(",
+    ),
+})
+
 ROUTE_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/Route.kt")
 ETA_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/RouteEta.kt")
 TURN_PASS_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/TurnPass.kt")
 MODEL_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/Model.kt")
+MATCHER_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/StartTrajectoryMatcher.kt")
+APP_DIRECTION_TEST = Path("app/src/test/kotlin/com/trailnav/app/DirectionSuspectCalibrationTest.kt")
+APP_ORIENTATION_TEST = Path("app/src/test/kotlin/com/trailnav/app/RouteOrientationTest.kt")
+APP_START_PHASE_TEST = Path("app/src/test/kotlin/com/trailnav/app/StartPhaseGridTest.kt")
+GUIDE_SESSION_SOURCE = Path("app/src/main/kotlin/com/trailnav/app/GuideSession.kt")
 VARIANT_SOURCE_PATHS = {
     "turn-pass-always-false": TURN_PASS_SOURCE,
     "turn-axis-simplified": ROUTE_SOURCE,
@@ -457,6 +655,18 @@ VARIANT_SOURCE_PATHS = {
     "eta-cap-removed": ETA_SOURCE,
     "eta-clamped-observation-included": ETA_SOURCE,
     "arrival-jump-tolerance-default-20": MODEL_SOURCE,
+    "task093-m3-startup-fit-length-gate-removed": MATCHER_SOURCE,
+    "task093-m4-tie-break-order-reversed": MATCHER_SOURCE,
+    "task094-m1-e1-direction-unknown-record-omitted": ENGINE,
+    "task094-m1-e3-direction-unknown-record-omitted": ENGINE,
+    "task094-m1-e4-direction-unknown-record-omitted": ENGINE,
+    "task094-m1-e6-direction-unknown-record-omitted": ENGINE,
+    "task094-m1-turn-ahead-direction-unknown-record-omitted": ENGINE,
+    "task094-m1-turn-now-direction-unknown-record-omitted": ENGINE,
+    "task093-m9-circular-overlap-distance": ROUTE_SOURCE,
+    "task093-m10-zero-fit-width": MODEL_SOURCE,
+    "task093-m11-record-obligation-test-50m": APP_DIRECTION_TEST,
+    "task095-a-no-eta-carryover": GUIDE_SESSION_SOURCE,
 }
 CORE_TEST = frozenset({"core-guide-test"})
 OFF_ROUTE_CONSUMERS = frozenset({"core-guide-test", "replay", "phase1-accuracy", "config-sensitivity"})
@@ -558,6 +768,7 @@ MUTATION_REQUIRED_CONSUMERS = {
     "arrival-positive-deltas-summed": CORE_TEST,
     "arrival-backward-highwater-retained": CORE_TEST,
     "arrival-record-every-frame": CORE_TEST,
+    "task096-d204-slot-shared": CORE_TEST,
     "arrival-fraction-hardcoded": CORE_TEST,
     "arrival-baseline-approach-frame": CORE_TEST,
     "arrival-jump-tolerance-default-20": CORE_TEST,
@@ -594,7 +805,121 @@ APP_START_TEST_FILTER = (
     "com.trailnav.app.StartPhaseGridTest."
     "startPhaseArrivalAdvanceGuardRejectsNearLoopEndStartMutation"
 )
+APP_START_TEST_FILTERS = {
+    "task093-m1-premature-direction-guidance": (
+        "com.trailnav.app.RouteOrientationTest.startupPendingSuppressesElevationBoundaryAnnouncement"
+    ),
+    "task093-m2-predecision-offroute-nearest-match": (
+        "com.trailnav.app.RouteOrientationTest.preDecisionMatchingUsesTheWholeRouteWhenThePreviousProgressWindowMissesTheNearestSegment"
+    ),
+    "task093-m3-startup-fit-length-gate-removed": (
+        "com.trailnav.app.RouteOrientationTest.noisyInPlaceMovementDoesNotResolveUntilTrajectoryIsLongEnough"
+    ),
+    "task093-m5-suspect-record-removed": (
+        "com.trailnav.app.DirectionSuspectCalibrationTest.noiseFreeWrongBranchIsRecordedExactlyOnceAtEveryRequiredStart"
+    ),
+    "task093-m6-arrival-baseline-reset-removed": (
+        "com.trailnav.app.RouteOrientationTest.startupResolutionResetsArrivalBaselineAndRecordsSystemEvent"
+    ),
+    "task093-m7-fixed-observation-distance": (
+        "com.trailnav.app.DirectionSuspectCalibrationTest.noiseFreeWrongBranchIsRecordedExactlyOnceAtEveryRequiredStart"
+    ),
+    "task093-m8-refit-uses-only-current-match-window": (
+        "com.trailnav.app.DirectionSuspectCalibrationTest.noiseFreeWrongBranchIsRecordedExactlyOnceAtEveryRequiredStart"
+    ),
+    "task093-m9-circular-overlap-distance": (
+        "com.trailnav.app.DirectionSuspectCalibrationTest.noiseFreeWrongBranchIsRecordedExactlyOnceAtEveryRequiredStart"
+    ),
+    "task093-m11-record-obligation-test-50m": (
+        "com.trailnav.app.DirectionSuspectCalibrationTest.b8OverlapPairHasZeroPathErrorWhileNonPairDoesNot"
+    ),
+    "task093-m14-suspect-changes-direction": (
+        "com.trailnav.app.DirectionSuspectCalibrationTest.directionSuspectToggleChangesOnlyDiagnosticRecording"
+    ),
+    "task095-a-no-eta-carryover": (
+        "com.trailnav.app.RouteOrientationTest.startupCarriesPreDecisionEtaObservationsIntoTheCalibrationWindow"
+    ),
+}
+VARIANTS.update({
+    "arrival-d210-rmin-comparison-strict": (
+        "val endpointReachable = remainingMeters >= minimumRemainingMeters",
+        "val endpointReachable = remainingMeters > minimumRemainingMeters /* TASK-097 D-210 Rmin boundary */",
+    ),
+    "arrival-d210-distance-comparison-strict": (
+        "val walkingReachesArrivalCircle = generatedWalkingMeters >=\n        remainingMeters - input.arriveRadiusMeters - input.actualNoiseMeters",
+        "val walkingReachesArrivalCircle = generatedWalkingMeters >\n        remainingMeters - input.arriveRadiusMeters - input.actualNoiseMeters /* TASK-097 D-210 distance boundary */",
+    ),
+})
+VARIANT_SOURCE_PATHS.update({
+    "arrival-d210-rmin-comparison-strict": APP_START_PHASE_TEST,
+    "arrival-d210-distance-comparison-strict": APP_START_PHASE_TEST,
+})
+APP_START_TEST_FILTERS.update({
+    "arrival-advance-removed": (
+        "com.trailnav.app.StartPhaseGridTest.shortRouteStartupArrivalAdvanceGateMatchesD210Reproduction"
+    ),
+    "arrival-d210-rmin-comparison-strict": (
+        "com.trailnav.app.StartPhaseGridTest.d210FalseArrivalMatchesHandCalculatedCasesAndActualNoise"
+    ),
+    "arrival-d210-distance-comparison-strict": (
+        "com.trailnav.app.StartPhaseGridTest.d210FalseArrivalMatchesHandCalculatedCasesAndActualNoise"
+    ),
+})
 
+MUTATION_REQUIRED_CONSUMERS.update({
+    "arrival-d210-rmin-comparison-strict": frozenset({APP_START_TEST}),
+    "arrival-d210-distance-comparison-strict": frozenset({APP_START_TEST}),
+    "task093-m1-premature-direction-guidance": frozenset({APP_START_TEST}),
+    "task093-m2-predecision-offroute-nearest-match": frozenset({APP_START_TEST}),
+    "task093-m3-startup-fit-length-gate-removed": CORE_TEST,
+    "task093-m4-tie-break-order-reversed": CORE_TEST,
+    "task093-m5-suspect-record-removed": frozenset({APP_START_TEST}),
+    "task093-m6-arrival-baseline-reset-removed": frozenset({APP_START_TEST}),
+    "task093-m7-fixed-observation-distance": frozenset({APP_START_TEST}),
+    "task093-m8-refit-uses-only-current-match-window": frozenset({APP_START_TEST}),
+    "task093-m9-circular-overlap-distance": frozenset({APP_START_TEST}),
+    "task093-m10-zero-fit-width": CORE_TEST,
+    "task093-m11-record-obligation-test-50m": frozenset({APP_START_TEST}),
+    "task093-m14-suspect-changes-direction": frozenset({APP_START_TEST}),
+    "task094-m1-e1-direction-unknown-record-omitted": CORE_TEST,
+    "task094-m1-e3-direction-unknown-record-omitted": CORE_TEST,
+    "task094-m1-e4-direction-unknown-record-omitted": CORE_TEST,
+    "task094-m1-e6-direction-unknown-record-omitted": CORE_TEST,
+    "task094-m1-turn-ahead-direction-unknown-record-omitted": CORE_TEST,
+    "task094-m1-turn-now-direction-unknown-record-omitted": CORE_TEST,
+    "task095-a-no-eta-carryover": frozenset({APP_START_TEST}),
+    "task095-m1-e1-forward-gate-removed": CORE_TEST,
+    "task095-m1-e1-startup-pending-discard-gate-removed": CORE_TEST,
+    "task095-m1-e1-unknown-direction-discard-gate-removed": CORE_TEST,
+    "task095-m1-e3-pending-retention-gate-removed": CORE_TEST,
+    "task095-m1-e3-forward-gate-removed": CORE_TEST,
+    "task095-m1-e3-startup-pending-discard-gate-removed": CORE_TEST,
+    "task095-m1-e3-unknown-direction-discard-gate-removed": CORE_TEST,
+    "task095-m1-e4-forward-gate-removed": CORE_TEST,
+    "task095-m1-e4-startup-pending-gate-removed": CORE_TEST,
+    "task095-m1-e6-forward-gate-removed": CORE_TEST,
+    "task095-m1-e6-startup-pending-gate-removed": CORE_TEST,
+    "task095-m1-turn-ahead-direction-gate-removed": CORE_TEST,
+    "task095-m1-turn-now-direction-gate-removed": CORE_TEST,
+    "task095-m1-turn-ahead-startup-return-gate-removed": CORE_TEST,
+    "task095-m1-turn-now-startup-return-gate-removed": CORE_TEST,
+})
+
+
+VARIANTS.update({
+    "reorientation-keeps-consumed-event-state": (
+        "consumedWaypointIndices = if (reverse) emptySet() else initializedState.consumedWaypointIndices,",
+        "consumedWaypointIndices = initializedState.consumedWaypointIndices, /* TASK-102 mutation */",
+    ),
+})
+APP_START_TEST_FILTERS.update({
+    "reorientation-keeps-consumed-event-state": (
+        "com.trailnav.app.RouteOrientationTest.engineDirectionResolutionReorientsAllEventStateToTheD203Oracle"
+    ),
+})
+MUTATION_REQUIRED_CONSUMERS.update({
+    "reorientation-keeps-consumed-event-state": frozenset({APP_START_TEST}),
+})
 
 def unmutated_consumer_failures(results: dict[str, int]) -> list[str]:
     """Fail closed when any downstream consumer rejects the clean engine."""
@@ -749,7 +1074,7 @@ def mutation_consumer_commands(mutation: str, cli: Path, gradle: str) -> dict[st
     commands = consumer_commands(cli)
     required = MUTATION_REQUIRED_CONSUMERS.get(mutation, frozenset())
     if APP_START_TEST in required:
-        commands[APP_START_TEST] = app_start_test_command(gradle)
+        commands[APP_START_TEST] = app_start_test_command(gradle, APP_START_TEST_FILTERS.get(mutation, APP_START_TEST_FILTER))
     return commands
 
 
@@ -835,6 +1160,7 @@ def main() -> int:
     parser.add_argument("--gradle", default="gradle")
     parser.add_argument("--out", type=Path, default=Path("d033-negative-control.log"))
     parser.add_argument("--shard", type=parse_shard_spec, help="run deterministic shard INDEX/COUNT")
+    parser.add_argument("--mutations", nargs="+", help="run selected named mutations without changing their consumers")
     parser.add_argument("--result-json", type=Path, help="write machine-readable mutation outcomes")
     args = parser.parse_args()
     shard_index, shard_count = args.shard or (1, 1)
@@ -845,7 +1171,15 @@ def main() -> int:
     mutation_results: list[dict[str, object]] = []
     positive_control_exit_codes: dict[str, int] = {}
     positive_control_passed = False
-    selected_names = partition_mutations(list(VARIANTS), shard_index, shard_count)
+    if args.mutations and args.shard:
+        parser.error("--mutations and --shard cannot be combined")
+    if args.mutations:
+        unknown = sorted(set(args.mutations) - set(VARIANTS))
+        if unknown:
+            parser.error(f"unknown mutation names: {unknown}")
+        selected_names = list(dict.fromkeys(args.mutations))
+    else:
+        selected_names = partition_mutations(list(VARIANTS), shard_index, shard_count)
     started_at = time.perf_counter()
 
     def save_result_json() -> None:
@@ -919,6 +1253,10 @@ def main() -> int:
             ETA_SOURCE: (workspace / ETA_SOURCE).read_text(encoding="utf-8"),
             TURN_PASS_SOURCE: (workspace / TURN_PASS_SOURCE).read_text(encoding="utf-8"),
             MODEL_SOURCE: (workspace / MODEL_SOURCE).read_text(encoding="utf-8"),
+            MATCHER_SOURCE: (workspace / MATCHER_SOURCE).read_text(encoding="utf-8"),
+            APP_DIRECTION_TEST: (workspace / APP_DIRECTION_TEST).read_text(encoding="utf-8"),
+            APP_START_PHASE_TEST: (workspace / APP_START_PHASE_TEST).read_text(encoding="utf-8"),
+            GUIDE_SESSION_SOURCE: (workspace / GUIDE_SESSION_SOURCE).read_text(encoding="utf-8"),
         }
         needle_errors = mutation_needle_failures(sources)
         if needle_errors:
@@ -947,9 +1285,20 @@ def main() -> int:
                 code, output = run(command, workspace)
                 baseline_results[consumer] = code
                 evidence.append(f"UNMUTATED consumer={consumer} exit={code}\n{output}")
-            app_start_code, app_start_output = run_app_start_test(args.gradle, workspace)
+            app_filters = {APP_START_TEST_FILTER}
+            app_filters.update(
+                APP_START_TEST_FILTERS[name]
+                for name in selected_names
+                if name in APP_START_TEST_FILTERS
+            )
+            app_start_code = 0
+            for test_filter in sorted(app_filters):
+                code, output = run_app_start_test(args.gradle, workspace, test_filter)
+                app_start_code = max(app_start_code, code)
+                evidence.append(
+                    f"UNMUTATED consumer={APP_START_TEST} filter={test_filter} exit={code}\n{output}"
+                )
             baseline_results[APP_START_TEST] = app_start_code
-            evidence.append(f"UNMUTATED consumer={APP_START_TEST} exit={app_start_code}\n{app_start_output}")
         failures.extend(unmutated_consumer_failures(baseline_results))
         positive_control_exit_codes = {
             "core-guide-test": baseline_core_code,
@@ -1001,7 +1350,11 @@ def main() -> int:
             else:
                 for consumer, command in mutation_consumer_commands(name, cli, args.gradle).items():
                     if consumer == APP_START_TEST:
-                        code, output = run_app_start_test(args.gradle, workspace)
+                        code, output = run_app_start_test(
+                            args.gradle,
+                            workspace,
+                            APP_START_TEST_FILTERS.get(name, APP_START_TEST_FILTER),
+                        )
                     else:
                         code, output = run(command, workspace)
                     consumer_results[consumer] = code
