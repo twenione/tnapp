@@ -64,6 +64,12 @@ data class Waypoint(
         get() = distanceMeters
 }
 
+/** Raw GPX waypoint retained so the engine can rebuild a direction-normalized route. */
+data class RouteSourceWaypoint(
+    val point: GeoPoint,
+    val name: String,
+)
+
 enum class SlopeKind { ASCENT, DESCENT }
 
 /** A confirmed E4 summit measured on the original route distance axis. */
@@ -95,6 +101,12 @@ data class RouteModel(
     val waypoints: List<Waypoint> = emptyList(),
     val elevationRepair: ElevationRepair = ElevationRepair(),
     val quality: RouteQuality = RouteQuality.EMPTY,
+    /** Unfiltered GPX geometry used when direction is resolved after startup. */
+    val sourceTrackPoints: List<GeoPoint> = sourcePoints,
+    val sourceTrackElevationMeters: List<Double?> = elevationMeters,
+    val sourceWaypoints: List<RouteSourceWaypoint> = emptyList(),
+    /** Progress ranges whose geometry has another route portion nearby at a distant progress. */
+    val overlapProgressRanges: List<RouteProgressRange> = emptyList(),
 ) {
     val totalLengthMeters: Double
         get() = cumulativeMeters.lastOrNull() ?: 0.0
@@ -124,6 +136,9 @@ data class RouteModel(
         if (sourcePoints.isEmpty()) EnuPoint(0.0, 0.0)
         else RouteMath.toEnu(sourcePoints.first(), point)
 
+    /** Rebuilds the route in the opposite direction from its unfiltered imported data. */
+    fun reversed(config: GuideConfig = GuideConfig()): RouteModel = GpxRouteParser.reversed(this, config)
+
     companion object {
         fun empty(): RouteModel = RouteModel(
             sourcePoints = emptyList(),
@@ -145,6 +160,11 @@ data class RouteModel(
             GpxRouteParser.parse(xml, config)
     }
 }
+
+data class RouteProgressRange(val startMeters: Double, val endMeters: Double)
+
+internal fun RouteModel.isProgressInOverlap(progressMeters: Double): Boolean =
+    overlapProgressRanges.any { progressMeters >= it.startMeters && progressMeters <= it.endMeters }
 
 /** Linearly interpolates a distance/value profile and clamps requests to its endpoints. */
 internal fun interpolateLinearProfile(
@@ -459,8 +479,77 @@ internal object GpxRouteParser {
             peaks = peaks,
             waypoints = eligibleWaypoints,
             elevationRepair = elevation.repair,
+            sourceTrackPoints = source.map { it.point },
+            sourceTrackElevationMeters = source.map { it.elevationMeters },
+            sourceWaypoints = rawWaypoints.map { RouteSourceWaypoint(it.point, it.name) },
         )
-        return route.copy(quality = calculateRouteQuality(route, filtered.size, config))
+        val withOverlaps = route.copy(
+            overlapProgressRanges = calculateOverlapProgressRanges(
+                route.points,
+                route.cumulativeMeters,
+                route.spatialIndex,
+                config,
+            ),
+        )
+        return withOverlaps.copy(quality = calculateRouteQuality(withOverlaps, filtered.size, config))
+    }
+
+    private fun calculateOverlapProgressRanges(
+        points: List<EnuPoint>,
+        cumulativeMeters: List<Double>,
+        spatialIndex: SpatialIndex,
+        config: GuideConfig,
+    ): List<RouteProgressRange> {
+        if (points.size < 2 || cumulativeMeters.size != points.size || config.overlapNearMeters <= 0.0) return emptyList()
+        val total = cumulativeMeters.lastOrNull() ?: return emptyList()
+        if (total <= config.overlapMinRouteGapMeters) return emptyList()
+        val fallbackStep = config.spatialGridSizeMeters / 100.0
+        val step = max(config.minimumPointSpacingMeters, fallbackStep).coerceAtLeast(Math.ulp(total) * 16.0)
+        val sampleCount = ceil(total / step).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val ranges = mutableListOf<RouteProgressRange>()
+        var activeStart: Double? = null
+        var activeEnd = 0.0
+        var segmentIndex = 0
+        for (sampleIndex in 0..sampleCount) {
+            val progress = min(total, sampleIndex * step)
+            while (segmentIndex < cumulativeMeters.lastIndex - 1 && cumulativeMeters[segmentIndex + 1] < progress) {
+                segmentIndex++
+            }
+            val span = cumulativeMeters[segmentIndex + 1] - cumulativeMeters[segmentIndex]
+            val fraction = if (span <= 0.0) 0.0 else ((progress - cumulativeMeters[segmentIndex]) / span).coerceIn(0.0, 1.0)
+            val start = points[segmentIndex]
+            val end = points[segmentIndex + 1]
+            val point = EnuPoint(
+                start.east + (end.east - start.east) * fraction,
+                start.north + (end.north - start.north) * fraction,
+            )
+            val overlaps = spatialIndex.candidateSegments(point, config.overlapNearMeters).any { candidateIndex ->
+                if (candidateIndex !in 0 until points.lastIndex) return@any false
+                val candidateStart = cumulativeMeters[candidateIndex]
+                val candidateSpan = cumulativeMeters[candidateIndex + 1] - candidateStart
+                val projection = RouteMath.segmentProjection(point, points[candidateIndex], points[candidateIndex + 1])
+                val otherProgress = candidateStart + candidateSpan * projection.fraction
+                abs(progress - otherProgress) >= config.overlapMinRouteGapMeters &&
+                    projection.distanceMeters <= config.overlapNearMeters
+            }
+            if (overlaps) {
+                if (activeStart == null) activeStart = progress
+                activeEnd = progress
+            } else if (activeStart != null) {
+                ranges += RouteProgressRange(
+                    startMeters = (activeStart - step / 2.0).coerceAtLeast(0.0),
+                    endMeters = min(total, activeEnd + step / 2.0),
+                )
+                activeStart = null
+            }
+        }
+        if (activeStart != null) {
+            ranges += RouteProgressRange(
+                startMeters = (activeStart - step / 2.0).coerceAtLeast(0.0),
+                endMeters = min(total, activeEnd + step / 2.0),
+            )
+        }
+        return ranges
     }
 
     private data class ParsedRoutePoint(val point: GeoPoint, val elevationMeters: Double?)
@@ -474,6 +563,17 @@ internal object GpxRouteParser {
         val gridSmoothed: List<Double>,
     )
     private data class RouteProjection(val s: Double, val distanceMeters: Double)
+
+    fun reversed(route: RouteModel, config: GuideConfig): RouteModel {
+        val points = route.sourceTrackPoints.ifEmpty { route.sourcePoints }
+        if (points.size < 2) return route
+        val elevations = route.sourceTrackElevationMeters
+        val reversedPoints = points.indices.reversed().map { index ->
+            ParsedRoutePoint(points[index], elevations.getOrNull(index))
+        }
+        val waypoints = route.sourceWaypoints.map { ParsedWaypoint(it.point, it.name) }
+        return preprocess(reversedPoints, waypoints, config)
+    }
 
     private fun childText(node: org.w3c.dom.Node, tag: String): String? {
         val children = node.childNodes ?: return null

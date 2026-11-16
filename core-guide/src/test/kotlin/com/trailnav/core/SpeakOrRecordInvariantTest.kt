@@ -31,7 +31,39 @@ class SpeakOrRecordInvariantTest {
         "E4" to setOf("passed", "disabled", "reverse", "direction-unknown", "jump"),
         "E6" to setOf("disabled", "offroute", "reverse", "direction-unknown", "interval", "priority", "jump"),
         "E8" to setOf("disabled", "offroute", "interval", "priority"),
+        "TURN_AHEAD" to setOf("direction-unknown"),
+        "TURN_NOW" to setOf("direction-unknown"),
     )
+
+    @Test
+    fun startupE1IsRecordedWithoutSpeaking() = assertStartupFixture("e1_direction_unknown_attempt", "E1") {
+        it is Guidance.Milestone
+    }
+
+    @Test
+    fun startupE3IsRecordedWithoutSpeaking() = assertStartupFixture("e3_direction_unknown_attempt", "E3") {
+        it is Guidance.Remaining
+    }
+
+    @Test
+    fun startupE4IsRecordedWithoutSpeaking() = assertStartupFixture("e4_direction_unknown", "E4") {
+        it is Guidance.Slope
+    }
+
+    @Test
+    fun startupE6IsRecordedWithoutSpeaking() = assertStartupFixture("e6_direction_unknown", "E6") {
+        it is Guidance.Waypoint
+    }
+
+    @Test
+    fun startupTurnAheadIsRecordedWithoutSpeaking() = assertStartupTurnFixture("TURN_AHEAD") {
+        it is Guidance.TurnAhead
+    }
+
+    @Test
+    fun startupTurnNowIsRecordedWithoutSpeaking() = assertStartupTurnFixture("TURN_NOW") {
+        it is Guidance.TurnNow
+    }
 
     @Test
     fun everyConsumedAnnouncementTargetIsSpokenOrRecorded() {
@@ -60,6 +92,16 @@ class SpeakOrRecordInvariantTest {
         check(duplicates.isEmpty()) { "a consumed target was both spoken and recorded or was recorded more than once: ${duplicates.joinToString()}" }
         check(observed == allowlist) {
             "D-168 unrecorded_allowlist mismatch: new=${observed - allowlist}; stale=${allowlist - observed}"
+        }
+
+        val startupTurnFrame = runs.single { it.directory.fileName.toString() == "startup_lollipop_reverse" }.transitions.first()
+        val startupTurnRecords = records(startupTurnFrame).filter { it.event in setOf("TURN_AHEAD", "TURN_NOW") }
+        check(startupTurnRecords.map { it.event to it.reason }.toSet() == setOf(
+            "TURN_AHEAD" to "direction-unknown",
+            "TURN_NOW" to "direction-unknown",
+        )) { "startup_lollipop_reverse frame 0 turn target gaps were not converted to one direction-unknown record per target: $startupTurnRecords" }
+        check(startupTurnFrame.result.guidance !is Guidance.TurnAhead && startupTurnFrame.result.guidance !is Guidance.TurnNow) {
+            "startup_lollipop_reverse frame 0 emitted turn guidance before direction was known"
         }
 
         val recordCases = runs.flatMap(::recordCases)
@@ -155,12 +197,10 @@ class SpeakOrRecordInvariantTest {
         check(propertyRuns.getValue("e3_session_end_pending").transitions.last().result.nextState.pendingRemainingThresholds.isNotEmpty()) {
             "E3 session-end pending target was not retained"
         }
-        check(propertyRuns.getValue("e1_direction_unknown_attempt").transitions.single().let {
-            it.result.nextState.direction == ProgressDirection.UNKNOWN && it.result.nextState.consumedMilestoneIndices.isEmpty()
-        }) { "E1 first-frame probe no longer demonstrates the direction-unknown no-crossing boundary" }
-        check(propertyRuns.getValue("e3_direction_unknown_attempt").transitions.single().let {
-            it.result.nextState.direction == ProgressDirection.UNKNOWN && it.result.nextState.consumedRemainingThresholds.isEmpty()
-        }) { "E3 first-frame probe no longer demonstrates the direction-unknown no-crossing boundary" }
+        assertStartupDirectionUnknownRecord(propertyRuns.getValue("e1_direction_unknown_attempt"), "E1")
+        assertStartupDirectionUnknownRecord(propertyRuns.getValue("e3_direction_unknown_attempt"), "E3")
+        assertStartupDirectionUnknownRecord(propertyRuns.getValue("e4_direction_unknown"), "E4")
+        assertStartupDirectionUnknownRecord(propertyRuns.getValue("e6_direction_unknown"), "E6")
         val toggleChanges = propertyRuns.getValue("all_events_off_on").changes
         check(toggleChanges.size == 16 && EVENTS.all { event ->
             toggleChanges.any { it.event == event && !it.enabled } && toggleChanges.any { it.event == event && it.enabled }
@@ -207,7 +247,12 @@ class SpeakOrRecordInvariantTest {
         val seededProgress = configNumber(manifest, "property_seed_projected_meters")
         val seededEma = configNumber(manifest, "property_seed_ema_delta_meters")
         val seededPeriodic = configNumber(manifest, "property_seed_last_periodic_event_at")?.times(1_000.0)?.toLong()
-        var state = GuideState.initial(route)
+        var state = if (directory.fileName.toString() in setOf(
+            "e1_direction_unknown_attempt",
+            "e3_direction_unknown_attempt",
+            "e4_direction_unknown",
+            "e6_direction_unknown",
+        )) GuideState.starting(route, config) else GuideState.initial(route)
         if (seededProgress != null || seededEma != null || seededPeriodic != null) {
             if (seededProgress == null) {
                 state = state.copy(lastPeriodicEventAt = seededPeriodic)
@@ -293,6 +338,54 @@ class SpeakOrRecordInvariantTest {
     private fun assertRecord(run: RunResult, event: String, reason: String) {
         val matching = run.transitions.flatMap(::records).filter { it.event == event && it.reason == reason }
         check(matching.isNotEmpty()) { "${run.directory.fileName}: expected at least one $event/$reason record, found none" }
+    }
+
+    private fun assertStartupFixture(session: String, event: String, isSpoken: (Guidance) -> Boolean) {
+        val run = runFixture("property", session)
+        assertStartupDirectionUnknownRecord(run, event)
+        check(run.transitions.none { transition -> transition.result.guidance?.let(isSpoken) == true }) {
+            "$session: $event guidance was spoken before startup direction was known"
+        }
+    }
+
+    private fun assertStartupTurnFixture(event: String, isSpoken: (Guidance) -> Boolean) {
+        val transition = runFixture("golden", "startup_lollipop_reverse").transitions.first()
+        val targetRecords = records(transition).filter { it.event == event && it.reason == "direction-unknown" }
+        check(targetRecords.size == 1) { "startup_lollipop_reverse frame 0: expected one $event/direction-unknown record, found $targetRecords" }
+        check(transition.result.guidance?.let(isSpoken) != true) {
+            "startup_lollipop_reverse frame 0: $event guidance was spoken before startup direction was known"
+        }
+    }
+
+    private fun runFixture(category: String, name: String): RunResult {
+        val directory = E5EventCountSupport.repositoryRoot().resolve("testdata/sessions/$category/$name")
+        return runSession(directory, mutableListOf(), mutableListOf())
+    }
+
+    private fun assertStartupDirectionUnknownRecord(run: RunResult, event: String) {
+        val matches = run.transitions.flatMap { transition ->
+            records(transition).filter { it.event == event && it.reason == "direction-unknown" }
+                .map { transition to it }
+        }
+        check(matches.size == 1) {
+            "${run.directory.fileName}: expected one actual $event/direction-unknown record, found ${matches.size}"
+        }
+        val (transition, record) = matches.single()
+        check(transition.before.startupEnabled && !transition.before.startupResolved &&
+            transition.result.nextState.startupEnabled && !transition.result.nextState.startupResolved &&
+            transition.before.direction == ProgressDirection.UNKNOWN &&
+            transition.result.nextState.direction == ProgressDirection.UNKNOWN
+        ) {
+            "${run.directory.fileName}: $event/direction-unknown was not consumed while startup direction was unresolved"
+        }
+        val consumed = when (event) {
+            "E1" -> record.threshold.toInt() in transition.result.nextState.consumedMilestoneIndices
+            "E3" -> record.threshold.toDouble() in transition.result.nextState.consumedRemainingThresholds
+            "E4" -> record.threshold.toInt() in transition.result.nextState.consumedSlopeIndices
+            "E6" -> record.threshold.toInt() in transition.result.nextState.consumedWaypointIndices
+            else -> error("unsupported direction-unknown event $event")
+        }
+        check(consumed) { "${run.directory.fileName}: $event threshold ${record.threshold} was recorded without being consumed" }
     }
 
     private fun recordCases(run: RunResult): List<RecordCase> = run.transitions.flatMap { transition ->

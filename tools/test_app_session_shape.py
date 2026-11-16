@@ -40,6 +40,13 @@ def discarded_generic_event() -> dict:
     }
 
 
+def discarded_turn_event(event: str, seq: int) -> dict:
+    return {
+        "seq": seq, "t": 1.0, "stream": "sys", "kind": "event.discarded", "battery_pct": None,
+        "details": {"event": event, "threshold": "0", "reason": "direction-unknown", "progress_meters": "5.0"},
+    }
+
+
 def discarded_waypoint_event() -> dict:
     return {
         "seq": 5, "t": 1.0, "stream": "sys", "kind": "event.discarded", "battery_pct": None,
@@ -57,6 +64,7 @@ def arrival_blocked_event() -> dict:
         "details": {
             "creditedMeters": "0.0", "requiredMeters": "50.0",
             "baselineRemainingMeters": "20.0", "projectedMeters": "1980.0",
+            "reason": "insufficient-advance",
         },
     }
 
@@ -70,6 +78,8 @@ def assert_discard_shape(event: dict) -> None:
         "E4": {"event", "threshold", "progress_meters", "peak_index", "peak_s", "passed_projected_meters", "delay_reason", "reason"},
         "E6": {"event", "threshold", "progress_meters", "waypoint_index", "waypoint_s", "distance_meters", "reason"},
         "E8": {"event", "threshold", "reason", "progress_meters"},
+        "TURN_AHEAD": {"event", "threshold", "reason", "progress_meters"},
+        "TURN_NOW": {"event", "threshold", "reason", "progress_meters"},
     }.get(details.get("event"))
 
     if expected is None or set(details) != expected:
@@ -81,11 +91,13 @@ def assert_discard_shape(event: dict) -> None:
 
 def assert_arrival_blocked_shape(event: dict) -> None:
     details = event["details"]
-    expected = {"creditedMeters", "requiredMeters", "baselineRemainingMeters", "projectedMeters"}
+    expected = {"creditedMeters", "requiredMeters", "baselineRemainingMeters", "projectedMeters", "reason"}
     if event.get("kind") != "arrival.blocked" or set(details) != expected:
         raise AssertionError("unexpected arrival.blocked fields")
     if any(not isinstance(value, str) for value in details.values()):
         raise AssertionError("arrival.blocked details must be strings")
+    if details["reason"] not in {"direction-unknown", "insufficient-advance"}:
+        raise AssertionError("arrival.blocked reason must identify the direction or advance guard")
     if {"lat", "lon", "timestamp", "t", "name"} & set(details):
         raise AssertionError("arrival.blocked details contain location, time, or name data")
 
@@ -108,6 +120,8 @@ def event_stream(include_frame: bool = True) -> list[dict]:
     events.append(discarded_waypoint_event())
     events.append(discarded_generic_event())
     events.append(arrival_blocked_event())
+    events.append(discarded_turn_event("TURN_AHEAD", 8))
+    events.append(discarded_turn_event("TURN_NOW", 9))
     return events
 
 
@@ -126,10 +140,10 @@ def main() -> int:
         write_session(root, include_frame=True)
         errors, warnings, count = validate(root)
         assert not errors, errors
-        assert count == 8
+        assert count == 10
         emitted = [json.loads(raw) for raw in (root / "events.ndjson").read_text(encoding="utf-8").splitlines()]
         discards = [event for event in emitted if event.get("kind") == "event.discarded"]
-        assert [event["details"]["event"] for event in discards] == ["E4", "E6", "E1"]
+        assert [event["details"]["event"] for event in discards] == ["E4", "E6", "E1", "TURN_AHEAD", "TURN_NOW"]
         assert all(event["stream"] == "sys" for event in discards)
         for discard in discards:
             assert_discard_shape(discard)

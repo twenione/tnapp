@@ -1,0 +1,66 @@
+{
+  "session_id": "d9407db1-9918-5701-af4e-7260269dbeaf",
+  "schema_version": "0.1.0-draft",
+  "started_at_wall": "2000-01-01T00:00:00Z",
+  "app": {
+    "version": "0.1.0",
+    "build": 0,
+    "code_hash": "sha256:synthetic"
+  },
+  "engine": {
+    "config": {
+      "stub": false,
+      "variant": "golden_arrival_long",
+      "implementation": "core-guide",
+      "events": {
+        "E1": false,
+        "E2": false,
+        "E3": false,
+        "E4": false,
+        "E5": false,
+        "E6": false,
+        "E7": false,
+        "E8": false
+      }
+    },
+    "rng_seed": 100
+  },
+  "route": {
+    "gpx_id": "synthetic-300m-one-bend",
+    "gpx_hash": "sha256:725b44404e98d021c7674292b2b45e6a10de3aef869a7b23e87da4c43a4265b3",
+    "point_count": 3,
+    "elevation_used": false,
+    "elevation_reason": "absent",
+    "waypoint_count": 0
+  },
+  "clock": {
+    "monotonic_source": "synthetic-sequence",
+    "timestamp_unit": "seconds",
+    "frame_intervals_seconds": [
+      15.0,
+      15.0,
+      65.0,
+      45.0,
+      150.0
+    ]
+  },
+  "privacy": {
+    "upload_default": false
+  },
+  "device": {
+    "model": "synthetic",
+    "os": "test",
+    "sensors": [
+      "gps"
+    ]
+  },
+  "scenario": {
+    "family": "startup-arrival-long",
+    "description": "Synthetic 300m route with one right-angle bend; start at 0m and end at 290m"
+  },
+  "startup_oracle": {
+    "decision_source_seq": 4,
+    "direction": "forward",
+    "route_reversed": false
+  }
+}
