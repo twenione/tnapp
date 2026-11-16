@@ -51,6 +51,7 @@ class EventPriorityTableTest {
             sunriseAnnounceMinutes = listOf(30, 10),
             sunsetEnabled = false,
             eventMinIntervalSeconds = 0.0,
+            positionGapRematchSeconds = 600.0,
         )
         val startTime = ((sunrise() - 31.0 * 60.0) * 1000.0).roundToLong()
         val first = guide(GuideState.initial(seoulRoute), SensorFrame(startTime, 37.5665, 126.9780, 5f, 1f, null), config)

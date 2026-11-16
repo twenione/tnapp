@@ -5,7 +5,7 @@
   "app": {
     "version": "0.1.0",
     "build": 0,
-    "code_hash": "sha256:synthetic"
+    "code_hash": "git:892d19f6dc4d896410bd6e1afed71bc7484a24cc-dirty"
   },
   "engine": {
     "config": {

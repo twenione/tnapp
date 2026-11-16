@@ -200,13 +200,11 @@ private fun GuideConfig.withOverrides(values: Map<String, Double>): GuideConfig 
     turnOnRouteMaxOffsetMeters = values["turnOnRouteMaxOffsetMeters"] ?: turnOnRouteMaxOffsetMeters,
     startTrajectoryMeters = values["startTrajectoryMeters"] ?: startTrajectoryMeters,
     startTrajectoryMatchToleranceMeters = values["startTrajectoryMatchToleranceMeters"] ?: startTrajectoryMatchToleranceMeters,
-    directionRefitIntervalMeters = values["directionRefitIntervalMeters"] ?: directionRefitIntervalMeters,
-    directionSuspectMarginMeters = values["directionSuspectMarginMeters"] ?: directionSuspectMarginMeters,
-    directionSuspectEnabled = values["directionSuspectEnabled"]?.let { it == 1.0 } ?: directionSuspectEnabled,
-    directionDecidedShiftToleranceMeters = values["directionDecidedShiftToleranceMeters"] ?: directionDecidedShiftToleranceMeters,
     overlapMinRouteGapMeters = values["overlapMinRouteGapMeters"] ?: overlapMinRouteGapMeters,
     overlapNearMeters = values["overlapNearMeters"] ?: overlapNearMeters,
-    directionObservationAfterOverlapMeters = values["directionObservationAfterOverlapMeters"] ?: directionObservationAfterOverlapMeters,
+    positionGapRematchSeconds = values["positionGapRematchSeconds"] ?: positionGapRematchSeconds,
+    gapMaxWalkSpeedMps = values["gapMaxWalkSpeedMps"] ?: gapMaxWalkSpeedMps,
+    directionSwitchDistanceMeters = values["directionSwitchDistanceMeters"] ?: directionSwitchDistanceMeters,
     milestoneEnabled = values["milestoneEnabled"]?.let { it == 1.0 } ?: milestoneEnabled,
     elapsedEnabled = values["elapsedEnabled"]?.let { it == 1.0 } ?: elapsedEnabled,
     remainingEnabled = values["remainingEnabled"]?.let { it == 1.0 } ?: remainingEnabled,
@@ -225,8 +223,7 @@ private val EVENT_TOGGLE_FIELDS = setOf(
     "elevationEnabled",
     "waypointEnabled",
     "sunsetEnabled",
-    "sunriseEnabled",
-    "directionSuspectEnabled"
+    "sunriseEnabled"
 )
 
 private fun runConfigProbe(config: GuideConfig) {
@@ -265,38 +262,17 @@ private fun runStartupSensitivityProbe(config: GuideConfig) {
     var straightState = GuideState.starting(straight, config)
     var decisionFrame = -1
     var decisionStart = Double.NaN
-    var decisionCurrentProgress = 0.0
-    var reverseSteps = 0
     for (second in 0..100) {
         val result = guide(straightState, probeFrame(straight, second.toDouble(), second * 1_000L, 1f), config)
         straightState = result.nextState
         if (straightState.startupResolved) {
             decisionFrame = second
             decisionStart = straightState.firstMatchProgressMeters ?: Double.NaN
-            decisionCurrentProgress = straightState.lastMatch?.projectedMeters ?: second.toDouble()
             break
         }
     }
-    if (decisionFrame >= 0) {
-        reverseSteps = decisionCurrentProgress.toInt().coerceAtLeast(0)
-        for (step in 1..reverseSteps) {
-            val progress = (decisionCurrentProgress - step).coerceAtLeast(0.0)
-            straightState = guide(
-                straightState,
-                probeFrame(straight, progress, (decisionFrame + step) * 1_000L, 1f),
-                config,
-            ).nextState
-        }
-    }
-    val suspect = straightState.systemEvents.lastOrNull { it.kind == "direction.suspect" }
-    val lastRefitWalked = straightState.directionObservationLastRefitWalkedMeters
     println(
-        "{\"probe\":\"startup-refit\",\"decision_frame\":$decisionFrame,\"decision_start_m\":$decisionStart," +
-            "\"decision_current_m\":$decisionCurrentProgress," +
-            "\"reverse_steps\":$reverseSteps,\"suspect\":${suspect != null}," +
-            "\"decided_shift_tolerance_m\":${config.directionDecidedShiftToleranceMeters}," +
-            "\"suspect_walked_m\":${suspect?.fields?.get("walked_since_decision_m") ?: "null"}," +
-            "\"last_refit_walked_m\":${lastRefitWalked ?: "null"},\"observation_active\":${straightState.directionObservationActive}}",
+        "{\"probe\":\"startup-direction\",\"decision_frame\":$decisionFrame,\"decision_start_m\":$decisionStart}",
     )
 
     val nearParallel = probeRoute(
@@ -322,59 +298,30 @@ private fun runStartupSensitivityProbe(config: GuideConfig) {
             "\"decision_start_m\":${parallelState.firstMatchProgressMeters ?: "null"}}",
     )
 
-    val overlapRoute = nearParallel
-    val overlapStart = 50.0
-    val overlapsAtStart = overlapRoute.overlapProgressRanges.any { overlapStart in it.startMeters..it.endMeters }
-    var observationState = stateOnStartedRoute(overlapRoute, config, overlapStart)
-    for (step in 1..120) {
-        observationState = guide(
-            observationState,
-            probeFrame(overlapRoute, overlapStart + step, step * 1_000L, 1f),
-            config,
-        ).nextState
-    }
-    println(
-        "{\"probe\":\"overlap-observation\",\"overlap_at_start\":$overlapsAtStart," +
-            "\"overlap_ranges\":${overlapRoute.overlapProgressRanges.size}," +
-            "\"observation_active\":${observationState.directionObservationActive}," +
-            "\"last_refit_walked_m\":${observationState.directionObservationLastRefitWalkedMeters ?: "null"}}",
-    )
+    runRematchSensitivityProbe(config)
 }
 
-private fun stateOnStartedRoute(route: RouteModel, config: GuideConfig, progress: Double): com.trailnav.core.GuideState {
-    val segment = route.cumulativeMeters.indexOfLast { it <= progress }.coerceIn(0, route.cumulativeMeters.lastIndex - 1)
-    val span = route.cumulativeMeters[segment + 1] - route.cumulativeMeters[segment]
-    val fraction = if (span <= 0.0) 0.0 else (progress - route.cumulativeMeters[segment]) / span
-    val start = route.points[segment]
-    val end = route.points[segment + 1]
-    val east = start.east + (end.east - start.east) * fraction
-    val north = start.north + (end.north - start.north) * fraction
-    val point = probePoint(route, east, north)
-    val state = GuideState.starting(route, config)
-    return state.copy(
-        startupResolved = true,
-        startupHasMatch = true,
-        hasEnteredRoute = true,
-        direction = com.trailnav.core.ProgressDirection.FORWARD,
-        lastMatch = com.trailnav.core.MatchResult(0.0, progress, segment, start.copy(east = east, north = north), com.trailnav.core.ProgressDirection.FORWARD),
-        firstMatchProgressMeters = progress,
-        sessionStartTimestamp = 0L,
-        lastTimestamp = 0L,
-        directionDecidedAtMillis = 0L,
-        decidedDirection = com.trailnav.core.ProgressDirection.FORWARD,
-        directionObservationActive = true,
-        directionObservationStartWalkedMeters = 0.0,
-        directionObservationStartProgressMeters = progress,
-        directionObservationOverlapExitWalkedMeters = null,
-        directionObservationLastRefitWalkedMeters = 0.0,
-        arrivalBaselineRemainingMeters = (route.totalLengthMeters - progress).coerceAtLeast(0.0),
-        advanceHighWaterMeters = progress,
-        trajectorySamples = listOf(com.trailnav.core.StartTrajectorySample(point, 0L, 0.0, 5.0)),
-        lastTrajectoryTimestampMillis = 0L,
-        lastTrajectoryPoint = point,
-        lastTrajectorySpeedMps = 1.0,
-        lastTrajectoryAccuracyMeters = 5.0,
-    )
+private fun runRematchSensitivityProbe(config: GuideConfig) {
+    val route = probeRoute(listOf(ProbePoint(0.0, 0.0), ProbePoint(0.0, 1_000.0)), config)
+    var gapState = GuideState.initial(route)
+    for (progress in 0..100) {
+        gapState = guide(gapState, probeFrame(route, progress * 4.0, progress * 1_000L, 4f), config).nextState
+    }
+    val gapResult = guide(gapState, probeFrame(route, 520.0, 130_000L, 4f), config)
+    val gapRematched = gapResult.nextState.systemEvents.any { it.kind == "route.rematched" }
+    println("{\"probe\":\"location-gap-rematch\",\"rematched\":$gapRematched}")
+
+    var reverseState = GuideState.initial(route)
+    for (progress in 0..400) {
+        reverseState = guide(reverseState, probeFrame(route, progress.toDouble(), progress * 1_000L, 1f), config).nextState
+    }
+    var timestamp = 401_000L
+    for (progress in 399 downTo 100) {
+        reverseState = guide(reverseState, probeFrame(route, progress.toDouble(), timestamp, 1f), config).nextState
+        timestamp += 1_000L
+    }
+    val switched = reverseState.systemEvents.any { it.kind == "direction.switched" }
+    println("{\"probe\":\"reverse-direction-switch\",\"switched\":$switched}")
 }
 
 private fun probeRoute(points: List<ProbePoint>, config: GuideConfig): RouteModel = RouteModel.fromGpx(buildString {

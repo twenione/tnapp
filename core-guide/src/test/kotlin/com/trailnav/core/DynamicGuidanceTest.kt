@@ -133,6 +133,7 @@ class DynamicGuidanceTest {
             remainingAnnounceMeters = listOf(500.0),
             eventMinIntervalSeconds = 60.0,
             sunsetEnabled = false,
+            positionGapRematchSeconds = 120.0,
         )
         val primed = remainingEventState(route, remainingMeters = route.totalLengthMeters)
         val first = guide(primed, remainingEventFrame(route, route.totalLengthMeters - 120.0, 0L), config)
@@ -170,9 +171,9 @@ class DynamicGuidanceTest {
         val config = GuideConfig(
             remainingEnabled = true,
             remainingAnnounceMeters = listOf(500.0),
-            reverseWarningDwellSeconds = 0.0,
             eventMinIntervalSeconds = 60.0,
             sunsetEnabled = false,
+            positionGapRematchSeconds = 120.0,
         )
         val initial = remainingEventState(route, remainingMeters = 600.0, lastPeriodicEventAt = 0L)
         val pending = guide(initial, remainingEventFrame(route, 499.0, 49_000L), config)
@@ -180,14 +181,22 @@ class DynamicGuidanceTest {
         check(pending.nextState.direction == ProgressDirection.FORWARD)
         check(pending.nextState.pendingRemainingThresholds == setOf(500.0))
 
-        val reverse = guide(pending.nextState, remainingEventFrame(route, 650.0, 60_000L), config)
+        val reverseSeed = pending.nextState.copy(
+            direction = ProgressDirection.REVERSE,
+            lastMatch = pending.nextState.lastMatch?.copy(direction = ProgressDirection.REVERSE),
+        )
+        val reverse = guide(reverseSeed, remainingEventFrame(route, 650.0, 60_000L), config)
         check(reverse.nextState.direction == ProgressDirection.REVERSE) {
             "the test must exercise a confirmed reverse frame, got ${reverse.nextState.direction}"
         }
         check(reverse.guidance !is Guidance.Remaining)
         check(reverse.nextState.pendingRemainingThresholds == setOf(500.0))
 
-        val forwardAgain = guide(reverse.nextState, remainingEventFrame(route, 400.0, 61_000L), config)
+        val forwardSeed = reverse.nextState.copy(
+            direction = ProgressDirection.FORWARD,
+            lastMatch = reverse.nextState.lastMatch?.copy(direction = ProgressDirection.FORWARD),
+        )
+        val forwardAgain = guide(forwardSeed, remainingEventFrame(route, 400.0, 61_000L), config)
         val remaining = forwardAgain.guidance as? Guidance.Remaining
             ?: error("the pending E3 threshold should speak after returning to forward movement")
         check(forwardAgain.nextState.direction == ProgressDirection.FORWARD)
@@ -223,6 +232,7 @@ class DynamicGuidanceTest {
             remainingAnnounceMeters = listOf(2_000.0, 1_990.0),
             eventMinIntervalSeconds = 60.0,
             sunsetEnabled = false,
+            positionGapRematchSeconds = 120.0,
         )
         val state = remainingEventState(route, remainingMeters = 2_050.0, lastPeriodicEventAt = 0L)
         val crossed = guide(state, remainingEventFrame(route, 1_980.0, 49_000L), config)
@@ -278,7 +288,6 @@ class DynamicGuidanceTest {
         val config = GuideConfig(
             remainingEnabled = true,
             remainingAnnounceMeters = listOf(500.0),
-            reverseWarningDwellSeconds = 0.0,
             eventMinIntervalSeconds = 0.0,
             sunsetEnabled = false,
         )
@@ -286,7 +295,7 @@ class DynamicGuidanceTest {
             route,
             remainingMeters = 600.0,
             direction = ProgressDirection.REVERSE,
-        ).copy(emaDeltaMeters = -500.0, reverseSince = 0L)
+        )
         val result = guide(reverse, remainingEventFrame(route, 499.0, 1_000L), config)
         check(result.nextState.direction == ProgressDirection.REVERSE)
         check(result.guidance !is Guidance.Remaining)
@@ -364,6 +373,7 @@ class DynamicGuidanceTest {
                 remainingAnnounceMeters = listOf(1.0),
                 eventMinIntervalSeconds = interval,
                 sunsetEnabled = false,
+                positionGapRematchSeconds = 120.0,
             ),
         )
         check(milestone.guidance !is Guidance.Milestone)
@@ -382,6 +392,7 @@ class DynamicGuidanceTest {
                 remainingAnnounceMeters = listOf(1.0),
                 eventMinIntervalSeconds = interval,
                 sunsetEnabled = false,
+                positionGapRematchSeconds = 120.0,
             ),
         )
         check(elapsed.guidance !is Guidance.Elapsed)
@@ -404,6 +415,7 @@ class DynamicGuidanceTest {
                 remainingAnnounceMeters = listOf(1.0),
                 eventMinIntervalSeconds = interval,
                 sunsetEnabled = false,
+                positionGapRematchSeconds = 120.0,
             ),
         )
         check(slope.guidance !is Guidance.Slope)
@@ -428,6 +440,7 @@ class DynamicGuidanceTest {
                 remainingAnnounceMeters = listOf(1.0),
                 eventMinIntervalSeconds = interval,
                 sunsetEnabled = false,
+                positionGapRematchSeconds = 120.0,
             ),
         )
         check(elevation.guidance !is Guidance.Elevation)
@@ -455,6 +468,7 @@ class DynamicGuidanceTest {
                 remainingAnnounceMeters = listOf(1.0),
                 eventMinIntervalSeconds = interval,
                 sunsetEnabled = false,
+                positionGapRematchSeconds = 120.0,
             ),
         )
         check(waypointResult.guidance !is Guidance.Waypoint)
@@ -656,9 +670,7 @@ class DynamicGuidanceTest {
             lastMatch = MatchResult(0.0, progress, segment, route.points[segment], direction),
             lastTimestamp = timestamp,
             sessionStartTimestamp = timestamp,
-            emaDeltaMeters = if (direction == ProgressDirection.REVERSE) -100.0 else 0.0,
             direction = direction,
-            reverseSince = if (direction == ProgressDirection.REVERSE) timestamp else null,
             lastPeriodicEventAt = lastPeriodicEventAt,
         )
     }
@@ -722,6 +734,7 @@ class DynamicGuidanceTest {
             slopeEnabled = true,
             peakAnnounceLeadMeters = 100.0,
             eventMinIntervalSeconds = 60.0,
+            positionGapRematchSeconds = 120.0,
             sunsetEnabled = false,
         )
         val initial = peakStateAt(route, peak.s - 120.0).copy(lastPeriodicEventAt = 0L)
@@ -747,6 +760,7 @@ class DynamicGuidanceTest {
             peakAnnounceLeadMeters = 100.0,
             eventMinIntervalSeconds = 60.0,
             sunsetEnabled = false,
+            positionGapRematchSeconds = 120.0,
         )
         val initial = peakStateAt(route, peak.s - 120.0).copy(lastPeriodicEventAt = 0L)
         val pending = guide(initial, frameAtProgress(peak.s - 50.0, 30_000L), config)
@@ -812,11 +826,9 @@ class DynamicGuidanceTest {
         val reverse = guide(
             peakStateAt(route, peak.s + 20.0).copy(
                 direction = ProgressDirection.REVERSE,
-                emaDeltaMeters = -40.0,
-                reverseSince = 0L,
             ),
             frameAtProgress(peak.s - 10.0, 1_000L),
-            GuideConfig(slopeEnabled = true, peakAnnounceLeadMeters = 100.0, reverseWarningDwellSeconds = 0.0, eventMinIntervalSeconds = 0.0, sunsetEnabled = false),
+            GuideConfig(slopeEnabled = true, peakAnnounceLeadMeters = 100.0, eventMinIntervalSeconds = 0.0, sunsetEnabled = false),
         )
         check(reverse.nextState.direction == ProgressDirection.REVERSE)
         check(reverse.guidance !is Guidance.Slope)
@@ -893,7 +905,13 @@ class DynamicGuidanceTest {
         check(route.peaks.size >= 3) { "test route must contain at least three peaks: ${route.peaks}" }
         val peaks = route.peaks.take(3)
         val lead = peaks.last().s - (peaks.first().s - 50.0) + 1.0
-        val config = GuideConfig(slopeEnabled = true, peakAnnounceLeadMeters = lead, eventMinIntervalSeconds = 60.0, sunsetEnabled = false)
+        val config = GuideConfig(
+            slopeEnabled = true,
+            peakAnnounceLeadMeters = lead,
+            eventMinIntervalSeconds = 60.0,
+            sunsetEnabled = false,
+            positionGapRematchSeconds = 180.0,
+        )
         val initial = peakStateAt(route, peaks.first().s - 120.0).copy(lastPeriodicEventAt = 0L)
         val pending = guide(initial, frameAtProgress(peaks.first().s - 50.0, 30_000L), config)
         check(pending.nextState.pendingSlopePeaks.keys.containsAll(setOf(0, 1, 2))) {
@@ -1028,14 +1046,11 @@ class DynamicGuidanceTest {
         val config = GuideConfig(
             slopeEnabled = true,
             peakAnnounceLeadMeters = 100.0,
-            reverseWarningDwellSeconds = 0.0,
             eventMinIntervalSeconds = 0.0,
             sunsetEnabled = false,
         )
         val reverseState = peakStateAt(route, peak.s + 20.0).copy(
             direction = ProgressDirection.REVERSE,
-            emaDeltaMeters = -40.0,
-            reverseSince = 0L,
         )
         val result = guide(reverseState, frameAtProgress(peak.s - 10.0, 1_000L), config)
         check(result.nextState.direction == ProgressDirection.REVERSE)
@@ -1180,7 +1195,6 @@ class DynamicGuidanceTest {
             milestoneIntervalMeters = 100.0,
             remainingEnabled = true,
             remainingAnnounceMeters = listOf(route.totalLengthMeters - 200.0),
-            reverseWarningDwellSeconds = 0.0,
             eventMinIntervalSeconds = 0.0,
             sunsetEnabled = false,
         )
@@ -1189,9 +1203,7 @@ class DynamicGuidanceTest {
             lastMatch = MatchResult(0.0, oldProgress, 0, route.points.first(), ProgressDirection.FORWARD),
             lastTimestamp = 0L,
             sessionStartTimestamp = 0L,
-            emaDeltaMeters = -500.0,
             direction = ProgressDirection.REVERSE,
-            reverseSince = 0L,
         )
         val distanceEvents = guide(
             primed,
@@ -1207,7 +1219,6 @@ class DynamicGuidanceTest {
         val slopeConfig = GuideConfig(
             slopeEnabled = true,
             peakAnnounceLeadMeters = 75.0,
-            reverseWarningDwellSeconds = 0.0,
             eventMinIntervalSeconds = 0.0,
             sunsetEnabled = false,
         )
@@ -1215,9 +1226,7 @@ class DynamicGuidanceTest {
             lastMatch = MatchResult(0.0, slope.s - 100.0, 0, slopeRoute.points.first(), ProgressDirection.FORWARD),
             lastTimestamp = 0L,
             sessionStartTimestamp = 0L,
-            emaDeltaMeters = -100.0,
             direction = ProgressDirection.REVERSE,
-            reverseSince = 0L,
         )
         val slopeResult = guide(
             slopeState,
@@ -1236,7 +1245,6 @@ class DynamicGuidanceTest {
         val waypointConfig = GuideConfig(
             waypointEnabled = true,
             waypointAnnounceLeadMeters = 100.0,
-            reverseWarningDwellSeconds = 0.0,
             eventMinIntervalSeconds = 0.0,
             sunsetEnabled = false,
         )
@@ -1244,9 +1252,7 @@ class DynamicGuidanceTest {
             lastMatch = MatchResult(0.0, waypoint.s - 80.0, 0, waypointRoute.points.first(), ProgressDirection.FORWARD),
             lastTimestamp = 0L,
             sessionStartTimestamp = 0L,
-            emaDeltaMeters = -100.0,
             direction = ProgressDirection.REVERSE,
-            reverseSince = 0L,
         )
         val waypointResult = guide(
             waypointState,

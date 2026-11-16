@@ -57,13 +57,13 @@ def aggregate_payloads(payloads: list[dict[str, Any]]) -> tuple[int, list[str]]:
         return aggregate_tool.aggregate(directory, payloads[0]["shard"]["count"])
 
 
-def test_valid_153_mutations_emit_sum_ok() -> None:
+def test_valid_145_mutations_emit_sum_ok() -> None:
     code, output = aggregate_payloads(valid_payloads())
     text = "\n".join(output)
     assert code == 0, text
     assert "task080-* | 25 | 0 | 0 | 25" in text
-    assert "other | 128 | 0 | 0 | 128" in text
-    assert "SUM OK: 153 = 153 detected + 0 exempt + 0 survived" in text
+    assert "other | 120 | 0 | 0 | 120" in text
+    assert "SUM OK: 145 = 145 detected + 0 exempt + 0 survived" in text
 
 
 def test_missing_result_file_fails() -> None:
@@ -147,7 +147,7 @@ def test_workflow_requires_aggregate_job_to_enforce_shard_result() -> None:
 
 
 def run_all() -> None:
-    test_valid_153_mutations_emit_sum_ok()
+    test_valid_145_mutations_emit_sum_ok()
     test_missing_result_file_fails()
     test_duplicate_shard_result_fails()
     test_missing_mutation_fails()

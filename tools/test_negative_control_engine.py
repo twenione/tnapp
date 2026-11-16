@@ -50,7 +50,7 @@ def test_required_mutation_consumers() -> None:
     assert d033.MUTATION_REQUIRED_CONSUMERS["turn-pass-always-false"] == d033.CORE_TEST
     assert d033.MUTATION_REQUIRED_CONSUMERS["turn-identity-zero"] == d033.CORE_TEST
     task093_mutations = {name for name in d033.VARIANTS if name.startswith("task093-m")}
-    assert len(task093_mutations) == 12
+    assert len(task093_mutations) == 8
     task094_m1_mutations = {name for name in d033.VARIANTS if name.startswith("task094-m1-")}
     assert task094_m1_mutations == {
         "task094-m1-e1-direction-unknown-record-omitted",
@@ -64,10 +64,6 @@ def test_required_mutation_consumers() -> None:
     assert all(d033.VARIANT_SOURCE_PATHS[name] == d033.ENGINE for name in task094_m1_mutations)
     assert d033.MUTATION_REQUIRED_CONSUMERS["task093-m4-tie-break-order-reversed"] == d033.CORE_TEST
     assert d033.MUTATION_REQUIRED_CONSUMERS["task093-m10-zero-fit-width"] == d033.CORE_TEST
-    assert d033.APP_START_TEST in d033.MUTATION_REQUIRED_CONSUMERS["task093-m11-record-obligation-test-50m"]
-    assert d033.APP_START_TEST_FILTERS["task093-m14-suspect-changes-direction"].endswith(
-        "directionSuspectToggleChangesOnlyDiagnosticRecording"
-    )
     assert d033.APP_START_TEST in d033.MUTATION_REQUIRED_CONSUMERS["arrival-advance-removed"]
     assert d033.CORE_TEST.issubset(d033.MUTATION_REQUIRED_CONSUMERS["arrival-advance-removed"])
     named_commands = d033.mutation_consumer_commands("arrival-advance-removed", Path("replay"), "gradle")
@@ -294,8 +290,6 @@ def test_unique_mutation_needles() -> None:
     model = model_path.read_text(encoding="utf-8")
     matcher_path = Path("core-guide/src/main/kotlin/com/trailnav/core/StartTrajectoryMatcher.kt")
     matcher = matcher_path.read_text(encoding="utf-8")
-    direction_test_path = Path("app/src/test/kotlin/com/trailnav/app/DirectionSuspectCalibrationTest.kt")
-    direction_test = direction_test_path.read_text(encoding="utf-8")
     start_phase_test_path = d033.APP_START_PHASE_TEST
     start_phase_test = start_phase_test_path.read_text(encoding="utf-8")
     guide_session_path = Path("app/src/main/kotlin/com/trailnav/app/GuideSession.kt")
@@ -307,7 +301,6 @@ def test_unique_mutation_needles() -> None:
         d033.TURN_PASS_SOURCE: turn_pass,
         d033.MODEL_SOURCE: model,
         d033.MATCHER_SOURCE: matcher,
-        d033.APP_DIRECTION_TEST: direction_test,
         d033.APP_START_PHASE_TEST: start_phase_test,
         d033.GUIDE_SESSION_SOURCE: guide_session,
     }

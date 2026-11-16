@@ -1,6 +1,5 @@
 package com.trailnav.core
 
-import kotlin.math.abs
 
 internal object RouteMatcher {
     fun nearest(route: RouteModel, frame: SensorFrame, previousS: Double?, config: GuideConfig): MatchResult? {
@@ -50,28 +49,4 @@ internal object RouteMatcher {
         }
     }
 
-    fun withDirection(previous: GuideState, match: MatchResult, frame: SensorFrame, config: GuideConfig): MatchResult {
-        val previousMatch = previous.lastMatch ?: return match.copy(direction = ProgressDirection.UNKNOWN)
-        val stationary = isStationary(frame, config)
-        val delta = match.projectedMeters - previousMatch.projectedMeters
-        val ema = if (stationary) 0.0 else {
-            config.emaAlpha * delta + (1.0 - config.emaAlpha) * previous.emaDeltaMeters
-        }
-        val direction = when {
-            stationary || abs(ema) < 0.01 -> ProgressDirection.STATIONARY
-            ema > 0.0 -> ProgressDirection.FORWARD
-            else -> ProgressDirection.REVERSE
-        }
-        return match.copy(direction = direction)
-    }
-
-    fun updatedEma(previous: GuideState, current: MatchResult, frame: SensorFrame, config: GuideConfig): Double {
-        if (isStationary(frame, config)) return 0.0
-        val previousMatch = previous.lastMatch ?: return previous.emaDeltaMeters
-        val delta = current.projectedMeters - previousMatch.projectedMeters
-        return config.emaAlpha * delta + (1.0 - config.emaAlpha) * previous.emaDeltaMeters
-    }
-
-    private fun isStationary(frame: SensorFrame, config: GuideConfig): Boolean =
-        frame.speed != null && frame.speed.toDouble() < config.stationarySpeedMps
 }

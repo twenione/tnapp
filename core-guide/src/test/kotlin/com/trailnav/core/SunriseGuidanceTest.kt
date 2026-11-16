@@ -339,30 +339,6 @@ class SunriseGuidanceTest {
     }
 
     @Test
-    fun sunriseFiresInReverseAfterDwell() {
-        val seed = Instant.parse("2026-09-20T19:00:00Z").toEpochMilli()
-        val sunrise = sunriseEpochSeconds(seed, 37.5665, 126.9780)!!
-        val reverseConfig = config.copy(reverseWarningDwellSeconds = 60.0)
-        var state = guide(
-            GuideState.initial(route),
-            SensorFrame(((sunrise - 33.0 * 60.0) * 1000.0).roundToLong(), 37.5685, 126.9780, 5f, 1f, null),
-            reverseConfig,
-        ).nextState
-        state = guide(
-            state,
-            SensorFrame(((sunrise - 31.0 * 60.0) * 1000.0).roundToLong(), 37.5675, 126.9780, 5f, 1f, null),
-            reverseConfig,
-        ).nextState
-        val result = guide(
-            state,
-            SensorFrame(((sunrise - 29.0 * 60.0) * 1000.0).roundToLong(), 37.5670, 126.9780, 5f, 1f, null),
-            reverseConfig,
-        )
-        check(result.nextState.direction == ProgressDirection.REVERSE)
-        check(result.guidance is Guidance.Sunrise)
-    }
-
-    @Test
     fun roundsRemainingMinutes() {
         val seed = Instant.parse("2026-09-20T19:00:00Z").toEpochMilli()
         val sunrise = sunriseEpochSeconds(seed, 37.5665, 126.9780)!!

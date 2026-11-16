@@ -60,8 +60,6 @@ data class GuideConfig(
     val accuracyRejectMeters: Double = 50.0,
     val stationarySpeedMps: Double = 0.3,
     val searchWindowMeters: Double = 200.0,
-    val emaAlpha: Double = 0.5,
-    val reverseWarningDwellSeconds: Double = 60.0,
     val offRouteEnterDistMeters: Double = 25.0,
     val offRouteEnterDwellSeconds: Double = 20.0,
     val offRouteExitDistMeters: Double = 15.0,
@@ -128,25 +126,20 @@ data class GuideConfig(
     val etaMaxTotalSeconds: Double = 86_400.0,
     val etaMinAverageSpeedMps: Double = 0.10,
     val elevationSpikeMaxRatio: Double = 0.02,
-    val directionResumeHoldSeconds: Double = 3.0,
     /** Walked route distance required before the start trajectory is matched. */
     val startTrajectoryMeters: Double = 30.0,
     /** Maximum RMS-fit error gap treated as an equivalent trajectory interpretation. */
     val startTrajectoryMatchToleranceMeters: Double = 1.0,
-    /** Distance between full-route refits while checking the decided route interpretation. */
-    val directionRefitIntervalMeters: Double = 10.0,
-    /** Excess RMS fit error that marks the decided interpretation as suspect. */
-    val directionSuspectMarginMeters: Double = 5.0,
-    /** Enables post-decision direction observation and its diagnostic record. */
-    val directionSuspectEnabled: Boolean = true,
-    /** Position shift allowed when checking the fit of the already-decided interpretation. */
-    val directionDecidedShiftToleranceMeters: Double = 15.0,
     /** Minimum route-progress separation used to identify overlapping route portions. */
     val overlapMinRouteGapMeters: Double = 100.0,
     /** Maximum spatial separation considered an overlapping route portion. */
     val overlapNearMeters: Double = 15.0,
-    /** Distance observed after leaving an overlap before ending direction verification. */
-    val directionObservationAfterOverlapMeters: Double = 150.0,
+    /** Minimum location-update gap before displacement is considered for trajectory rematching. */
+    val positionGapRematchSeconds: Double = 30.0,
+    /** Maximum plausible straight-line walking speed during a location-update gap. */
+    val gapMaxWalkSpeedMps: Double = 2.0,
+    /** Reverse distance required before switching the route interpretation. */
+    val directionSwitchDistanceMeters: Double = 150.0,
     val routeQualityGapWarnMeters: Double = 100.0,
     val routeQualityShortSegmentMeters: Double = 6.0,
 ) {
@@ -154,7 +147,6 @@ data class GuideConfig(
         require(accuracyRejectMeters >= 0.0)
         require(stationarySpeedMps >= 0.0)
         require(searchWindowMeters > 0.0)
-        require(emaAlpha in 0.0..1.0)
         require(offRouteExitDistMeters <= offRouteEnterDistMeters)
         require(arriveProgressFraction in 0.0..1.0)
         require(arrivalWalkMaxSpeedMps > 0.0)
@@ -191,15 +183,13 @@ data class GuideConfig(
         require(elevationMedianHalfWindowMeters > 0.0)
         require(elevationMeanHalfWindowMeters > 0.0)
         require(elevationSpikeMaxRatio in 0.0..1.0)
-        require(directionResumeHoldSeconds >= 0.0)
         require(startTrajectoryMeters > 0.0)
         require(startTrajectoryMatchToleranceMeters >= 0.0)
-        require(directionRefitIntervalMeters > 0.0)
-        require(directionSuspectMarginMeters >= 0.0)
-        require(directionDecidedShiftToleranceMeters >= 0.0)
         require(overlapMinRouteGapMeters > 0.0)
         require(overlapNearMeters >= 0.0)
-        require(directionObservationAfterOverlapMeters >= 0.0)
+        require(positionGapRematchSeconds > 0.0)
+        require(gapMaxWalkSpeedMps > 0.0)
+        require(directionSwitchDistanceMeters > 0.0)
         require(etaWindowSeconds > 0.0)
         require(etaMinWindowMeters >= 0.0)
         require(etaMinMovingSpeedMps >= 0.0)
@@ -226,13 +216,9 @@ data class GuideConfig(
             "turnOnRouteMaxOffsetMeters",
             "startTrajectoryMeters",
             "startTrajectoryMatchToleranceMeters",
-            "directionRefitIntervalMeters",
-            "directionSuspectMarginMeters",
-            "directionSuspectEnabled",
-            "directionDecidedShiftToleranceMeters",
-            "overlapMinRouteGapMeters",
-            "overlapNearMeters",
-            "directionObservationAfterOverlapMeters",
+            "positionGapRematchSeconds",
+            "gapMaxWalkSpeedMps",
+            "directionSwitchDistanceMeters",
         )
 
         /** Explicit exclusions required by D-029 for non-sensitivity fields. */
@@ -240,14 +226,14 @@ data class GuideConfig(
             "accuracyRejectMeters" to "input filter threshold; covered by matching tests",
             "stationarySpeedMps" to "movement classification; covered by matching tests",
             "searchWindowMeters" to "matching search bound; covered by out-and-back test",
-            "emaAlpha" to "progress smoothing; covered by direction test",
-            "reverseWarningDwellSeconds" to "reverse warning timing; covered by matching tests",
             "arriveRadiusMeters" to "fixed Phase 1 arrival criterion; covered by arrival tests",
             "arriveProgressFraction" to "fixed Phase 1 arrival criterion; covered by arrival tests",
             "arrivalWalkMaxSpeedMps" to "covered by ArrivalAdvanceTest.arrivalWalkMaxSpeedChangesOutcome",
             "arrivalJumpToleranceMeters" to "covered by ArrivalAdvanceTest.arrivalJumpToleranceChangesOutcome",
             "arrivalAdvanceFraction" to "covered by ArrivalAdvanceTest.arrivalAdvanceFractionChangesOutcome",
             "arrivalMinAdvanceMeters" to "covered by ArrivalAdvanceTest.arrivalMinAdvanceMetersChangesOutcome",
+            "overlapMinRouteGapMeters" to "overlap ranges are computed but no longer read by the guide after TASK-113 (isProgressInOverlap has no caller)",
+            "overlapNearMeters" to "overlap ranges are computed but no longer read by the guide after TASK-113 (isProgressInOverlap has no caller)",
             "minimumPointSpacingMeters" to "route preprocessing criterion",
             "maximumPointGapMeters" to "route warning criterion",
             "douglasPeuckerEpsilonMeters" to "route preprocessing criterion",
@@ -264,7 +250,6 @@ data class GuideConfig(
             "elevationGridMeters" to "covered by ElevationSmoothingTest.gridSpacingControlsSampleCount",
             "elevationMedianHalfWindowMeters" to "covered by ElevationSmoothingTest.medianWindowControlsSpikeRemoval",
             "elevationMeanHalfWindowMeters" to "covered by ElevationSmoothingTest.meanWindowControlsSmoothing",
-            "directionResumeHoldSeconds" to "covered by MatchingTest.stopResumeR1DoesNotReportReverseDuringGpsNoise",
             "eventMinIntervalSeconds" to "covered by DynamicGuidanceTest.minimumEventInterval",
             "milestoneIntervalMeters" to "covered by DynamicGuidanceTest.milestoneThreshold",
             "remainingAnnounceMeters" to "covered by DynamicGuidanceTest.remainingThresholds",
@@ -388,19 +373,12 @@ data class GuideState(
     /** Direction inferred on the imported route before the engine normalizes the route. */
     val decidedDirection: ProgressDirection? = null,
     val routeReversed: Boolean = false,
-    val directionObservationActive: Boolean = false,
-    val directionObservationStartWalkedMeters: Double? = null,
-    val directionObservationStartProgressMeters: Double? = null,
-    val directionObservationOverlapExitWalkedMeters: Double? = null,
-    val directionObservationLastRefitWalkedMeters: Double? = null,
-    val directionSuspectRecorded: Boolean = false,
     val systemEvents: List<EngineSystemEvent> = emptyList(),
     val hasEnteredRoute: Boolean = false,
     val lastMatch: MatchResult? = null,
     val firstMatchProgressMeters: Double? = null,
     val lastTimestamp: Long? = null,
     val sessionStartTimestamp: Long? = null,
-    val emaDeltaMeters: Double = 0.0,
     val direction: ProgressDirection = ProgressDirection.UNKNOWN,
     val stationary: Boolean = false,
     val candidateOffRouteSince: Long? = null,
@@ -410,9 +388,6 @@ data class GuideState(
     val offRoute: Boolean = false,
     val lastAnnouncementAt: Long? = null,
     val lastAnnouncementDistance: Double? = null,
-    val reverseSince: Long? = null,
-    /** True after the one-time reverse-dwell status has been emitted. */
-    val reverseStatusIssued: Boolean = false,
     val arrived: Boolean = false,
     val completedTurnAheadIndices: Set<Int> = emptySet(),
     val completedTurnNowIndices: Set<Int> = emptySet(),
@@ -441,7 +416,11 @@ data class GuideState(
     val sunriseEvaluated: Boolean = false,
     val consumedSunriseThresholds: Set<Int> = emptySet(),
     val sunriseLocalDay: Long? = null,
-    val resumeSince: Long? = null,
+    /** Rematching is retried after a long off-route stay or location-update gap. */
+    val rematchPending: Boolean = false,
+    val rematchPendingReason: String? = null,
+    /** Directional fit distance accumulated while walking against the current route orientation. */
+    val reverseWalkedMeters: Double = 0.0,
 ) {
     companion object {
         fun initial(route: RouteModel): GuideState = GuideState(route)
