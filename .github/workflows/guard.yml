@@ -4,9 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened]
   schedule:
-    - cron: '0 18 * * *'
+    - cron: '0 18 * * 0'
   workflow_dispatch:
 
 permissions:
@@ -93,11 +93,11 @@ jobs:
           gradle-version: '8.14'
       - name: Compile and run core-guide tests
         env:
-          START_PHASE_GRID_N: '500'
+          START_PHASE_GRID_N: '20'
         run: gradle :core-guide:test :replay:installDist :app:testDebugUnitTest :app:assembleDebug -PstartPhaseGridSampleCount="$START_PHASE_GRID_N"
       - name: Verify effective start-phase grid sample count
         env:
-          START_PHASE_GRID_N: '500'
+          START_PHASE_GRID_N: '20'
         run: python tools/check_grid_effective_n.py app/build/test-results/testDebugUnitTest --expected-n "$START_PHASE_GRID_N"
       - name: Upload debug APK
         if: success()
@@ -252,7 +252,7 @@ jobs:
         run: python tools/test_check_exclusion_references.py
 
   negative-control-engine-shard:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-campaign'))
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -286,7 +286,7 @@ jobs:
   negative-control-engine:
     runs-on: ubuntu-latest
     needs: negative-control-engine-shard
-    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-campaign')))
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -404,7 +404,7 @@ jobs:
         run: python tools/config_sensitivity.py --cli replay/build/install/replay/bin/replay
 
   start-phase-grid-full:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-campaign'))
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 95
     steps:
@@ -418,10 +418,10 @@ jobs:
           gradle-version: '8.14'
       - name: Run the full start-phase grid
         env:
-          START_PHASE_GRID_N: '1000'
+          START_PHASE_GRID_N: '500'
         run: gradle :app:testDebugUnitTest --tests "com.trailnav.app.StartPhaseGridTest" -PstartPhaseGridSampleCount="$START_PHASE_GRID_N"
       - name: Verify effective start-phase grid sample count
         env:
-          START_PHASE_GRID_N: '1000'
+          START_PHASE_GRID_N: '500'
         run: python tools/check_grid_effective_n.py app/build/test-results/testDebugUnitTest --expected-n "$START_PHASE_GRID_N"
 

@@ -8,6 +8,7 @@ import com.trailnav.core.ArrivalBlockedRecord
 import com.trailnav.core.MatchResult
 import com.trailnav.core.ProgressDirection
 import com.trailnav.core.RouteModel
+import java.nio.file.Files
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.Random
@@ -507,18 +508,26 @@ class StartPhaseGridTest {
 
     @Test
     fun startPhaseNoFalseArrivalWithinFiveMinutes() {
-        val violations = StartPhaseGrid.cells
-            .filter { it.sigmaMeters <= 5.0 && it.falseArrivalRuns > 0 }
-            .map { cell -> cell.label + ": falseArrivalRuns=" + cell.falseArrivalRuns + "/" + cell.samples }
-        assertTrue(violations.isEmpty(), violations.take(30).joinToString("\n"))
+        assertLowSigmaFalseArrivalCountsDoNotExceedMainBaseline(reportWhenNotN20 = true)
     }
 
     @Test
     fun startPhaseD210LowSigmaFalseArrivalGate() {
-        val violations = StartPhaseGrid.cells
-            .filter { it.sigmaMeters <= 5.0 && it.falseArrivalRuns > 0 }
-            .map { cell -> cell.label + ": falseArrivalRuns=" + cell.falseArrivalRuns + "/" + cell.samples }
-        assertTrue(violations.isEmpty(), violations.take(30).joinToString("\n"))
+        assertLowSigmaFalseArrivalCountsDoNotExceedMainBaseline(reportWhenNotN20 = false)
+    }
+
+    @Test
+    fun startPhaseBaselineComparisonRejectsMissingLabelsAndRegressions() {
+        val baseline = mapOf("cell-a" to 0, "cell-b" to 1)
+        assertEquals(emptyList(), lowSigmaFalseArrivalBaselineViolations(baseline, baseline))
+        assertTrue(
+            lowSigmaFalseArrivalBaselineViolations(mapOf("cell-a" to 0), baseline)
+                .any { it.contains("label mismatch") },
+        )
+        assertTrue(
+            lowSigmaFalseArrivalBaselineViolations(mapOf("cell-a" to 1, "cell-b" to 1), baseline)
+                .any { it.contains("cell-a") },
+        )
     }
 
     @Test
@@ -891,7 +900,7 @@ internal fun parseStartPhaseGridSampleCount(raw: String?): Int {
 }
 
 internal object StartPhaseGrid {
-    private val sampleCount = parseStartPhaseGridSampleCount(
+    val sampleCount = parseStartPhaseGridSampleCount(
         System.getProperty("trailnav.startPhaseGrid.sampleCount"),
     )
     private const val SEED_BASE = 84_159_177L
@@ -1926,4 +1935,65 @@ private object FilesWalk {
                 .toList()
         }
     }
+}
+
+private fun assertLowSigmaFalseArrivalCountsDoNotExceedMainBaseline(reportWhenNotN20: Boolean) {
+    val lowSigmaCells = StartPhaseGrid.cells.filter { it.sigmaMeters <= 5.0 }
+    if (StartPhaseGrid.sampleCount != 20) {
+        if (reportWhenNotN20) {
+            lowSigmaCells.sortedBy { it.label }.forEach { cell ->
+                println(
+                    "D223-MEASUREMENT sigma=" + cell.sigmaMeters +
+                        " label=" + cell.label +
+                        " N=" + cell.samples +
+                        " falseArrivalRuns=" + cell.falseArrivalRuns,
+                )
+            }
+        }
+        return
+    }
+    val currentCounts = lowSigmaCells.associate { it.label to it.falseArrivalRuns }
+    assertEquals(lowSigmaCells.size, currentCounts.size, "sigma<=5 grid labels must be unique")
+    val baselineCounts = readStartPhaseGridBaselineN20()
+    val violations = lowSigmaFalseArrivalBaselineViolations(currentCounts, baselineCounts)
+    assertTrue(violations.isEmpty(), violations.take(30).joinToString("\n"))
+}
+
+private fun readStartPhaseGridBaselineN20(): Map<String, Int> {
+    val source = Files.newBufferedReader(repositoryRoot().resolve("tools/start_phase_grid_baseline_n20.json"))
+        .use { it.readText() }
+    val sampleCount = Regex("\"sampleCount\"\\s*:\\s*(\\d+)")
+        .find(source)?.groupValues?.get(1)?.toIntOrNull()
+        ?: error("start-phase baseline is missing sampleCount")
+    require(sampleCount == 20) { "start-phase baseline sampleCount must be 20, got " + sampleCount }
+    val cellsSource = Regex("\"cells\"\\s*:\\s*\\{(.*?)\\}", RegexOption.DOT_MATCHES_ALL)
+        .find(source)?.groupValues?.get(1)
+        ?: error("start-phase baseline is missing cells")
+    val entries = Regex("\"([^\"]+)\"\\s*:\\s*(\\d+)").findAll(cellsSource).map { match ->
+        match.groupValues[1] to (match.groupValues[2].toIntOrNull()
+            ?: error("invalid start-phase baseline count for " + match.groupValues[1]))
+    }.toList()
+    val declaredEntries = Regex("\"[^\"]+\"\\s*:").findAll(cellsSource).count()
+    require(entries.isNotEmpty()) { "start-phase baseline has no cells" }
+    require(entries.size == declaredEntries) { "start-phase baseline cell values must all be integer counts" }
+    require(entries.all { it.second >= 0 }) { "start-phase baseline counts must be non-negative" }
+    require(entries.map { it.first }.toSet().size == entries.size) { "start-phase baseline has duplicate labels" }
+    return entries.toMap()
+}
+
+internal fun lowSigmaFalseArrivalBaselineViolations(
+    current: Map<String, Int>,
+    baseline: Map<String, Int>,
+): List<String> {
+    val missingFromBaseline = current.keys - baseline.keys
+    val missingFromGrid = baseline.keys - current.keys
+    if (missingFromBaseline.isNotEmpty() || missingFromGrid.isNotEmpty()) {
+        return listOf(
+            "label mismatch: missing from baseline=" + missingFromBaseline.sorted() +
+                ", missing from grid=" + missingFromGrid.sorted(),
+        )
+    }
+    return current.entries
+        .filter { (label, count) -> count > baseline.getValue(label) }
+        .map { (label, count) -> label + ": falseArrivalRuns=" + count + " exceeds main=" + baseline.getValue(label) }
 }

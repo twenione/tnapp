@@ -10,7 +10,6 @@ from pathlib import Path
 FULL_GATE_PARTS = (
     "github.event_name == 'schedule'",
     "github.event_name == 'workflow_dispatch'",
-    "contains(github.event.pull_request.labels.*.name, 'run-campaign')",
 )
 FULL_JOBS = ("negative-control-engine-shard", "negative-control-engine", "start-phase-grid-full")
 FAST_JOBS = (
@@ -84,8 +83,10 @@ def check_workflow_text(workflow: str) -> list[str]:
     if not re.search(r"(?m)^  workflow_dispatch:\s*$", trigger_text):
         failures.append("on must include workflow_dispatch")
     pull_request = re.search(r"(?ms)^  pull_request:\s*\n(.*?)(?=^  [A-Za-z0-9_-]+:|\Z)", trigger_text)
-    if pull_request is None or not re.search(r"(?m)^    types:.*\blabeled\b", pull_request.group(1)):
-        failures.append("pull_request must include labeled in types")
+    if pull_request is None:
+        failures.append("on must include pull_request")
+    elif re.search(r"(?m)^    types:.*\blabeled\b", pull_request.group(1)):
+        failures.append("pull_request must not include labeled in types")
     push = re.search(r"(?ms)^  push:\s*\n(.*?)(?=^  [A-Za-z0-9_-]+:|\Z)", trigger_text)
     if push is None or not re.search(r"(?m)^    branches:\s*\[\s*main\s*\]", push.group(1)):
         failures.append("push must be restricted to main")
@@ -101,6 +102,13 @@ def check_workflow_text(workflow: str) -> list[str]:
         for required in FULL_GATE_PARTS:
             if required not in condition:
                 failures.append(f"{job}: if is missing {required}")
+        event_names = set(re.findall(r"github\.event_name == '([^']+)'", condition))
+        if event_names != {"schedule", "workflow_dispatch"}:
+            failures.append(f"{job}: if must limit event names to schedule and workflow_dispatch")
+        if "run-campaign" in condition:
+            failures.append(f"{job}: if must not include run-campaign")
+        if "pull_request" in condition:
+            failures.append(f"{job}: if must not include pull_request")
         if job == "negative-control-engine" and "always()" not in condition:
             failures.append("negative-control-engine: if must include always()")
 

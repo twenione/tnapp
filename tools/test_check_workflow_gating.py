@@ -8,7 +8,8 @@ import check_workflow_gating as checker
 
 
 WORKFLOW = Path(".github/workflows/guard.yml")
-FULL_GATE = "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-campaign'))"
+FULL_GATE = "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
+CAMPAIGN_GATE = "(github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-campaign'))"
 
 
 def replace_job_block(workflow: str, job_name: str, transform) -> str:
@@ -34,19 +35,46 @@ def test_normal_workflow_passes() -> None:
     assert checker.check_workflow_text(WORKFLOW.read_text(encoding="utf-8")) == []
 
 
-def test_missing_campaign_label_is_rejected() -> None:
+def test_campaign_label_gate_is_rejected() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     broken = replace_job_block(workflow, "negative-control-engine-shard", lambda lines: [
-        line.replace(" || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-campaign'))", "")
+        line.replace("github.event_name == 'workflow_dispatch'", "github.event_name == 'workflow_dispatch' || " + CAMPAIGN_GATE)
         for line in lines
     ])
     _must_fail(broken, "run-campaign")
 
 
+def test_pull_request_full_job_gate_is_rejected() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    broken = replace_job_block(workflow, "start-phase-grid-full", lambda lines: [
+        line.replace("github.event_name == 'workflow_dispatch'", "github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'")
+        for line in lines
+    ])
+    _must_fail(broken, "if must not include pull_request")
+
+
+def test_unrelated_event_full_job_gate_is_rejected() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    broken = replace_job_block(workflow, "start-phase-grid-full", lambda lines: [
+        line.replace("github.event_name == 'workflow_dispatch'", "github.event_name == 'workflow_dispatch' || github.event_name == 'push'")
+        for line in lines
+    ])
+    _must_fail(broken, "if must limit event names")
+
+
+def test_labeled_pull_request_trigger_is_rejected() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    broken = workflow.replace(
+        "types: [opened, synchronize, reopened]",
+        "types: [opened, synchronize, reopened, labeled]",
+    )
+    _must_fail(broken, "pull_request must not include labeled")
+
+
 def test_missing_manual_dispatch_is_rejected() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     broken = replace_job_block(workflow, "negative-control-engine-shard", lambda lines: [
-        line.replace("github.event_name == 'workflow_dispatch' || ", "") for line in lines
+        line.replace(" || github.event_name == 'workflow_dispatch'", "") for line in lines
     ])
     _must_fail(broken, "workflow_dispatch")
 
@@ -64,7 +92,7 @@ def test_aggregate_always_without_gate_is_rejected() -> None:
     broken = replace_job_block(workflow, "negative-control-engine", lambda lines: [
         "    if: always()" if line.startswith("    if:") else line for line in lines
     ])
-    _must_fail(broken, "run-campaign")
+    _must_fail(broken, "if is missing github.event_name == 'schedule'")
 
 
 def test_full_gate_leak_into_fast_job_is_rejected() -> None:
@@ -77,7 +105,7 @@ def test_full_gate_leak_into_fast_job_is_rejected() -> None:
 
 def test_missing_schedule_trigger_is_rejected() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
-    broken = workflow.replace("  schedule:\n    - cron: '0 18 * * *'\n", "")
+    broken = workflow.replace("  schedule:\n    - cron: '0 18 * * 0'\n", "")
     _must_fail(broken, "schedule with a cron")
 
 
@@ -97,7 +125,10 @@ def test_unrestricted_push_is_rejected() -> None:
 
 def run_all() -> None:
     test_normal_workflow_passes()
-    test_missing_campaign_label_is_rejected()
+    test_campaign_label_gate_is_rejected()
+    test_pull_request_full_job_gate_is_rejected()
+    test_unrelated_event_full_job_gate_is_rejected()
+    test_labeled_pull_request_trigger_is_rejected()
     test_missing_manual_dispatch_is_rejected()
     test_aggregate_requires_always()
     test_aggregate_always_without_gate_is_rejected()
