@@ -139,8 +139,9 @@ class EventPriorityTableTest {
             eventMinIntervalSeconds = 0.0,
         )
         var state = guide(GuideState.initial(route), SensorFrame(0L, 10.002, 126.9780, 5f, 1f, null), config).nextState
-        state = guide(state, SensorFrame(1_000L, 10.004, 126.9780, 5f, 1f, null), config).nextState
-        val result = guide(state, SensorFrame(2_000L, 10.006, 126.9780, 5f, 1f, null), config)
+        state = guide(state, SensorFrame(60_000L, 10.004, 126.9780, 5f, 1f, null), config).nextState
+            .copy(milestoneWalkedMeters = 499.0)
+        val result = guide(state, SensorFrame(120_000L, 10.006, 126.9780, 5f, 1f, null), config)
         check(result.guidance is Guidance.Waypoint)
         check(result.reason.details["event"] == "E6")
         check(result.nextState.elevationBand == 1) { "E5 must be consumed even though E6 wins" }
@@ -159,8 +160,9 @@ class EventPriorityTableTest {
             eventMinIntervalSeconds = 0.0,
         )
         var state = guide(GuideState.initial(route), SensorFrame(0L, 10.002, 126.9780, 5f, 1f, null), config).nextState
-        state = guide(state, SensorFrame(1_000L, 10.004, 126.9780, 5f, 1f, null), config).nextState
-        val result = guide(state, SensorFrame(2_000L, 10.006, 126.9780, 5f, 1f, null), config)
+        state = guide(state, SensorFrame(60_000L, 10.004, 126.9780, 5f, 1f, null), config).nextState
+            .copy(milestoneWalkedMeters = 499.0)
+        val result = guide(state, SensorFrame(120_000L, 10.006, 126.9780, 5f, 1f, null), config)
         check(result.guidance is Guidance.Elevation)
         check(result.reason.details["event"] == "E5")
         check(result.nextState.consumedMilestoneIndices.isNotEmpty())

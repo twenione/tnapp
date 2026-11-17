@@ -159,12 +159,12 @@ def fixture(
 def main() -> int:
     PROPERTY_ROOT.mkdir(parents=True, exist_ok=True)
     fixture(
-        "e4_disabled_pending", [(0, 0), (1_000, 100), (2_000, 250), (3_000, 400), (4_000, 420)],
+        "e4_disabled_pending", [(0, 0), (25_000, 100), (62_500, 250), (100_000, 400), (105_000, 420)],
         {"E1", "E4"}, changes=[{"frame_index": 4, "event": "E4", "value": False}],
         config={"eventMinIntervalSeconds": 60.0, "milestoneIntervalMeters": 250.0, "peakAnnounceLeadMeters": 150.0},
     )
     fixture(
-        "e4_reverse_pending", [(0, 0), (1_000, 100), (2_000, 250), (3_000, 400), (4_000, 390), (5_000, 370), (6_000, 350), (7_000, 330)],
+        "e4_reverse_pending", [(0, 0), (25_000, 100), (62_500, 250), (100_000, 400), (102_500, 390), (107_500, 370), (112_500, 350), (117_500, 330)],
         {"E1", "E4"}, config={"eventMinIntervalSeconds": 60.0, "milestoneIntervalMeters": 250.0, "peakAnnounceLeadMeters": 150.0},
     )
     fixture("e4_reverse", [(1_000, 400)], {"E4"}, config={"peakAnnounceLeadMeters": 150.0}, seed_projected_meters=300.0, seed_direction="REVERSE", peaks_meters=(500,))
@@ -175,8 +175,9 @@ def main() -> int:
     fixture("e6_reverse", [(1_000, 600)], {"E6"}, config={"waypointAnnounceLeadMeters": 200.0}, seed_projected_meters=800.0)
     fixture("e6_reverse_in_window", [(1_000, 600)], {"E6"}, config={"waypointAnnounceLeadMeters": 200.0}, seed_projected_meters=500.0, seed_direction="REVERSE", peaks_meters=(1200,))
     fixture(
-        "e6_interval", [(0, 0), (1_000, 100), (2_000, 250), (3_000, 400), (4_000, 500), (5_000, 550)],
+        "e6_interval", [(0, 0), (25_000, 100), (62_500, 250), (100_000, 400), (125_000, 500), (137_500, 550)],
         {"E1", "E6"}, config={"eventMinIntervalSeconds": 60.0, "milestoneIntervalMeters": 250.0, "waypointAnnounceLeadMeters": 200.0},
+        waypoint_meters=(580,),
     )
     fixture("e6_priority", [(0, 400), (500, 500), (1_000, 650)], {"E3", "E6"}, config={"waypointAnnounceLeadMeters": 100.0})
     changes = [{"frame_index": 1, "event": event, "value": False} for event in EVENTS] + [
@@ -187,18 +188,23 @@ def main() -> int:
         set(EVENTS), changes=changes,
     )
 
-    fixture("e1_disabled", [(0, 0), (1_000, 250)], set(), config={"milestoneEnabled": False, "milestoneIntervalMeters": 100.0})
-    fixture("e1_offroute", [(0, 0), (1_000, 50), (2_000, 100)], {"E1"}, config={"milestoneIntervalMeters": 100.0, "offRouteEnterDwellSeconds": 0.5}, offroute_frames={1, 2})
+    fixture("e1_disabled", [(0, 0), (25_000, 100), (30_000, 120)], set(), config={"milestoneEnabled": False, "milestoneIntervalMeters": 100.0})
+    fixture("e1_offroute", [(0, 0), (15_000, 50), (30_000, 100), (32_000, 110)], {"E1"}, config={"milestoneIntervalMeters": 100.0, "offRouteEnterDwellSeconds": 0.5}, offroute_frames={1, 2})
     fixture("e1_reverse", [(1_000, 200)], {"E1"}, config={"milestoneIntervalMeters": 100.0}, seed_projected_meters=100.0, seed_direction="REVERSE")
-    fixture("e1_interval_priority", [(0, 0), (1_000, 100), (2_000, 200)], {"E1", "E6"}, config={"eventMinIntervalSeconds": 60.0, "milestoneIntervalMeters": 100.0, "waypointAnnounceLeadMeters": 100.0}, waypoint_meters=(200,))
-    fixture("e1_priority", [(0, 0), (1_000, 100)], {"E1", "E6"}, config={"eventMinIntervalSeconds": 0.0, "milestoneIntervalMeters": 100.0, "waypointAnnounceLeadMeters": 100.0}, waypoint_meters=(150,))
-    fixture("e1_jump", [(0, 0), (1_000, 350)], {"E1"}, config={"milestoneIntervalMeters": 100.0})
-    fixture("e1_direction_unknown_attempt", [(0, 110)], {"E1"}, config={"milestoneIntervalMeters": 100.0}, seed_projected_meters=90.0)
+    fixture("e1_interval_priority", [(0, 0), (25_000, 100), (50_000, 200)], {"E1", "E6"}, config={"eventMinIntervalSeconds": 60.0, "milestoneIntervalMeters": 100.0, "waypointAnnounceLeadMeters": 100.0}, waypoint_meters=(200,))
+    fixture("e1_priority", [(0, 0), (22_500, 90), (37_500, 150)], {"E1", "E6"}, config={"eventMinIntervalSeconds": 0.0, "milestoneIntervalMeters": 100.0, "waypointAnnounceLeadMeters": 100.0}, waypoint_meters=(200,))
+    fixture("e1_jump", [(0, 0), (90_000, 350)], {"E1"}, config={"milestoneIntervalMeters": 100.0})
+    fixture(
+        "e1_direction_unknown_attempt",
+        [(timestamp, progress) for timestamp, progress in zip(range(0, 110_000, 10_000), range(0, 220, 20))],
+        {"E1"},
+        config={"milestoneIntervalMeters": 100.0},
+    )
 
     fixture("e2_disabled", [(0, 0), (1_000, 0)], set(), config={"elapsedEnabled": False, "elapsedAnnounceIntervalSeconds": 1.0})
     fixture("e2_offroute", [(0, 0), (1_000, 50), (2_000, 50)], {"E2"}, config={"elapsedAnnounceIntervalSeconds": 2.0, "offRouteEnterDwellSeconds": 0.5}, offroute_frames={1, 2})
     fixture("e2_interval", [(0, 0), (1_000, 100), (2_000, 200)], {"E2", "E6"}, config={"eventMinIntervalSeconds": 60.0, "elapsedAnnounceIntervalSeconds": 2.0, "waypointAnnounceLeadMeters": 100.0, "property_seed_projected_meters": 0.0, "property_seed_last_periodic_event_at": 0.0}, waypoint_meters=(200,))
-    fixture("e2_priority", [(0, 0), (1_000, 100)], {"E1", "E2"}, config={"milestoneIntervalMeters": 100.0, "elapsedAnnounceIntervalSeconds": 1.0})
+    fixture("e2_priority", [(0, 0), (25_000, 100)], {"E1", "E2"}, config={"milestoneIntervalMeters": 100.0, "elapsedAnnounceIntervalSeconds": 1.0})
     fixture("e2_jump", [(0, 0), (3_000, 0)], {"E2"}, config={"elapsedAnnounceIntervalSeconds": 1.0})
     fixture("e2_spoken", [(0, 0), (1_000, 0)], {"E2"}, config={"elapsedAnnounceIntervalSeconds": 1.0})
 
@@ -206,8 +212,8 @@ def main() -> int:
     fixture("e3_reverse", [(1_000, 700)], {"E3", "E4"}, seed_projected_meters=500.0, seed_direction="REVERSE", peaks_meters=(800,))
     fixture("e3_direction_unknown_attempt", [(0, 610)], {"E3"}, seed_projected_meters=590.0)
     e3_frames = [(0, 0), (1_000, 100), (2_000, 300), (3_000, 500), (4_000, 700), (62_000, 700)]
-    fixture("e3_pending_then_spoken", e3_frames, {"E1", "E3"}, config={"eventMinIntervalSeconds": 60.0, "milestoneIntervalMeters": 100.0})
-    fixture("e3_session_end_pending", e3_frames[:5], {"E1", "E3"}, config={"eventMinIntervalSeconds": 60.0, "milestoneIntervalMeters": 100.0})
+    fixture("e3_pending_then_spoken", e3_frames, {"E1", "E3"}, config={"eventMinIntervalSeconds": 60.0, "milestoneIntervalMeters": 100.0, "property_seed_last_periodic_event_at": 0.0})
+    fixture("e3_session_end_pending", e3_frames[:5], {"E1", "E3"}, config={"eventMinIntervalSeconds": 60.0, "milestoneIntervalMeters": 100.0, "property_seed_last_periodic_event_at": 0.0})
 
     fixture("e4_jump", [(1_000, 700)], {"E4"}, config={"peakAnnounceLeadMeters": 100.0}, seed_projected_meters=300.0, peaks_meters=(500,))
     fixture("e6_jump", [(1_000, 900)], {"E6"}, config={"waypointAnnounceLeadMeters": 100.0}, seed_projected_meters=500.0, waypoint_meters=(650,), peaks_meters=(1200,))

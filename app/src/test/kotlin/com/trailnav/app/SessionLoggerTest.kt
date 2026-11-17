@@ -106,20 +106,22 @@ class SessionLoggerTest {
             timestamp, 10.0 + progress / 111_195.0, 20.0, 5f, 1f, null, "synthetic",
         )
         session.accept(location(0.0, 0L))
-        for (step in 1..((peak.s - 50.0) / 50.0).toInt()) {
-            val progress = step * 50.0
-            session.accept(location(progress, step * 1_000L))
+        val approachSteps = ((peak.s - 50.0) / 25.0).toInt()
+        for (step in 1..approachSteps) {
+            val progress = step * 25.0
+            session.accept(location(progress, step * 7_000L))
         }
-        val pending = session.accept(location(peak.s - 50.0, 30_000L))
+        val approachEndTimestamp = approachSteps * 7_000L
+        val pending = session.accept(location(peak.s - 50.0, approachEndTimestamp + 1_000L))
         assertTrue(pending.result.nextState.pendingSlopePeaks.keys == setOf(0), "secondPeriodic=${session.snapshot().lastPeriodicEventAt}, direction=${pending.result.nextState.direction}, progress=${pending.result.nextState.lastMatch?.projectedMeters}, offRoute=${pending.result.nextState.offRoute}, peaks=${route.peaks}, reason=${pending.result.reason}")
         assertTrue(pending.newlyDiscardedSlopePeaks.isEmpty())
 
-        val passed = session.accept(location(peak.s + 20.0, 62_000L))
+        val passed = session.accept(location(peak.s + 20.0, approachEndTimestamp + 33_000L))
         val discard = passed.newlyDiscardedSlopePeaks.single()
         assertEquals(0, discard.index)
         assertEquals(peak.s, discard.peakS)
         assertEquals("event-min-interval", discard.delayReason)
-        val later = session.accept(location(peak.s + 30.0, 63_000L))
+        val later = session.accept(location(peak.s + 30.0, approachEndTimestamp + 34_000L))
         assertTrue(later.newlyDiscardedSlopePeaks.isEmpty())
 
         val directory = createTempDir(prefix = "tnapp-e4-discard-")

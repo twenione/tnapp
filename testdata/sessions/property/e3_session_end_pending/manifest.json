@@ -22,7 +22,8 @@
         "E8": false
       },
       "eventMinIntervalSeconds": 60.0,
-      "milestoneIntervalMeters": 100.0
+      "milestoneIntervalMeters": 100.0,
+      "property_seed_last_periodic_event_at": 0.0
     },
     "rng_seed": 0,
     "config_changes": []

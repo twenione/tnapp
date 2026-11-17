@@ -13,11 +13,6 @@
       "test": "startPhaseOnRouteNeverLeavesRoute",
       "decision": "D-157",
       "release_condition": "D-157 implementation PR removes this entry only after the complete start-phase grid passes with zero on-route off-route frames."
-    },
-    {
-      "test": "startPhaseMilestoneUsesGuidanceStartReference",
-      "decision": "D-158",
-      "release_condition": "D-158 implementation PR removes this entry only after E1 distances are measured from the guidance start."
     }
   ],
   "observation_exempt": [

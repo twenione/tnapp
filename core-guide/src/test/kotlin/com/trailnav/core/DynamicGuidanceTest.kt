@@ -32,15 +32,44 @@ class DynamicGuidanceTest {
     @Test
     fun milestoneThreshold() {
         val config = GuideConfig(milestoneEnabled = true, milestoneIntervalMeters = 200.0, eventMinIntervalSeconds = 0.0)
-        var state = GuideState.initial(route)
-        state = guide(state, SensorFrame(0L, 10.0005, 20.0, 5f, 1f, null), config).nextState
-        val result = guide(state, SensorFrame(1_000L, 10.0022, 20.0, 5f, 1f, null), config)
+        val primed = guide(GuideState.initial(route), frameAtProgress(50.0, 0L), config).nextState
+            .copy(milestoneWalkedMeters = 199.0)
+        val result = guide(primed, frameAtProgress(51.0, 1_000L), config)
         check(result.guidance is Guidance.Milestone)
         check(result.reason.rule == "event.milestone")
     }
 
     @Test
-    fun startupStationaryMilestoneIsConsumedAndRecordedWithoutAnnouncement() {
+    fun milestoneUsesDistanceWalkedSinceGuidanceStartedMidRoute() {
+        val config = GuideConfig(
+            milestoneEnabled = true,
+            milestoneIntervalMeters = 1_000.0,
+            eventMinIntervalSeconds = 0.0,
+            sunsetEnabled = false,
+            sunriseEnabled = false,
+        )
+        var state = GuideState.initial(route)
+        state = guide(state, frameAtProgress(275.0, 0L), config).nextState
+
+        for (step in 1..40) {
+            val result = guide(state, frameAtProgress(275.0 + step * 25.0, step * 10_000L), config)
+            state = result.nextState
+            if (step == 29) {
+                check(abs(state.milestoneWalkedMeters - 725.0) < 1.0)
+                check(result.guidance !is Guidance.Milestone)
+            }
+            if (step == 40) {
+                val milestone = result.guidance as? Guidance.Milestone
+                    ?: error("the 1 km walked-distance milestone should speak")
+                check(milestone.distanceMeters == 1_000.0)
+                check(abs(state.milestoneWalkedMeters - 1_000.0) < 1.0)
+            }
+        }
+        check(state.consumedMilestoneIndices.count { it == 1 } == 1)
+    }
+
+    @Test
+    fun startupStationaryPositionDoesNotConsumeAnUnwalkedMilestone() {
         val route = remainingEventRoute()
         val result = stationaryStartupCrossing(
             route,
@@ -59,10 +88,9 @@ class DynamicGuidanceTest {
         check(result.reason.rule == "startup.direction-pending")
         check(result.nextState.direction == ProgressDirection.STATIONARY)
         check(!result.nextState.startupResolved)
-        check(1 in result.nextState.consumedMilestoneIndices)
-        val record = result.nextState.discardedEvents.single { it.event == "E1" }
-        check(record.threshold == "1")
-        check(record.reason == "direction-unknown")
+        check(result.nextState.milestoneWalkedMeters == 0.0)
+        check(result.nextState.consumedMilestoneIndices.isEmpty())
+        check(result.nextState.discardedEvents.none { it.event == "E1" })
     }
 
     @Test
@@ -135,8 +163,13 @@ class DynamicGuidanceTest {
             sunsetEnabled = false,
             positionGapRematchSeconds = 120.0,
         )
-        val primed = remainingEventState(route, remainingMeters = route.totalLengthMeters)
-        val first = guide(primed, remainingEventFrame(route, route.totalLengthMeters - 120.0, 0L), config)
+        val startProgress = route.totalLengthMeters - 540.0
+        val primed = remainingEventState(route, remainingMeters = 540.0).copy(
+            arrivalBaselineRemainingMeters = 540.0,
+            advanceHighWaterMeters = startProgress,
+            milestoneWalkedMeters = 99.0,
+        )
+        val first = guide(primed, remainingEventFrame(route, 530.0, 0L), config)
         check(first.guidance is Guidance.Milestone)
 
         val crossed = guide(first.nextState, remainingEventFrame(route, 499.0, 49_000L), config)
@@ -144,14 +177,14 @@ class DynamicGuidanceTest {
         check(crossed.nextState.pendingRemainingThresholds == setOf(500.0))
         check(crossed.nextState.pendingRemainingDelayReason == "event-min-interval")
 
-        val stillClosed = guide(crossed.nextState, remainingEventFrame(route, 400.0, 59_000L), config)
+        val stillClosed = guide(crossed.nextState, remainingEventFrame(route, 490.0, 59_000L), config)
         check(stillClosed.guidance !is Guidance.Remaining)
         check(stillClosed.nextState.pendingRemainingThresholds == setOf(500.0))
 
-        val opened = guide(stillClosed.nextState, remainingEventFrame(route, 400.0, 60_000L), config)
+        val opened = guide(stillClosed.nextState, remainingEventFrame(route, 480.0, 60_000L), config)
         val remaining = opened.guidance as? Guidance.Remaining
             ?: error("the retained E3 threshold should speak at the inclusive 60-second boundary")
-        val expectedProgress = route.totalLengthMeters - 400.0
+        val expectedProgress = route.totalLengthMeters - 480.0
         val independentlyCalculatedRemaining = route.totalLengthMeters - expectedProgress
         check(remaining.thresholdMeters == 500.0)
         check(abs(remaining.remainingMeters - independentlyCalculatedRemaining) <= 1.0)
@@ -161,7 +194,7 @@ class DynamicGuidanceTest {
         check(opened.nextState.pendingRemainingThresholds.isEmpty())
         check(opened.nextState.pendingRemainingDelayReason == null)
 
-        val afterFlush = guide(opened.nextState, remainingEventFrame(route, 399.0, 61_000L), config)
+        val afterFlush = guide(opened.nextState, remainingEventFrame(route, 479.0, 61_000L), config)
         check(afterFlush.guidance !is Guidance.Remaining)
     }
 
@@ -362,10 +395,15 @@ class DynamicGuidanceTest {
 
         val interval = 60.0
         val shortRoute = remainingEventRoute()
-        val milestoneState = remainingEventState(shortRoute, remainingMeters = 412.0, lastPeriodicEventAt = 0L)
+        val milestoneProgress = shortRoute.totalLengthMeters - 412.0
+        val milestoneState = remainingEventState(shortRoute, remainingMeters = 412.0, lastPeriodicEventAt = 0L).copy(
+            arrivalBaselineRemainingMeters = 412.0,
+            advanceHighWaterMeters = milestoneProgress,
+            milestoneWalkedMeters = 99.0,
+        )
         val milestone = guide(
             milestoneState,
-            remainingEventFrame(shortRoute, 312.0, 30_000L),
+            remainingEventFrame(shortRoute, 411.0, 30_000L),
             GuideConfig(
                 milestoneEnabled = true,
                 milestoneIntervalMeters = 100.0,
@@ -514,11 +552,11 @@ class DynamicGuidanceTest {
                 "</trkseg></trk></gpx>"
         )
         val config = GuideConfig(milestoneEnabled = true, milestoneIntervalMeters = 100.0, eventMinIntervalSeconds = 60.0)
-        var state = GuideState.initial(intervalRoute)
-        state = guide(state, SensorFrame(0L, 10.0001, 20.0, 5f, 1f, null), config).nextState
-        val first = guide(state, SensorFrame(1_000L, 10.0011, 20.0, 5f, 1f, null), config)
+        var state = guide(GuideState.initial(intervalRoute), frameAtProgress(0.0, 0L), config).nextState
+            .copy(milestoneWalkedMeters = 99.0)
+        val first = guide(state, frameAtProgress(1.0, 1_000L), config)
         check(first.guidance is Guidance.Milestone)
-        val second = guide(first.nextState, SensorFrame(2_000L, 10.0019, 20.0, 5f, 1f, null), config)
+        val second = guide(first.nextState, frameAtProgress(101.0, 25_000L), config)
         check(second.guidance !is Guidance.Milestone)
     }
 
@@ -531,8 +569,9 @@ class DynamicGuidanceTest {
                 eventMinIntervalSeconds = 0.0,
                 sunsetEnabled = false,
             )
-            val first = guide(GuideState.initial(route), SensorFrame(0L, 10.0005, 20.0, 5f, 1f, null), configured)
-            return guide(first.nextState, SensorFrame(1_000L, 10.0022, 20.0, 5f, 1f, null), configured)
+            val primed = guide(GuideState.initial(route), frameAtProgress(0.0, 0L), configured).nextState
+                .copy(milestoneWalkedMeters = 199.0)
+            return guide(primed, frameAtProgress(1.0, 1_000L), configured)
         }
         val enabled = run(true)
         check(enabled.guidance is Guidance.Milestone)
@@ -1007,7 +1046,7 @@ class DynamicGuidanceTest {
     }
 
     @Test
-    fun offRouteConsumesPeriodicThresholds() {
+    fun offRouteDoesNotConsumeUnwalkedMilestoneProgress() {
         val config = GuideConfig(
             milestoneEnabled = true,
             eventMinIntervalSeconds = 0.0,
@@ -1016,13 +1055,20 @@ class DynamicGuidanceTest {
             offRouteEnterDwellSeconds = 0.0,
             offRouteExitDwellSeconds = 0.0,
         )
-        val first = guide(GuideState.initial(route), SensorFrame(0L, 10.0005, 20.0, 5f, 1f, null), config)
-        val off = guide(first.nextState, SensorFrame(1_000L, 10.002, 20.0004, 5f, 1f, null), config)
+        val first = guide(GuideState.initial(route), frameAtProgress(0.0, 0L), config)
+        val onRoute = guide(first.nextState, frameAtProgress(60.0, 15_000L), config)
+        check(onRoute.guidance is Guidance.Milestone)
+        val off = guide(onRoute.nextState, frameAtProgress(120.0, 30_000L, lateralMeters = 60.0), config)
         check(off.nextState.offRoute)
-        check(off.nextState.consumedMilestoneIndices.isNotEmpty())
-        val recovered = guide(off.nextState, SensorFrame(2_000L, 10.002, 20.0, 5f, 1f, null), config)
+        check(abs(off.nextState.milestoneWalkedMeters - onRoute.nextState.milestoneWalkedMeters) < 1.0)
+        check(off.nextState.consumedMilestoneIndices == setOf(1))
+        check(off.guidance !is Guidance.Milestone)
+        val recovered = guide(off.nextState, frameAtProgress(60.0, 45_000L), config)
         check(!recovered.nextState.offRoute)
         check(recovered.guidance !is Guidance.Milestone)
+        val walked = guide(recovered.nextState, frameAtProgress(110.0, 60_000L), config)
+        check(walked.guidance == Guidance.Milestone(100.0))
+        check(walked.nextState.consumedMilestoneIndices == setOf(1, 2))
     }
 
     @Test
@@ -1061,16 +1107,20 @@ class DynamicGuidanceTest {
     @Test
     fun milestoneConsumptionQueuePreventsRefire() {
         val config = GuideConfig(milestoneEnabled = true, sunsetEnabled = false, eventMinIntervalSeconds = 0.0, milestoneIntervalMeters = 100.0)
+        val primedMatch = MatchResult(0.0, 99.0, 0, route.points.first(), ProgressDirection.FORWARD)
         val primed = GuideState.initial(route).copy(
-            lastMatch = MatchResult(0.0, 0.0, 0, route.points.first(), ProgressDirection.FORWARD),
+            lastMatch = primedMatch,
             lastTimestamp = 0L,
             sessionStartTimestamp = 0L,
             direction = ProgressDirection.FORWARD,
+            arrivalBaselineRemainingMeters = route.totalLengthMeters - 99.0,
+            advanceHighWaterMeters = 99.0,
+            milestoneWalkedMeters = 99.0,
         )
-        val first = guide(primed, SensorFrame(1_000L, 10.0015, 20.0, 5f, 1f, null), config)
+        val first = guide(primed, frameAtProgress(101.0, 1_000L), config)
         check(first.guidance is Guidance.Milestone)
-        val back = guide(first.nextState, SensorFrame(2_000L, 10.0005, 20.0, 5f, 1f, null), config)
-        val forward = guide(back.nextState, SensorFrame(3_000L, 10.0015, 20.0, 5f, 1f, null), config)
+        val back = guide(first.nextState, frameAtProgress(100.0, 2_000L), config)
+        val forward = guide(back.nextState, frameAtProgress(101.0, 3_000L), config)
         check(forward.guidance !is Guidance.Milestone)
     }
 

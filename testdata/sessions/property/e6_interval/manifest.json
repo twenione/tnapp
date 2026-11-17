@@ -30,7 +30,7 @@
   },
   "route": {
     "gpx_id": "synthetic-e6_interval",
-    "gpx_hash": "sha256:96f109e367495b317c7ab8263c8c3cd220765979f0a86fd5c6167d6af21e68a6",
+    "gpx_hash": "sha256:f3976331b5310766713b2abca57898a0a3e37f43994e9dffe909d84790a9436e",
     "point_count": 33,
     "elevation_used": true,
     "elevation_reason": "ok",

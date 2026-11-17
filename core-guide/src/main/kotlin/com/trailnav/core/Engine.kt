@@ -333,6 +333,7 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         !startupPending && !rematchedThisFrame &&
         (direction in setOf(ProgressDirection.FORWARD, ProgressDirection.STATIONARY) || next.arrivalBaselineRemainingMeters == null)
     ) {
+        val creditedBefore = next.advanceCreditedMeters
         next = updateArrivalAdvance(
             state = next,
             match = directedMatch,
@@ -340,6 +341,9 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
             previousTimestamp = if (startupResolvedThisFrame) null else initializedState.lastTimestamp,
             timestamp = frame.timestamp,
             config = config,
+        )
+        next = next.copy(
+            milestoneWalkedMeters = next.milestoneWalkedMeters + (next.advanceCreditedMeters - creditedBefore),
         )
     }
     val arrivalCandidate = isArrivalCandidate(next.route, directedMatch, frame.timestamp, next.sessionStartTimestamp, config)
@@ -649,18 +653,10 @@ private fun recordRematchJumps(
     val discardedEvents = state.discardedEvents.toMutableList()
     val discardedWaypoints = state.discardedWaypoints.toMutableList()
     val discardedSlopePeaks = state.discardedSlopePeaks.toMutableList()
-    val milestonesBefore = if (routeChanged) emptySet() else state.consumedMilestoneIndices
     val remainingBefore = if (routeChanged) emptySet() else state.consumedRemainingThresholds
     val waypointsBefore = if (routeChanged) emptySet() else state.consumedWaypointIndices
     val slopesBefore = if (routeChanged) emptySet() else state.consumedSlopeIndices
 
-    val milestoneThrough = floor(newProgress / config.milestoneIntervalMeters).toInt().coerceAtLeast(0)
-    val crossedMilestones = if (forwardJump && milestoneThrough > floor(lowerProgress / config.milestoneIntervalMeters).toInt()) {
-        (floor(lowerProgress / config.milestoneIntervalMeters).toInt() + 1..milestoneThrough).toList()
-    } else emptyList()
-    crossedMilestones.forEach { index ->
-        discardedEvents += DiscardedEvent("E1", index.toString(), "jump", newProgress)
-    }
     val skippedRemaining = config.remainingAnnounceMeters.filter { threshold ->
         if (routeChanged) threshold > newRemaining
         else (previousRoute.totalLengthMeters - previousProgress) > threshold && newRemaining <= threshold
@@ -688,13 +684,11 @@ private fun recordRematchJumps(
         discardedSlopePeaks += DiscardedSlopePeak(index, peak.s, newProgress, "none", "jump")
     }
     val passedTurns = newRoute.turns.indices.filter { newRoute.turns[it].s < newProgress }
-    val consumedMilestones = milestonesBefore + (1..milestoneThrough).toSet()
     val consumedRemaining = remainingBefore + skippedRemaining
     val consumedWaypoints = waypointsBefore + newRoute.waypoints.indices.filter { newRoute.waypoints[it].s <= newProgress }
     val consumedSlopes = slopesBefore + newRoute.peaks.indices.filter { newRoute.peaks[it].s <= newProgress }
 
     return state.copy(
-        consumedMilestoneIndices = consumedMilestones,
         consumedRemainingThresholds = consumedRemaining,
         pendingRemainingThresholds = emptySet(),
         pendingRemainingDelayReason = null,
@@ -799,9 +793,9 @@ private fun evaluateDynamicGuidance(
         )
     }
 
-    // E1: distance milestones are based on projected route distance.
-    val milestoneCount = floor(match.projectedMeters / config.milestoneIntervalMeters).toInt()
-    val oldMilestoneCount = oldProgress?.let { floor(it / config.milestoneIntervalMeters).toInt() } ?: milestoneCount
+    // E1: distance milestones count the route distance walked since guidance start (D-158).
+    val milestoneCount = floor(state.milestoneWalkedMeters / config.milestoneIntervalMeters).toInt()
+    val oldMilestoneCount = floor(previous.milestoneWalkedMeters / config.milestoneIntervalMeters).toInt()
     if (milestoneCount > 0) {
         val crossed = (oldMilestoneCount + 1..milestoneCount).toList()
         next = next.copy(consumedMilestoneIndices = next.consumedMilestoneIndices + crossed)
