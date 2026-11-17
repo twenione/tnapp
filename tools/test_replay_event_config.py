@@ -40,9 +40,8 @@ def model_event_fields() -> set[str]:
 
 
 def mapping_covers_model(mapping: dict[str, str], fields: set[str]) -> bool:
-    # E1..E8 are the session event toggles. GuideConfig also has Boolean
-    # diagnostic switches (for example directionSuspectEnabled) that are
-    # exposed through --config but are not session event IDs.
+    # E1..E8 are the session event toggles. GuideConfig may have other
+    # Boolean controls exposed through --config that are not session event IDs.
     return (
         set(mapping) == set(EVENT_CONFIG_FIELDS)
         and set(mapping.values()) <= fields

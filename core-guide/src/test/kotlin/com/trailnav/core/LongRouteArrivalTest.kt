@@ -20,14 +20,16 @@ class LongRouteArrivalTest {
         )
         var state = GuideState.starting(route, config)
         val arrivals = mutableListOf<Int>()
-        val frames = listOf(
-            0 to (0.0 to 0.0),
-            15 to (15.0 to 0.0),
-            30 to (30.0 to 0.0),
-            95 to (95.0 to 0.0),
-            140 to (140.0 to 0.0),
-            290 to (150.0 to 140.0),
-        )
+        val frames = buildList {
+            add(0 to (0.0 to 0.0))
+            add(15 to (15.0 to 0.0))
+            add(30 to (30.0 to 0.0))
+            add(95 to (95.0 to 0.0))
+            add(140 to (140.0 to 0.0))
+            add(150 to (150.0 to 0.0))
+            for (north in 15..135 step 15) add((150 + north) to (150.0 to north.toDouble()))
+            add(290 to (150.0 to 140.0))
+        }
 
         frames.forEach { (second, point) ->
             val result = Engine.guide(state, frame(point.first, point.second, second), config)

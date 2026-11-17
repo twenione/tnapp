@@ -75,7 +75,7 @@ def fixture(
     changes: list[dict] | None = None,
     config: dict | None = None,
     seed_projected_meters: float | None = None,
-    seed_ema_delta_meters: float | None = None,
+    seed_direction: str | None = None,
     waypoint_meters: tuple[int, ...] = (700,),
     peaks_meters: tuple[int, ...] = (500,),
     offroute_frames: set[int] | None = None,
@@ -97,8 +97,8 @@ def fixture(
     }
     if seed_projected_meters is not None:
         engine["property_seed_projected_meters"] = seed_projected_meters
-    if seed_ema_delta_meters is not None:
-        engine["property_seed_ema_delta_meters"] = seed_ema_delta_meters
+    if seed_direction is not None:
+        engine["property_seed_direction"] = seed_direction
     route_hash = hashlib.sha256(route.encode("utf-8")).hexdigest()
     manifest = {
         "session_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"trailnav:task080:{name}")),
@@ -167,12 +167,13 @@ def main() -> int:
         "e4_reverse_pending", [(0, 0), (1_000, 100), (2_000, 250), (3_000, 400), (4_000, 390), (5_000, 370), (6_000, 350), (7_000, 330)],
         {"E1", "E4"}, config={"eventMinIntervalSeconds": 60.0, "milestoneIntervalMeters": 250.0, "peakAnnounceLeadMeters": 150.0},
     )
+    fixture("e4_reverse", [(1_000, 400)], {"E4"}, config={"peakAnnounceLeadMeters": 150.0}, seed_projected_meters=300.0, seed_direction="REVERSE", peaks_meters=(500,))
     fixture("e6_disabled", [(0, 600)], {"E1"}, config={"waypointAnnounceLeadMeters": 200.0})
     fixture("e4_direction_unknown", [(0, 400)], {"E4"}, config={"peakAnnounceLeadMeters": 150.0})
     fixture("e6_direction_unknown", [(0, 600)], {"E6"}, config={"waypointAnnounceLeadMeters": 200.0})
     fixture("e6_offroute", [(0, 400), (1_000, 480), (30_000, 550)], {"E6"}, config={"waypointAnnounceLeadMeters": 200.0}, offroute_frames={1, 2})
     fixture("e6_reverse", [(1_000, 600)], {"E6"}, config={"waypointAnnounceLeadMeters": 200.0}, seed_projected_meters=800.0)
-    fixture("e6_reverse_in_window", [(1_000, 600)], {"E6"}, config={"waypointAnnounceLeadMeters": 200.0}, seed_projected_meters=500.0, seed_ema_delta_meters=-1_000.0, peaks_meters=(1200,))
+    fixture("e6_reverse_in_window", [(1_000, 600)], {"E6"}, config={"waypointAnnounceLeadMeters": 200.0}, seed_projected_meters=500.0, seed_direction="REVERSE", peaks_meters=(1200,))
     fixture(
         "e6_interval", [(0, 0), (1_000, 100), (2_000, 250), (3_000, 400), (4_000, 500), (5_000, 550)],
         {"E1", "E6"}, config={"eventMinIntervalSeconds": 60.0, "milestoneIntervalMeters": 250.0, "waypointAnnounceLeadMeters": 200.0},
@@ -188,11 +189,11 @@ def main() -> int:
 
     fixture("e1_disabled", [(0, 0), (1_000, 250)], set(), config={"milestoneEnabled": False, "milestoneIntervalMeters": 100.0})
     fixture("e1_offroute", [(0, 0), (1_000, 50), (2_000, 100)], {"E1"}, config={"milestoneIntervalMeters": 100.0, "offRouteEnterDwellSeconds": 0.5}, offroute_frames={1, 2})
-    fixture("e1_reverse", [(1_000, 200)], {"E1"}, config={"milestoneIntervalMeters": 100.0}, seed_projected_meters=100.0, seed_ema_delta_meters=-1_000.0)
+    fixture("e1_reverse", [(1_000, 200)], {"E1"}, config={"milestoneIntervalMeters": 100.0}, seed_projected_meters=100.0, seed_direction="REVERSE")
     fixture("e1_interval_priority", [(0, 0), (1_000, 100), (2_000, 200)], {"E1", "E6"}, config={"eventMinIntervalSeconds": 60.0, "milestoneIntervalMeters": 100.0, "waypointAnnounceLeadMeters": 100.0}, waypoint_meters=(200,))
     fixture("e1_priority", [(0, 0), (1_000, 100)], {"E1", "E6"}, config={"eventMinIntervalSeconds": 0.0, "milestoneIntervalMeters": 100.0, "waypointAnnounceLeadMeters": 100.0}, waypoint_meters=(150,))
     fixture("e1_jump", [(0, 0), (1_000, 350)], {"E1"}, config={"milestoneIntervalMeters": 100.0})
-    fixture("e1_direction_unknown_attempt", [(0, 200)], {"E1"}, config={"milestoneIntervalMeters": 100.0})
+    fixture("e1_direction_unknown_attempt", [(0, 110)], {"E1"}, config={"milestoneIntervalMeters": 100.0}, seed_projected_meters=90.0)
 
     fixture("e2_disabled", [(0, 0), (1_000, 0)], set(), config={"elapsedEnabled": False, "elapsedAnnounceIntervalSeconds": 1.0})
     fixture("e2_offroute", [(0, 0), (1_000, 50), (2_000, 50)], {"E2"}, config={"elapsedAnnounceIntervalSeconds": 2.0, "offRouteEnterDwellSeconds": 0.5}, offroute_frames={1, 2})
@@ -202,8 +203,8 @@ def main() -> int:
     fixture("e2_spoken", [(0, 0), (1_000, 0)], {"E2"}, config={"elapsedAnnounceIntervalSeconds": 1.0})
 
     fixture("e3_disabled", [(0, 0), (1_000, 100)], set(), config={"remainingEnabled": False, "remainingAnnounceMeters": [1550.0]})
-    fixture("e3_reverse", [(1_000, 700)], {"E3", "E4"}, seed_projected_meters=500.0, seed_ema_delta_meters=-1_000.0, peaks_meters=(800,))
-    fixture("e3_direction_unknown_attempt", [(0, 700)], {"E3"})
+    fixture("e3_reverse", [(1_000, 700)], {"E3", "E4"}, seed_projected_meters=500.0, seed_direction="REVERSE", peaks_meters=(800,))
+    fixture("e3_direction_unknown_attempt", [(0, 610)], {"E3"}, seed_projected_meters=590.0)
     e3_frames = [(0, 0), (1_000, 100), (2_000, 300), (3_000, 500), (4_000, 700), (62_000, 700)]
     fixture("e3_pending_then_spoken", e3_frames, {"E1", "E3"}, config={"eventMinIntervalSeconds": 60.0, "milestoneIntervalMeters": 100.0})
     fixture("e3_session_end_pending", e3_frames[:5], {"E1", "E3"}, config={"eventMinIntervalSeconds": 60.0, "milestoneIntervalMeters": 100.0})

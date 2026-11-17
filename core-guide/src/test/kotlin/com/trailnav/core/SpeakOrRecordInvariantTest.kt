@@ -27,7 +27,7 @@ class SpeakOrRecordInvariantTest {
     private val RECORD_REASONS = mapOf(
         "E1" to setOf("disabled", "offroute", "reverse", "direction-unknown", "interval", "priority", "jump"),
         "E2" to setOf("disabled", "offroute", "interval", "priority", "jump"),
-        "E3" to setOf("disabled", "reverse", "direction-unknown"),
+        "E3" to setOf("disabled", "reverse", "direction-unknown", "jump"),
         "E4" to setOf("passed", "disabled", "reverse", "direction-unknown", "jump"),
         "E6" to setOf("disabled", "offroute", "reverse", "direction-unknown", "interval", "priority", "jump"),
         "E8" to setOf("disabled", "offroute", "interval", "priority"),
@@ -136,7 +136,7 @@ class SpeakOrRecordInvariantTest {
         val propertyRuns = runs.filter { it.directory.parent.fileName.toString() == "property" }
             .associateBy { it.directory.fileName.toString() }
         check(propertyRuns.keys == setOf(
-            "e4_disabled_pending", "e4_reverse_pending", "e6_disabled", "e4_direction_unknown",
+            "e4_disabled_pending", "e4_reverse_pending", "e4_reverse", "e6_disabled", "e4_direction_unknown",
             "e6_direction_unknown", "e6_offroute",
             "e6_reverse", "e6_reverse_in_window", "e6_interval", "e6_priority", "all_events_off_on",
             "e1_direction_unknown_attempt", "e1_disabled", "e1_interval_priority", "e1_jump", "e1_offroute", "e1_priority", "e1_reverse",
@@ -146,9 +146,12 @@ class SpeakOrRecordInvariantTest {
             "e8_disabled", "e8_offroute", "e8_interval", "e8_priority", "e8_spoken", "e7_spoken", "e7_disabled_pending",
         )) { "generated property fixture set changed: ${propertyRuns.keys}" }
         assertRecord(propertyRuns.getValue("e4_disabled_pending"), "E4", "disabled")
-        assertRecord(propertyRuns.getValue("e4_reverse_pending"), "E4", "reverse")
+        check(pendingAtEnd.any { it.contains("session=e4_reverse_pending") && it.contains("event=E4") }) {
+            "reverse direction-sensitive E4 should remain pending until route direction is resolved"
+        }
         assertRecord(propertyRuns.getValue("e6_disabled"), "E6", "disabled")
         assertRecord(propertyRuns.getValue("e4_direction_unknown"), "E4", "direction-unknown")
+        assertRecord(propertyRuns.getValue("e4_reverse"), "E4", "reverse")
         assertRecord(propertyRuns.getValue("e6_direction_unknown"), "E6", "direction-unknown")
         assertRecord(propertyRuns.getValue("e6_offroute"), "E6", "offroute")
         assertRecord(propertyRuns.getValue("e6_reverse_in_window"), "E6", "reverse")
@@ -243,9 +246,11 @@ class SpeakOrRecordInvariantTest {
             sunsetAnnounceMinutes = configIntList(manifest, "sunsetAnnounceMinutes") ?: GuideConfig().sunsetAnnounceMinutes,
             sunriseAnnounceMinutes = configIntList(manifest, "sunriseAnnounceMinutes") ?: GuideConfig().sunriseAnnounceMinutes,
             offRouteEnterDwellSeconds = configNumber(manifest, "offRouteEnterDwellSeconds") ?: GuideConfig().offRouteEnterDwellSeconds,
+            positionGapRematchSeconds = configNumber(manifest, "positionGapRematchSeconds") ?: Double.MAX_VALUE,
+            taggingOffRouteDwellSeconds = configNumber(manifest, "taggingOffRouteDwellSeconds") ?: Double.MAX_VALUE,
         )
         val seededProgress = configNumber(manifest, "property_seed_projected_meters")
-        val seededEma = configNumber(manifest, "property_seed_ema_delta_meters")
+        val seededDirection = Regex(""""property_seed_direction"\s*:\s*"([^"]+)"""").find(manifest)?.groupValues?.get(1)?.let(ProgressDirection::valueOf)
         val seededPeriodic = configNumber(manifest, "property_seed_last_periodic_event_at")?.times(1_000.0)?.toLong()
         var state = if (directory.fileName.toString() in setOf(
             "e1_direction_unknown_attempt",
@@ -253,7 +258,7 @@ class SpeakOrRecordInvariantTest {
             "e4_direction_unknown",
             "e6_direction_unknown",
         )) GuideState.starting(route, config) else GuideState.initial(route)
-        if (seededProgress != null || seededEma != null || seededPeriodic != null) {
+        if (seededProgress != null || seededPeriodic != null) {
             if (seededProgress == null) {
                 state = state.copy(lastPeriodicEventAt = seededPeriodic)
             } else {
@@ -261,13 +266,12 @@ class SpeakOrRecordInvariantTest {
             val segment = route.cumulativeMeters.indexOfLast { it <= seededProgress }.coerceIn(0, route.cumulativeMeters.lastIndex - 1)
             state = state.copy(
                 hasEnteredRoute = true,
-                lastMatch = MatchResult(0.0, seededProgress, segment, route.toEnu(point), ProgressDirection.FORWARD),
+                lastMatch = MatchResult(0.0, seededProgress, segment, route.toEnu(point), if (state.startupEnabled) ProgressDirection.UNKNOWN else seededDirection ?: ProgressDirection.FORWARD),
                 lastTimestamp = 0L,
                 sessionStartTimestamp = 0L,
                 firstMatchProgressMeters = seededProgress,
-                emaDeltaMeters = seededEma ?: 0.0,
                 lastPeriodicEventAt = seededPeriodic,
-                direction = ProgressDirection.FORWARD,
+                direction = if (state.startupEnabled) ProgressDirection.UNKNOWN else seededDirection ?: ProgressDirection.FORWARD,
             )
             }
         }

@@ -159,22 +159,6 @@ VARIANTS = {
                              'D-033 E1 consumption removed */'),
  'event-threshold-refire': ('if (index in consumedSlopeIndices) return@forEachIndexed',
                             'if (false /* D-033 consumed E4 threshold refires */) return@forEachIndexed'),
- 'reverse-sunset-drop': ('if (reverseWarning) {\n'
-                         '        val dynamic = evaluateDynamicGuidance(initializedState, next, '
-                         'directedMatch, frame, config)\n'
-                         '        if (dynamic.guidance != null) {',
-                         'if (reverseWarning) {\n'
-                         '        val dynamic = evaluateDynamicGuidance(initializedState, next, '
-                         'directedMatch, frame, config)\n'
-                         '        if (false /* D-033 reverse E7 result dropped */) {'),
- 'reverse-events-suppressed': ('val dynamic = evaluateDynamicGuidance(initializedState, next, directedMatch, '
-                               'frame, config)\n'
-                               '        if (dynamic.guidance != null)',
-                               'val dynamic = evaluateDynamicGuidance(initializedState, next, directedMatch, '
-                               'frame, config, suppressAnnouncements = true)\n'
-                               '        if (dynamic.guidance != null) /* D-033 reverse events suppressed */'),
- 'reverse-status-repeat': ('if (!dynamic.state.reverseStatusIssued) {',
-                           'if (true /* D-033 reverse status repeats */) {'),
  'elevation-fallback': ('if (!route.elevationUse.used || route.smoothedElevationMeters.isEmpty())',
                         'if (route.smoothedElevationMeters.isEmpty()) /* D-033 E5 fallback ignored */'),
  'priority-old-order': ('const val REMAINING = 500',
@@ -415,17 +399,7 @@ VARIANTS = {
                                         '            )\n'
                                         '        )\n'
                                         '    }'),
- 'elevation-reverse-dwell-drop': ('        if (dynamic.guidance != null) {\n'
-                                  '            return GuideResult(dynamic.guidance, dynamic.state, '
-                                  'dynamic.reason)\n'
-                                  '        }\n'
-                                  '        if (!dynamic.state.reverseStatusIssued) {',
-                                  '        if (dynamic.guidance != null && dynamic.guidance !is '
-                                  'Guidance.Elevation) {\n'
-                                  '            return GuideResult(dynamic.guidance, dynamic.state, '
-                                  'dynamic.reason)\n'
-                                  '        }\n'
-                                  '        if (!dynamic.state.reverseStatusIssued) {')}
+}
 
 VARIANTS.update({
     "task093-m1-premature-direction-guidance": (
@@ -446,21 +420,13 @@ VARIANTS.update({
         "compareBy<StartTrajectoryMatch> { it.startProgressMeters }\n"
         "                    .thenBy { directionTieOrder(it.direction) } /* TASK-093 M-4 */",
     ),
-    "task093-m5-suspect-record-removed": (
-        "systemEvents = updated.systemEvents + event",
-        "systemEvents = updated.systemEvents /* TASK-093 M-5 */",
-    ),
     "task093-m6-arrival-baseline-reset-removed": (
         "systemEvents = initializedState.systemEvents + listOf(routeOrientation, directionDecided, baselineReset),",
         "systemEvents = initializedState.systemEvents + listOf(routeOrientation, directionDecided), /* TASK-093 M-6 */",
     ),
-    "task093-m7-fixed-observation-distance": (
-        "currentWalked >= overlapExit + config.directionObservationAfterOverlapMeters",
-        "currentWalked >= startWalked + 150.0 /* TASK-093 M-7 */",
-    ),
     "task093-m8-refit-uses-only-current-match-window": (
-        "StartTrajectoryMatcher.match(next.route, recent, config)",
-        "StartTrajectoryMatcher.match(next.route, listOf(recent.first(), recent.last()), config) /* TASK-093 M-8 */",
+        "StartTrajectoryMatcher.match(initializedState.route, recentSamples, config)",
+        "StartTrajectoryMatcher.match(initializedState.route, listOf(recentSamples.first(), recentSamples.last()), config) /* TASK-093 M-8 */",
     ),
     "task093-m9-circular-overlap-distance": (
         "abs(progress - otherProgress) >= config.overlapMinRouteGapMeters",
@@ -469,14 +435,6 @@ VARIANTS.update({
     "task093-m10-zero-fit-width": (
         "val startTrajectoryMatchToleranceMeters: Double = 1.0,",
         "val startTrajectoryMatchToleranceMeters: Double = 0.0, /* TASK-093 M-10 */",
-    ),
-    "task093-m11-record-obligation-test-50m": (
-        "const val RECORD_OBLIGATION_METERS = 25.0",
-        "const val RECORD_OBLIGATION_METERS = 50.0 /* TASK-093 M-11 */",
-    ),
-    "task093-m14-suspect-changes-direction": (
-        "directionSuspectRecorded = true,\n        directionObservationActive = false,",
-        "directionSuspectRecorded = true,\n        direction = ProgressDirection.REVERSE, /* TASK-093 M-14 */\n        directionObservationActive = false,",
     ),
 })
 
@@ -632,7 +590,6 @@ ETA_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/RouteEta.kt")
 TURN_PASS_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/TurnPass.kt")
 MODEL_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/Model.kt")
 MATCHER_SOURCE = Path("core-guide/src/main/kotlin/com/trailnav/core/StartTrajectoryMatcher.kt")
-APP_DIRECTION_TEST = Path("app/src/test/kotlin/com/trailnav/app/DirectionSuspectCalibrationTest.kt")
 APP_ORIENTATION_TEST = Path("app/src/test/kotlin/com/trailnav/app/RouteOrientationTest.kt")
 APP_START_PHASE_TEST = Path("app/src/test/kotlin/com/trailnav/app/StartPhaseGridTest.kt")
 GUIDE_SESSION_SOURCE = Path("app/src/main/kotlin/com/trailnav/app/GuideSession.kt")
@@ -665,7 +622,6 @@ VARIANT_SOURCE_PATHS = {
     "task094-m1-turn-now-direction-unknown-record-omitted": ENGINE,
     "task093-m9-circular-overlap-distance": ROUTE_SOURCE,
     "task093-m10-zero-fit-width": MODEL_SOURCE,
-    "task093-m11-record-obligation-test-50m": APP_DIRECTION_TEST,
     "task095-a-no-eta-carryover": GUIDE_SESSION_SOURCE,
 }
 CORE_TEST = frozenset({"core-guide-test"})
@@ -711,9 +667,6 @@ MUTATION_REQUIRED_CONSUMERS = {
     "event-min-interval": CORE_TEST,
     "event-consumption-queue": CORE_TEST,
     "event-threshold-refire": CORE_TEST,
-    "reverse-sunset-drop": CORE_TEST,
-    "reverse-events-suppressed": CORE_TEST,
-    "reverse-status-repeat": CORE_TEST,
     "elevation-fallback": CORE_TEST,
     "priority-old-order": CORE_TEST,
     "elevation-hysteresis-ignore": CORE_TEST,
@@ -753,7 +706,6 @@ MUTATION_REQUIRED_CONSUMERS = {
     "sunrise-rounding-floor": CORE_TEST,
     "sunset-delayed-by-e5-e8": CORE_TEST,
     "sunrise-consumes-rejected-accuracy": CORE_TEST,
-    "elevation-reverse-dwell-drop": CORE_TEST,
     "eta-no-grade": CORE_TEST,
     "eta-target-ignores-switch": CORE_TEST,
     "eta-correction-includes-stops": CORE_TEST,
@@ -815,26 +767,8 @@ APP_START_TEST_FILTERS = {
     "task093-m3-startup-fit-length-gate-removed": (
         "com.trailnav.app.RouteOrientationTest.noisyInPlaceMovementDoesNotResolveUntilTrajectoryIsLongEnough"
     ),
-    "task093-m5-suspect-record-removed": (
-        "com.trailnav.app.DirectionSuspectCalibrationTest.noiseFreeWrongBranchIsRecordedExactlyOnceAtEveryRequiredStart"
-    ),
     "task093-m6-arrival-baseline-reset-removed": (
         "com.trailnav.app.RouteOrientationTest.startupResolutionResetsArrivalBaselineAndRecordsSystemEvent"
-    ),
-    "task093-m7-fixed-observation-distance": (
-        "com.trailnav.app.DirectionSuspectCalibrationTest.noiseFreeWrongBranchIsRecordedExactlyOnceAtEveryRequiredStart"
-    ),
-    "task093-m8-refit-uses-only-current-match-window": (
-        "com.trailnav.app.DirectionSuspectCalibrationTest.noiseFreeWrongBranchIsRecordedExactlyOnceAtEveryRequiredStart"
-    ),
-    "task093-m9-circular-overlap-distance": (
-        "com.trailnav.app.DirectionSuspectCalibrationTest.noiseFreeWrongBranchIsRecordedExactlyOnceAtEveryRequiredStart"
-    ),
-    "task093-m11-record-obligation-test-50m": (
-        "com.trailnav.app.DirectionSuspectCalibrationTest.b8OverlapPairHasZeroPathErrorWhileNonPairDoesNot"
-    ),
-    "task093-m14-suspect-changes-direction": (
-        "com.trailnav.app.DirectionSuspectCalibrationTest.directionSuspectToggleChangesOnlyDiagnosticRecording"
     ),
     "task095-a-no-eta-carryover": (
         "com.trailnav.app.RouteOrientationTest.startupCarriesPreDecisionEtaObservationsIntoTheCalibrationWindow"
@@ -873,14 +807,10 @@ MUTATION_REQUIRED_CONSUMERS.update({
     "task093-m2-predecision-offroute-nearest-match": frozenset({APP_START_TEST}),
     "task093-m3-startup-fit-length-gate-removed": CORE_TEST,
     "task093-m4-tie-break-order-reversed": CORE_TEST,
-    "task093-m5-suspect-record-removed": frozenset({APP_START_TEST}),
     "task093-m6-arrival-baseline-reset-removed": frozenset({APP_START_TEST}),
-    "task093-m7-fixed-observation-distance": frozenset({APP_START_TEST}),
-    "task093-m8-refit-uses-only-current-match-window": frozenset({APP_START_TEST}),
-    "task093-m9-circular-overlap-distance": frozenset({APP_START_TEST}),
+    "task093-m8-refit-uses-only-current-match-window": CORE_TEST,
+    "task093-m9-circular-overlap-distance": CORE_TEST,
     "task093-m10-zero-fit-width": CORE_TEST,
-    "task093-m11-record-obligation-test-50m": frozenset({APP_START_TEST}),
-    "task093-m14-suspect-changes-direction": frozenset({APP_START_TEST}),
     "task094-m1-e1-direction-unknown-record-omitted": CORE_TEST,
     "task094-m1-e3-direction-unknown-record-omitted": CORE_TEST,
     "task094-m1-e4-direction-unknown-record-omitted": CORE_TEST,
@@ -1254,7 +1184,6 @@ def main() -> int:
             TURN_PASS_SOURCE: (workspace / TURN_PASS_SOURCE).read_text(encoding="utf-8"),
             MODEL_SOURCE: (workspace / MODEL_SOURCE).read_text(encoding="utf-8"),
             MATCHER_SOURCE: (workspace / MATCHER_SOURCE).read_text(encoding="utf-8"),
-            APP_DIRECTION_TEST: (workspace / APP_DIRECTION_TEST).read_text(encoding="utf-8"),
             APP_START_PHASE_TEST: (workspace / APP_START_PHASE_TEST).read_text(encoding="utf-8"),
             GUIDE_SESSION_SOURCE: (workspace / GUIDE_SESSION_SOURCE).read_text(encoding="utf-8"),
         }

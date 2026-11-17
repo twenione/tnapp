@@ -58,12 +58,13 @@ class TurnGuidanceTest {
     }
 
     @Test
-    fun reverseStationaryAndOffRouteFramesDoNotAnnounceTurns() {
+    fun stationaryAndOffRouteFramesDoNotAnnounceTurns() {
         val route = route()
-        val reverseRoute = route.copy(turns = listOf(TurnPoint(150.0, Side.RIGHT, 90.0)))
-        var state = guide(GuideState.initial(reverseRoute), SensorFrame(0L, 10.0012, 20.0, 5f, 1f, null)).nextState
-        val reverse = guide(state, SensorFrame(1_000L, 10.0011, 20.0, 5f, 1f, null), GuideConfig(emaAlpha = 1.0))
-        assertTrue(reverse.guidance !is Guidance.TurnAhead && reverse.guidance !is Guidance.TurnNow)
+        val stationary = guide(
+            GuideState.initial(route),
+            SensorFrame(0L, 10.0012, 20.0, 5f, 0f, null),
+        )
+        assertTrue(stationary.guidance !is Guidance.TurnAhead && stationary.guidance !is Guidance.TurnNow)
 
         val metersPerDegreeLon = 6_371_008.8 * cos(Math.toRadians(10.0)) * Math.PI / 180.0
         val east20 = 20.0 / metersPerDegreeLon
@@ -82,7 +83,7 @@ class TurnGuidanceTest {
     }
 
     @Test
-    fun routeStatusSharesNextTurnSelectionAndReverseHidesIt() {
+    fun routeStatusSharesNextTurnSelectionForCurrentRoute() {
         val route = route()
         var state = GuideState.initial(route)
         state = guide(state, SensorFrame(0L, 10.0, 20.0, 5f, 1f, null)).nextState
@@ -91,9 +92,6 @@ class TurnGuidanceTest {
         assertTrue(status != null && status.onRoute)
         assertEquals(ProgressDirection.FORWARD, status?.direction)
         assertTrue(status?.nextTurn?.distanceMeters ?: 0.0 > 0.0)
-        val reverseState = guide(state, SensorFrame(2_000L, 10.0008, 20.0, 5f, 1f, null), GuideConfig(emaAlpha = 1.0)).nextState
-        assertEquals(ProgressDirection.REVERSE, reverseState.direction)
-        assertNull(routeStatus(reverseState)?.nextTurn)
     }
 
     private fun adjacentTurnsConfig(mergeGapMeters: Double = 40.0) = GuideConfig(

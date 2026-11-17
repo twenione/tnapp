@@ -79,13 +79,9 @@ def main() -> int:
         "turnOnRouteMaxOffsetMeters": {"turnOnRouteMaxOffsetMeters": 1.0},
         "startTrajectoryMeters": {"startTrajectoryMeters": 75.0},
         "startTrajectoryMatchToleranceMeters": {"startTrajectoryMatchToleranceMeters": 5.0},
-        "directionRefitIntervalMeters": {"directionRefitIntervalMeters": 20.0},
-        "directionSuspectMarginMeters": {"directionSuspectMarginMeters": 1_000.0},
-        "directionSuspectEnabled": {"directionSuspectEnabled": 0.0},
-        "directionDecidedShiftToleranceMeters": {"directionDecidedShiftToleranceMeters": 0.0},
-        "overlapMinRouteGapMeters": {"overlapMinRouteGapMeters": 2_000.0},
-        "overlapNearMeters": {"overlapNearMeters": 1.0},
-        "directionObservationAfterOverlapMeters": {"directionObservationAfterOverlapMeters": 10.0},
+        "positionGapRematchSeconds": {"positionGapRematchSeconds": 120.0},
+        "gapMaxWalkSpeedMps": {"gapMaxWalkSpeedMps": 5.0},
+        "directionSwitchDistanceMeters": {"directionSwitchDistanceMeters": 1_000.0},
     }
     missing_probes = required - probes.keys()
     if missing_probes:

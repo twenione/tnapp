@@ -84,7 +84,7 @@ class TurnAxisTest {
         return SensorFrame(timestamp, latitude, longitude, 3f, 1.2f, null)
     }
 
-    private fun guideConfig() = GuideConfig(emaAlpha = 1.0, sunsetEnabled = false)
+    private fun guideConfig() = GuideConfig(sunsetEnabled = false)
 
     @Test
     fun turnAnnouncementsLandAtDesignDistanceFromTheCorner() {

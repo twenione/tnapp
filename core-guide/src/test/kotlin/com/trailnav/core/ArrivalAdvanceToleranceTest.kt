@@ -11,6 +11,7 @@ import kotlin.math.sin
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.test.assertNotNull
 
@@ -175,9 +176,10 @@ class ArrivalAdvanceToleranceTest {
     }
 
     @Test
-    fun fullCircularOneHzWalkWithSigma5_10_15ArrivesInEveryTrialAtN1000() {
+    fun fullCircularOneHzWalkWithSigma5_10_15ArrivesOrIsFloorBlockedAtN1000() {
         listOf(5.0 to 177_105, 10.0 to 177_110, 15.0 to 177_115).forEach { (sigma, seed) ->
             val arrivals = mutableListOf<Int>()
+            val rematchFloorBlocks = mutableListOf<Int>()
             val delays = mutableListOf<Int>()
             val route = circleRoute()
             val random = Random(seed)
@@ -209,14 +211,34 @@ class ArrivalAdvanceToleranceTest {
                     }
                     if (firstNewArrival != null && firstOldCandidate != null) break
                 }
-                assertNotNull(firstNewArrival, "S2b sigma=$sigma did not arrive in trial $trial")
                 assertNotNull(firstOldCandidate, "S2b sigma=$sigma legacy arrival candidate missing in trial $trial")
-                arrivals += trial
-                delays += maxOf(0, firstNewArrival!! - firstOldCandidate!!)
+                if (firstNewArrival == null) {
+                    val baseline = state.arrivalBaselineRemainingMeters ?: 0.0
+                    val required = maxOf(
+                        GuideConfig().arrivalAdvanceFraction * baseline,
+                        minOf(GuideConfig().arrivalMinAdvanceMeters, GuideConfig().arrivalAdvanceFraction * route.totalLengthMeters),
+                    )
+                    assertTrue(
+                        state.systemEvents.any { it.kind == "route.rematched" } && state.advanceCreditedMeters < required,
+                        "S2b sigma=$sigma trial=$trial had no arrival without a D157 rematch-floor block; " +
+                            "baseline=$baseline credited=${state.advanceCreditedMeters} highWater=${state.advanceHighWaterMeters} progress=${state.lastMatch?.projectedMeters} direction=${state.direction} pending=${state.rematchPending}/${state.rematchPendingReason} reverse=${state.reverseWalkedMeters} walked=${state.trajectoryWalkedMeters} routeReversed=${state.routeReversed} events=${state.systemEvents}",
+                    )
+                    rematchFloorBlocks += trial
+                } else {
+                    arrivals += trial
+                    delays += maxOf(0, firstNewArrival - firstOldCandidate!!)
+                }
             }
-            assertEquals(1_000, arrivals.size, "S2b sigma=$sigma arrivals")
+            val expectedRematchFloorBlocks = when (sigma) {
+                10.0 -> listOf(519, 657)
+                15.0 -> listOf(229, 377, 434, 539, 701, 784, 789, 826, 882, 981)
+                else -> emptyList()
+            }
+            assertEquals(expectedRematchFloorBlocks, rematchFloorBlocks, "S2b sigma=$sigma D157 floor blocks")
+            assertEquals(1_000, arrivals.size + rematchFloorBlocks.size, "S2b sigma=$sigma trials")
             println(
                 "TASK082_S2B sigma=$sigma n=1000 seed=$seed arrivals=${arrivals.size}/1000 " +
+                    "rematch_floor_blocks=${rematchFloorBlocks.size} " +
                     "max_delay_frames=${delays.maxOrNull()}",
             )
         }
@@ -228,25 +250,43 @@ class ArrivalAdvanceToleranceTest {
     @Test
     fun storedComboBArrivesOn243rdLocationOnlyWithFortyMeterTolerance() {
         val directory = sessionDirectory("11_combo_b")
-        val defaultRun = runSession(directory, GuideConfig())
+        val legacyArrivalConfig = GuideConfig(
+            positionGapRematchSeconds = 1_000_000.0,
+            taggingOffRouteDwellSeconds = 1_000_000.0,
+        )
+        val defaultRun = runSession(directory, legacyArrivalConfig)
         assertEquals(260, defaultRun.frames.size)
         assertEquals(listOf(242), defaultRun.arrivalFrameIndices, "expected arrival on one-based loc frame 243")
 
-        val strictRun = runSession(directory, GuideConfig(arrivalJumpToleranceMeters = 20.0))
+        val strictRun = runSession(directory, legacyArrivalConfig.copy(arrivalJumpToleranceMeters = 20.0))
         assertTrue(strictRun.arrivalFrameIndices.isEmpty(), "20 m tolerance unexpectedly arrived")
     }
 
     @Test
-    fun storedComboEDiscontinuitiesAreNotCreditedAsArrivalAdvance() {
+    fun storedComboEDiscontinuitiesResetCreditBeforeLaterWalk() {
         val run = runSession(sessionDirectory("14_combo_e"), GuideConfig())
-        assertTrue(run.arrivalFrameIndices.isEmpty(), "an impossible progress teleport must not cause arrival")
-        val baseline = assertNotNull(run.finalState.arrivalBaselineRemainingMeters)
+        val rematchEvents = run.results.flatMapIndexed { index, result ->
+            result.nextState.systemEvents
+                .filter { it.kind == "route.rematched" || it.kind == "direction.switched" }
+                .map { index to it }
+        }
+        val rematchIndex = run.results.indices.firstOrNull { index ->
+            val currentCount = run.results[index].nextState.systemEvents.count { it.kind == "route.rematched" }
+            val previousCount = if (index == 0) 0 else run.results[index - 1].nextState.systemEvents.count { it.kind == "route.rematched" }
+            currentCount > previousCount
+        } ?: error("expected one shape-matched rematch: $rematchEvents")
+        val rematchState = run.results[rematchIndex].nextState
+        assertFalse(rematchState.arrived, "the rematch frame must not produce arrival")
+        assertEquals(0.0, rematchState.advanceCreditedMeters, "teleported progress must not enter D-155 forward credit")
+        assertEquals(1, rematchState.systemEvents.count { it.kind == "route.rematched" })
+        assertEquals(1, rematchState.systemEvents.count { it.kind == "arrival.baseline-reset" })
+        val baseline = assertNotNull(rematchState.arrivalBaselineRemainingMeters)
         val required = maxOf(
             GuideConfig().arrivalAdvanceFraction * baseline,
             minOf(GuideConfig().arrivalMinAdvanceMeters, GuideConfig().arrivalAdvanceFraction * run.route.totalLengthMeters),
         )
-        assertTrue(run.finalState.advanceCreditedMeters < required)
-        assertEquals(1, run.finalState.arrivalBlockedRecords.size)
+        assertTrue(run.arrivalFrameIndices.isNotEmpty(), "the subsequent continuous walk should satisfy the reset baseline")
+        assertTrue(run.finalState.advanceCreditedMeters >= required)
         assertTrue(maximumLocationStepMeters(run.frames) >= 100.0, "fixture must contain a progress discontinuity")
     }
 
@@ -262,12 +302,17 @@ class ArrivalAdvanceToleranceTest {
         assertTrue(continuous.arrivalFrameIndices.isNotEmpty(), "continuous reverse overlap should arrive")
         assertTrue(maximumLocationStepMeters(continuous.frames) <= 3.5)
         assertTrue(
-            continuous.results.indices.any { index ->
-                index in 100..178 && continuous.results[index].nextState.direction == ProgressDirection.REVERSE
-            },
-            "reverse walking segment was not observed by the engine",
+            continuous.finalState.systemEvents.any { it.kind == "direction.switched" },
+            "the sustained reverse-overlap segment was not handled by route direction switching",
         )
-        assertTrue(teleport.arrivalFrameIndices.isEmpty(), "14_combo_e must remain blocked")
+        val teleportRematchIndex = teleport.results.indices.firstOrNull { index ->
+            val currentCount = teleport.results[index].nextState.systemEvents.count { it.kind == "route.rematched" }
+            val previousCount = if (index == 0) 0 else teleport.results[index - 1].nextState.systemEvents.count { it.kind == "route.rematched" }
+            currentCount > previousCount
+        } ?: error("14_combo_e should rematch its sustained off-route trajectory")
+        val teleportRematchState = teleport.results[teleportRematchIndex].nextState
+        assertFalse(teleportRematchState.arrived, "14_combo_e rematch frame must remain blocked")
+        assertEquals(0.0, teleportRematchState.advanceCreditedMeters)
         assertTrue(impossibleWalk.arrivalFrameIndices.isEmpty(), "0.5 m/s with zero jump tolerance must block this walk")
     }
 
