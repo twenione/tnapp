@@ -24,8 +24,7 @@
       "milestoneIntervalMeters": 100.0
     },
     "rng_seed": 0,
-    "config_changes": [],
-    "property_seed_projected_meters": 90.0
+    "config_changes": []
   },
   "route": {
     "gpx_id": "synthetic-e1_direction_unknown_attempt",

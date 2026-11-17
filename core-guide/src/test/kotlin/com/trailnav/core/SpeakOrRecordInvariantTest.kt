@@ -25,7 +25,7 @@ class SpeakOrRecordInvariantTest {
     )
 
     private val RECORD_REASONS = mapOf(
-        "E1" to setOf("disabled", "offroute", "reverse", "direction-unknown", "interval", "priority", "jump"),
+        "E1" to setOf("disabled", "offroute", "interval", "priority"),
         "E2" to setOf("disabled", "offroute", "interval", "priority", "jump"),
         "E3" to setOf("disabled", "reverse", "direction-unknown", "jump"),
         "E4" to setOf("passed", "disabled", "reverse", "direction-unknown", "jump"),
@@ -36,8 +36,8 @@ class SpeakOrRecordInvariantTest {
     )
 
     @Test
-    fun startupE1IsRecordedWithoutSpeaking() = assertStartupFixture("e1_direction_unknown_attempt", "E1") {
-        it is Guidance.Milestone
+    fun startupE1WaitsForWalkedMilestoneAfterDirectionResolution() {
+        assertStartupE1WaitsForWalkedMilestone(runFixture("property", "e1_direction_unknown_attempt"))
     }
 
     @Test
@@ -160,9 +160,21 @@ class SpeakOrRecordInvariantTest {
         assertRecord(propertyRuns.getValue("e1_disabled"), "E1", "disabled")
         assertRecord(propertyRuns.getValue("e1_offroute"), "E1", "offroute")
         assertRecord(propertyRuns.getValue("e1_priority"), "E1", "priority")
-        assertRecord(propertyRuns.getValue("e1_reverse"), "E1", "reverse")
+        val reverseE1 = propertyRuns.getValue("e1_reverse")
+        check(reverseE1.transitions.flatMap(::records).none { it.event == "E1" }) {
+            "e1_reverse: E1 must not advance from projected route progress while moving in reverse"
+        }
+        check(reverseE1.transitions.last().result.nextState.milestoneWalkedMeters == 0.0 &&
+            reverseE1.transitions.last().result.nextState.consumedMilestoneIndices.isEmpty()) {
+            "e1_reverse: reverse movement changed walked milestone distance or consumed a target"
+        }
         assertRecord(propertyRuns.getValue("e1_interval_priority"), "E1", "interval")
-        assertRecord(propertyRuns.getValue("e1_jump"), "E1", "jump")
+        val rematchE1 = propertyRuns.getValue("e1_jump")
+        check(rematchE1.transitions.flatMap(::records).none { it.event == "E1" } &&
+            rematchE1.transitions.last().result.nextState.milestoneWalkedMeters == 0.0 &&
+            rematchE1.transitions.last().result.nextState.consumedMilestoneIndices.isEmpty()) {
+            "e1_jump: rematch must not add walked distance, consume a milestone, or record an E1 jump"
+        }
         assertRecord(propertyRuns.getValue("e2_disabled"), "E2", "disabled")
         assertRecord(propertyRuns.getValue("e2_offroute"), "E2", "offroute")
         assertRecord(propertyRuns.getValue("e2_interval"), "E2", "interval")
@@ -200,7 +212,7 @@ class SpeakOrRecordInvariantTest {
         check(propertyRuns.getValue("e3_session_end_pending").transitions.last().result.nextState.pendingRemainingThresholds.isNotEmpty()) {
             "E3 session-end pending target was not retained"
         }
-        assertStartupDirectionUnknownRecord(propertyRuns.getValue("e1_direction_unknown_attempt"), "E1")
+        assertStartupE1WaitsForWalkedMilestone(propertyRuns.getValue("e1_direction_unknown_attempt"))
         assertStartupDirectionUnknownRecord(propertyRuns.getValue("e3_direction_unknown_attempt"), "E3")
         assertStartupDirectionUnknownRecord(propertyRuns.getValue("e4_direction_unknown"), "E4")
         assertStartupDirectionUnknownRecord(propertyRuns.getValue("e6_direction_unknown"), "E6")
@@ -349,6 +361,23 @@ class SpeakOrRecordInvariantTest {
         assertStartupDirectionUnknownRecord(run, event)
         check(run.transitions.none { transition -> transition.result.guidance?.let(isSpoken) == true }) {
             "$session: $event guidance was spoken before startup direction was known"
+        }
+    }
+
+    private fun assertStartupE1WaitsForWalkedMilestone(run: RunResult) {
+        val unresolved = run.transitions.filter { it.before.startupEnabled && !it.before.startupResolved }
+        check(unresolved.isNotEmpty()) { "${run.directory.fileName}: expected unresolved startup frames" }
+        check(unresolved.all { transition ->
+            transition.before.milestoneWalkedMeters == 0.0 &&
+                transition.result.nextState.milestoneWalkedMeters == 0.0 &&
+                1 !in transition.result.nextState.consumedMilestoneIndices &&
+                transition.result.guidance !is Guidance.Milestone &&
+                records(transition).none { it.event == "E1" }
+        }) { "${run.directory.fileName}: E1 advanced before startup direction resolved" }
+        val spoken = run.transitions.filter { it.result.guidance is Guidance.Milestone }
+        check(spoken.size == 1) { "${run.directory.fileName}: expected one walked-distance E1 announcement, found ${spoken.size}" }
+        check(spoken.single().before.startupResolved && spoken.single().result.nextState.milestoneWalkedMeters >= 100.0) {
+            "${run.directory.fileName}: E1 was not announced after 100 m were walked from the resolved guidance start"
         }
     }
 

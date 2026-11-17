@@ -270,10 +270,38 @@ class RematchDirectionTest {
 
         assertEquals(1, state.systemEvents.count { it.kind == "route.rematched" })
         assertEquals(1, state.systemEvents.count { it.kind == "arrival.baseline-reset" })
-        assertTrue(state.discardedEvents.any { it.event == "E1" && it.reason == "jump" })
+        assertTrue(state.discardedEvents.none { it.event == "E1" })
+        assertTrue(state.consumedMilestoneIndices.isEmpty())
         assertTrue(state.discardedEvents.any { it.event == "E3" && it.reason == "jump" })
         assertEquals(1, state.discardedWaypoints.count { it.reason == "jump" })
         assertEquals(0.0, state.advanceCreditedMeters)
+    }
+
+    @Test
+    fun rematchJumpDoesNotAddToWalkedMilestones() {
+        val route = lineRoute(1_500.0)
+        val config = GuideConfig(
+            sunsetEnabled = false,
+            sunriseEnabled = false,
+            milestoneEnabled = true,
+            milestoneIntervalMeters = 100.0,
+            eventMinIntervalSeconds = 0.0,
+        )
+        val seeded = rematchSeed(route, config, oldProgress = 90.0, sampleEnd = 440.0).copy(
+            advanceCreditedMeters = 90.0,
+            milestoneWalkedMeters = 90.0,
+        )
+        val rematched = Engine.guide(seeded, frame(30_000L, pointAt(450.0), speed = 0f), config)
+
+        assertEquals(1, rematched.nextState.systemEvents.count { it.kind == "route.rematched" })
+        assertEquals(90.0, rematched.nextState.milestoneWalkedMeters)
+        assertFalse(1 in rematched.nextState.consumedMilestoneIndices)
+        assertFalse(rematched.nextState.discardedEvents.any { it.event == "E1" && it.reason == "jump" })
+
+        val walked = Engine.guide(rematched.nextState, frame(40_000L, pointAt(500.0)), config)
+        assertEquals(Guidance.Milestone(100.0), walked.guidance)
+        assertTrue(1 in walked.nextState.consumedMilestoneIndices)
+        assertTrue(kotlin.math.abs(walked.nextState.milestoneWalkedMeters - 140.0) < 1.0)
     }
 
     private fun replayTurnaround(route: RouteModel, threshold: Double, reverseMeters: Double): List<Pair<Guidance?, GuideState>> {

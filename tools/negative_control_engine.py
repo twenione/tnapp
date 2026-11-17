@@ -329,8 +329,8 @@ VARIANTS = {
                                               'if (false) { /* TASK-080 E4 first-match exclusion removed */'),
   'task080-first-match-e6-exclusion-removed': ('if (next.firstMatchProgressMeters?.let { waypoint.s < it } == true) {',
                                               'if (false) { /* TASK-080 E6 first-match exclusion removed */'),
-  'task080-duplicate-discard-record': ('                progressMeters = match.projectedMeters,\n            ),\n        )\n    }\n\n    // E1: distance milestones are based on projected route distance.',
-                                      '                progressMeters = match.projectedMeters,\n            ),\n        )\n        if (next.discardedEvents.isNotEmpty()) {\n            next = next.copy(discardedEvents = next.discardedEvents + next.discardedEvents.last())\n        }\n    }\n\n    // E1: distance milestones are based on projected route distance. /* TASK-080 duplicate record */'),
+  'task080-duplicate-discard-record': ('                progressMeters = match.projectedMeters,\n            ),\n        )\n    }\n\n    // E1: distance milestones count the route distance walked since guidance start (D-158).',
+                                      '                progressMeters = match.projectedMeters,\n            ),\n        )\n        if (next.discardedEvents.isNotEmpty()) {\n            next = next.copy(discardedEvents = next.discardedEvents + next.discardedEvents.last())\n        }\n    }\n\n    // E1: distance milestones count the route distance walked since guidance start (D-158). /* TASK-080 duplicate record */'),
   'task080-invalid-e3-record-reason': ('record("E3", threshold.toBigDecimal().stripTrailingZeros().toPlainString(), discardReason)',
                                        'record("E3", threshold.toBigDecimal().stripTrailingZeros().toPlainString(), "interval") /* TASK-080 invalid reason */'),
  'waypoint-toggle-ignored': ('if (config.waypointEnabled && onRoute && forward && eventIntervalOpen && !startupPending && index '

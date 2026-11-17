@@ -1464,7 +1464,6 @@ internal object StartPhaseGrid {
 }
 
 private object StartPhaseMilestoneProbe {
-    private const val START_MILLIS = 0L
     private val config = GuideConfig().copy(
         milestoneEnabled = true,
         elapsedEnabled = true,
@@ -1482,16 +1481,27 @@ private object StartPhaseMilestoneProbe {
         val session = GuideSession(RouteModel.fromGpx(route.xml, config), config, startupEnabled = true)
         val locations = syntheticTrack(route, startMeters, direction = 1, standSeconds = 0, sigmaMeters = 0.0, seconds = 900, seed = 84_159_177L)
         val violations = mutableListOf<String>()
+        var guidanceStartedAtMillis: Long? = null
         for (location in locations) {
-            checkMilestone(session, location, violations)
+            val decision = session.accept(location)
+            if (decision.startupJustResolved) guidanceStartedAtMillis = location.timestampMillis
+            checkMilestone(decision, location, guidanceStartedAtMillis, violations)
         }
         return violations
     }
 
-    private fun checkMilestone(session: GuideSession, location: TrailLocation, violations: MutableList<String>) {
-        val decision = session.accept(location)
+    private fun checkMilestone(
+        decision: SessionDecision,
+        location: TrailLocation,
+        guidanceStartedAtMillis: Long?,
+        violations: MutableList<String>,
+    ) {
         val milestone = decision.result.guidance as? Guidance.Milestone ?: return
-        val walkedMeters = (location.timestampMillis - START_MILLIS) / 1_000.0 * WALK_SPEED_MPS
+        val guidanceStart = guidanceStartedAtMillis ?: run {
+            violations += "E1 emitted before direction resolution at ${location.timestampMillis}"
+            return
+        }
+        val walkedMeters = (location.timestampMillis - guidanceStart) / 1_000.0 * WALK_SPEED_MPS
         val announcedMeters = decision.result.reason.details["thresholdMeters"]?.toDoubleOrNull()
             ?: milestone.distanceMeters
         if (abs(walkedMeters - announcedMeters) > WALK_SPEED_MPS * 2.0) {

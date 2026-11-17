@@ -405,6 +405,8 @@ data class GuideState(
     val arrivalBaselineRemainingMeters: Double? = null,
     val advanceHighWaterMeters: Double? = null,
     val advanceCreditedMeters: Double = 0.0,
+    /** E1 route distance walked since guidance start; rematching does not reset it (D-158). */
+    val milestoneWalkedMeters: Double = 0.0,
     val arrivalBlockedRecords: List<ArrivalBlockedRecord> = emptyList(),
     val consumedSunsetThresholds: Set<Int> = emptySet(),
     val pendingSunsetThresholds: Set<Int> = emptySet(),
