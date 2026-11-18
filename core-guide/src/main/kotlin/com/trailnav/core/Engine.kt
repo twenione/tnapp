@@ -52,6 +52,21 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
             )
         )
     }
+    if (
+        initializedState.startupEnabled && !initializedState.startupResolved && config.roundTripEnabled &&
+        !initializedState.roundTripLoopIgnored
+    ) {
+        val gapMeters = routeEndpointGapMeters(initializedState.route)
+        if (gapMeters != null && gapMeters <= config.roundTripLoopMaxGapMeters) {
+            initializedState = initializedState.copy(
+                roundTripLoopIgnored = true,
+                systemEvents = initializedState.systemEvents + EngineSystemEvent(
+                    "route.round_trip.ignored",
+                    mapOf("reason" to "loop", "gap_m" to gapMeters.toString()),
+                ),
+            )
+        }
+    }
     var startupPending = initializedState.startupEnabled && !initializedState.startupResolved
     val walkedBeforeFrame = initializedState.trajectoryWalkedMeters
     val elapsedSincePreviousFrame = initializedState.lastTimestamp?.let {
@@ -85,6 +100,13 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         config,
     )
     if (match == null) {
+        if (roundTripStartEligible(initializedState, config)) {
+            return GuideResult(
+                Guidance.RoundTripStart,
+                initializedState.copy(roundTripStartAnnounced = true, lastTimestamp = frame.timestamp),
+                Reason("route.round-trip.start"),
+            )
+        }
         val sunset = evaluateSunsetStandalone(initializedState, frame, config, higherPriority = false)
         val sunriseState = evaluateSunriseStandalone(sunset.state, frame, config)
         if (sunset.guidance != null) {
@@ -106,13 +128,18 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         if (trajectoryMatch != null) {
             val originalRoute = initializedState.route
             val reverse = trajectoryMatch.direction == ProgressDirection.REVERSE
-            val orientedRoute = if (reverse) originalRoute.reversed(config) else originalRoute
+            val orientedOneWayRoute = if (reverse) originalRoute.reversed(config) else originalRoute
             val expectedProgress = if (reverse) {
-                (orientedRoute.totalLengthMeters - trajectoryMatch.currentProgressMeters).coerceIn(0.0, orientedRoute.totalLengthMeters)
+                (orientedOneWayRoute.totalLengthMeters - trajectoryMatch.currentProgressMeters).coerceIn(0.0, orientedOneWayRoute.totalLengthMeters)
             } else {
-                trajectoryMatch.currentProgressMeters.coerceIn(0.0, orientedRoute.totalLengthMeters)
+                trajectoryMatch.currentProgressMeters.coerceIn(0.0, orientedOneWayRoute.totalLengthMeters)
             }
-            val orientedMatch = RouteMatcher.nearest(orientedRoute, frame, expectedProgress, config) ?: match
+            val loopGapMeters = routeEndpointGapMeters(orientedOneWayRoute)
+            val buildRoundTrip = config.roundTripEnabled && !initializedState.roundTripLoopIgnored &&
+                loopGapMeters != null && loopGapMeters > config.roundTripLoopMaxGapMeters
+            val orientedRoute = if (buildRoundTrip) orientedOneWayRoute.roundTrip(config) else orientedOneWayRoute
+            val oneWayMatch = RouteMatcher.nearest(orientedOneWayRoute, frame, expectedProgress, config) ?: match
+            val orientedMatch = RouteMatcher.nearest(orientedRoute, frame, expectedProgress, config) ?: oneWayMatch
             val orientedMatchForward = orientedMatch.copy(direction = ProgressDirection.FORWARD)
             val previousBaseline = initializedState.arrivalBaselineRemainingMeters
             val newBaseline = (orientedRoute.totalLengthMeters - orientedMatchForward.projectedMeters).coerceAtLeast(0.0)
@@ -142,9 +169,33 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
                 fields = mapOf(
                     "previous_baseline_remaining_m" to (previousBaseline?.toString() ?: "none"),
                     "new_baseline_remaining_m" to newBaseline.toString(),
-                    "reason" to "trajectory-first-match",
+                    "reason" to if (buildRoundTrip) "round-trip-build" else "trajectory-first-match",
                 ),
             )
+            val roundTripEvent = if (buildRoundTrip) EngineSystemEvent(
+                kind = "route.round_trip",
+                fields = mapOf(
+                    "turnaround_m" to orientedRoute.roundTripTurnaroundMeters.toString(),
+                    "total_m" to orientedRoute.totalLengthMeters.toString(),
+                    "source_point_count" to orientedOneWayRoute.sourceTrackPoints.size.toString(),
+                ),
+            ) else null
+            val outboundRemaining = orientedRoute.roundTripTurnaroundMeters?.let {
+                (it - orientedMatchForward.projectedMeters).coerceAtLeast(0.0)
+            }
+            val skippedOutboundRemaining = if (buildRoundTrip && outboundRemaining != null) {
+                config.remainingAnnounceMeters.filter { it > outboundRemaining }
+            } else emptyList()
+            val startupDiscardedRemaining = skippedOutboundRemaining.map { threshold ->
+                DiscardedEvent("E3", threshold.toBigDecimal().stripTrailingZeros().toPlainString(), "jump", orientedMatchForward.projectedMeters)
+            }
+            val startupPassedWaypoints = if (buildRoundTrip) {
+                orientedRoute.waypoints.indices.filter { orientedRoute.waypoints[it].s < orientedMatchForward.projectedMeters }
+            } else emptyList()
+            val startupDiscardedWaypoints = startupPassedWaypoints.map { index ->
+                val waypoint = orientedRoute.waypoints[index]
+                DiscardedWaypoint(index, waypoint.s, waypoint.s - orientedMatchForward.projectedMeters, "start")
+            }
             val originalStart = if (reverse) {
                 (originalRoute.totalLengthMeters - trajectoryMatch.startProgressMeters).coerceAtLeast(0.0)
             } else {
@@ -157,13 +208,19 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
                 lastMatch = null,
                 firstMatchProgressMeters = originalStart,
                 routeReversed = reverse,
-                consumedWaypointIndices = if (reverse) emptySet() else initializedState.consumedWaypointIndices,
+                consumedWaypointIndices = if (buildRoundTrip) startupPassedWaypoints.toSet() else if (reverse) emptySet() else initializedState.consumedWaypointIndices,
+                discardedWaypoints = initializedState.discardedWaypoints + startupDiscardedWaypoints,
+                discardedEvents = initializedState.discardedEvents + startupDiscardedRemaining,
+                consumedRemainingThresholds = if (buildRoundTrip) skippedOutboundRemaining.toSet() else initializedState.consumedRemainingThresholds,
+                pendingRemainingThresholds = if (buildRoundTrip) emptySet() else initializedState.pendingRemainingThresholds,
+                pendingRemainingDelayReason = if (buildRoundTrip) null else initializedState.pendingRemainingDelayReason,
                 directionDecidedAtMillis = frame.timestamp,
                 decidedDirection = trajectoryMatch.direction,
                 arrivalBaselineRemainingMeters = newBaseline,
                 advanceHighWaterMeters = orientedMatchForward.projectedMeters,
                 advanceCreditedMeters = 0.0,
-                systemEvents = initializedState.systemEvents + listOf(routeOrientation, directionDecided, baselineReset),
+                roundTripOnReturnLeg = false,
+                systemEvents = initializedState.systemEvents + listOfNotNull(routeOrientation, directionDecided, baselineReset, roundTripEvent),
             )
             match = orientedMatchForward
             startupPending = false
@@ -206,8 +263,10 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
             val previousRoute = initializedState.route
             val previousProgress = initializedState.lastMatch?.projectedMeters ?: match.projectedMeters
             val switching = fit.direction == ProgressDirection.REVERSE
+            val roundTripRoute = previousRoute.roundTripTurnaroundMeters != null
             val condition = if (branchFit) "branch" else "turnaround"
-            val newRoute = if (switching) previousRoute.reversed(config) else previousRoute
+            val directionSwitch = switching && !roundTripRoute
+            val newRoute = if (directionSwitch) previousRoute.reversed(config) else previousRoute
             val newProgress = if (switching) {
                 (previousRoute.totalLengthMeters - fit.currentProgressMeters)
                     .coerceIn(0.0, newRoute.totalLengthMeters)
@@ -218,7 +277,7 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
             if (rematch != null && rematch.distanceMeters < config.offRouteEnterDistMeters) {
                 val oldRemaining = initializedState.arrivalBaselineRemainingMeters
                 val newBaseline = (newRoute.totalLengthMeters - rematch.projectedMeters).coerceAtLeast(0.0)
-                val resetReason = if (switching) "direction-switch" else "trajectory-rematch"
+                val resetReason = if (directionSwitch) "direction-switch" else "trajectory-rematch"
                 val baselineEvent = EngineSystemEvent(
                     kind = "arrival.baseline-reset",
                     fields = mapOf(
@@ -237,7 +296,7 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
                         "fit_rmse_m" to fit.rootMeanSquareErrorMeters.toString(),
                     ),
                 )
-                val directionEvent = if (switching) {
+                val directionEvent = if (directionSwitch) {
                     EngineSystemEvent(
                         kind = "direction.switched",
                         fields = mapOf(
@@ -257,17 +316,27 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
                     newProgress = rematch.projectedMeters,
                     config = config,
                 )
+                val nextReturnLeg = if (roundTripRoute) {
+                    roundTripReturnLegAtProgress(newRoute, rematch.projectedMeters, initializedState.roundTripOnReturnLeg, config)
+                } else false
+                val turnaroundIndex = if (roundTripRoute) newRoute.turns.indexOfFirst { it.isTurnaround } else -1
+                val completedAhead = if (turnaroundIndex >= 0 && initializedState.roundTripOnReturnLeg && !nextReturnLeg) {
+                    resetEvents.completedTurnAheadIndices - turnaroundIndex
+                } else resetEvents.completedTurnAheadIndices
+                val completedNow = if (turnaroundIndex >= 0 && initializedState.roundTripOnReturnLeg && !nextReturnLeg) {
+                    resetEvents.completedTurnNowIndices - turnaroundIndex
+                } else resetEvents.completedTurnNowIndices
                 initializedState = resetEvents.copy(
                     route = newRoute,
-                    routeReversed = if (switching) !initializedState.routeReversed else initializedState.routeReversed,
-                    decidedDirection = if (switching) {
+                    routeReversed = if (directionSwitch) !initializedState.routeReversed else initializedState.routeReversed,
+                    decidedDirection = if (directionSwitch) {
                         if (initializedState.decidedDirection == ProgressDirection.REVERSE) {
                             ProgressDirection.FORWARD
                         } else {
                             ProgressDirection.REVERSE
                         }
                     } else initializedState.decidedDirection,
-                    directionDecidedAtMillis = if (switching) frame.timestamp else initializedState.directionDecidedAtMillis,
+                    directionDecidedAtMillis = if (directionSwitch) frame.timestamp else initializedState.directionDecidedAtMillis,
                     lastMatch = rematch.copy(direction = ProgressDirection.FORWARD),
                     firstMatchProgressMeters = rematch.projectedMeters,
                     arrivalBaselineRemainingMeters = newBaseline,
@@ -281,11 +350,14 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
                     rematchPending = false,
                     rematchPendingReason = null,
                     reverseWalkedMeters = 0.0,
+                    roundTripOnReturnLeg = nextReturnLeg,
+                    completedTurnAheadIndices = completedAhead,
+                    completedTurnNowIndices = completedNow,
                     systemEvents = initializedState.systemEvents + listOfNotNull(rematchEvent, directionEvent, baselineEvent),
                 )
                 match = rematch
                 rematchedThisFrame = true
-                if (switching && !branchFit) {
+                if (directionSwitch && !branchFit) {
                     turnaroundGuidance = Guidance.Status(
                         "되돌아가는 방향으로 안내합니다",
                         rematch.distanceMeters,
@@ -329,6 +401,31 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         stationary = stationary,
     )
 
+    val turnaroundMeters = next.route.roundTripTurnaroundMeters
+    val previousProgressForTurnaround = initializedState.lastMatch?.projectedMeters
+    val walkedAcrossTurnaround = turnaroundMeters != null && !next.roundTripOnReturnLeg &&
+        !rematchedThisFrame && direction == ProgressDirection.FORWARD &&
+        previousProgressForTurnaround != null && previousProgressForTurnaround < turnaroundMeters &&
+        directedMatch.projectedMeters >= turnaroundMeters
+    if (walkedAcrossTurnaround) {
+        val previousBaseline = next.arrivalBaselineRemainingMeters
+        val newBaseline = (next.route.totalLengthMeters - directedMatch.projectedMeters).coerceAtLeast(0.0)
+        next = resetRoundTripRemainingEvents(next, directedMatch.projectedMeters, config).copy(
+            roundTripOnReturnLeg = true,
+            arrivalBaselineRemainingMeters = newBaseline,
+            advanceHighWaterMeters = directedMatch.projectedMeters,
+            advanceCreditedMeters = 0.0,
+            systemEvents = next.systemEvents + EngineSystemEvent(
+                "arrival.baseline-reset",
+                mapOf(
+                    "previous_baseline_remaining_m" to (previousBaseline?.toString() ?: "none"),
+                    "new_baseline_remaining_m" to newBaseline.toString(),
+                    "reason" to "round-trip-turnaround",
+                ),
+            ),
+        )
+    }
+
     if (
         !startupPending && !rematchedThisFrame &&
         (direction in setOf(ProgressDirection.FORWARD, ProgressDirection.STATIONARY) || next.arrivalBaselineRemainingMeters == null)
@@ -344,6 +441,13 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         )
         next = next.copy(
             milestoneWalkedMeters = next.milestoneWalkedMeters + (next.advanceCreditedMeters - creditedBefore),
+        )
+    }
+    if (roundTripStartEligible(initializedState, config) && !next.roundTripStartAnnounced) {
+        return GuideResult(
+            Guidance.RoundTripStart,
+            next.copy(roundTripStartAnnounced = true),
+            Reason("route.round-trip.start"),
         )
     }
     val arrivalCandidate = isArrivalCandidate(next.route, directedMatch, frame.timestamp, next.sessionStartTimestamp, config)
@@ -379,7 +483,7 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
             exitCandidateSince = null
         )
         return GuideResult(
-            Guidance.Arrived,
+            if (next.route.roundTripTurnaroundMeters != null) Guidance.ArrivedAtStart else Guidance.Arrived,
             next,
             Reason(
                 rule = "arrival.radius-and-progress",
@@ -649,17 +753,20 @@ private fun recordRematchJumps(
     val routeChanged = previousRoute !== newRoute
     val lowerProgress = if (routeChanged) 0.0 else previousProgress
     val forwardJump = newProgress > lowerProgress
-    val newRemaining = (newRoute.totalLengthMeters - newProgress).coerceAtLeast(0.0)
+    val newReturnLeg = roundTripReturnLegAtProgress(newRoute, newProgress, state.roundTripOnReturnLeg, config)
+    val legChanged = !routeChanged && newRoute.roundTripTurnaroundMeters != null && newReturnLeg != state.roundTripOnReturnLeg
+    val newRemaining = remainingToRoundTripLegEnd(newRoute, newProgress, newReturnLeg)
+    val previousRemaining = remainingToRoundTripLegEnd(previousRoute, previousProgress, state.roundTripOnReturnLeg)
     val discardedEvents = state.discardedEvents.toMutableList()
     val discardedWaypoints = state.discardedWaypoints.toMutableList()
     val discardedSlopePeaks = state.discardedSlopePeaks.toMutableList()
-    val remainingBefore = if (routeChanged) emptySet() else state.consumedRemainingThresholds
+    val remainingBefore = if (routeChanged || legChanged) emptySet() else state.consumedRemainingThresholds
     val waypointsBefore = if (routeChanged) emptySet() else state.consumedWaypointIndices
     val slopesBefore = if (routeChanged) emptySet() else state.consumedSlopeIndices
 
     val skippedRemaining = config.remainingAnnounceMeters.filter { threshold ->
-        if (routeChanged) threshold > newRemaining
-        else (previousRoute.totalLengthMeters - previousProgress) > threshold && newRemaining <= threshold
+        if (routeChanged || legChanged) threshold > newRemaining
+        else previousRemaining > threshold && newRemaining <= threshold
     }
     skippedRemaining.forEach { threshold ->
         discardedEvents += DiscardedEvent(
@@ -771,8 +878,10 @@ private fun evaluateDynamicGuidance(
 ): DynamicEvaluation {
     var next = state
     val oldProgress = previous.lastMatch?.projectedMeters
-    val oldRemaining = oldProgress?.let { (state.route.totalLengthMeters - it).coerceAtLeast(0.0) }
-    val remaining = (state.route.totalLengthMeters - match.projectedMeters).coerceAtLeast(0.0)
+    val oldRemaining = oldProgress?.let {
+        remainingToRoundTripLegEnd(state.route, it, previous.roundTripOnReturnLeg)
+    }
+    val remaining = remainingToRoundTripLegEnd(state.route, match.projectedMeters, state.roundTripOnReturnLeg)
     val candidates = mutableListOf<DynamicCandidate>()
     val onRoute = !state.offRoute
     val forward = state.direction == ProgressDirection.FORWARD || state.direction == ProgressDirection.STATIONARY
@@ -904,7 +1013,7 @@ private fun evaluateDynamicGuidance(
         candidates += DynamicCandidate(
             EventPriority.REMAINING,
             "event.remaining",
-            Guidance.Remaining(threshold, remaining),
+            Guidance.Remaining(threshold, remaining, returnLeg = state.route.roundTripTurnaroundMeters != null && state.roundTripOnReturnLeg),
             reason("event.remaining", "E3", details),
             remainingThresholds = thresholds,
         )
@@ -1518,8 +1627,8 @@ private fun evaluateTurnGuidance(
         if (turn.s < match.projectedMeters) {
             if (direction == ProgressDirection.UNKNOWN) {
                 val records = buildList {
-                    if (index !in next.completedTurnAheadIndices) add("TURN_AHEAD")
-                    if (index !in next.completedTurnNowIndices) add("TURN_NOW")
+                    if (index !in next.completedTurnAheadIndices) add(if (turn.isTurnaround) "TURNAROUND_AHEAD" else "TURN_AHEAD")
+                    if (index !in next.completedTurnNowIndices) add(if (turn.isTurnaround) "TURNAROUND" else "TURN_NOW")
                 }.map { event ->
                     DiscardedEvent(event, index.toString(), "direction-unknown", match.projectedMeters)
                 }
@@ -1536,27 +1645,79 @@ private fun evaluateTurnGuidance(
     if (direction != ProgressDirection.FORWARD || match.distanceMeters >= config.turnOnRouteMaxOffsetMeters) {
         return TurnEvaluation(next, null, Reason("turn.ineligible", details = mapOf("direction" to direction.name.lowercase())))
     }
-    val candidate = state.route.turns.asSequence()
+    val thresholds = mapOf(
+        "turnAheadDistanceMeters" to config.turnAheadDistanceMeters,
+        "turnNowDistanceMeters" to config.turnNowDistanceMeters,
+        "turnOnRouteMaxOffsetMeters" to config.turnOnRouteMaxOffsetMeters
+    )
+    val eligible = state.route.turns.asSequence()
         .withIndex()
         .map { (index, turn) -> Triple(index, turn, turn.s - match.projectedMeters) }
         .filter { (_, _, remaining) -> remaining >= 0.0 && remaining <= config.turnAheadDistanceMeters }
-        .firstOrNull { (index, turn, remaining) ->
+        .filter { (index, turn, remaining) ->
+            if (turn.isTurnaround) {
+                remaining <= config.turnNowDistanceMeters && index !in next.completedTurnNowIndices ||
+                    remaining > config.turnNowDistanceMeters && index !in next.completedTurnAheadIndices
+            } else {
             val suppressAhead = index > 0 &&
                 turn.s - state.route.turns[index - 1].s < config.turnMergeGapMeters
             remaining <= config.turnNowDistanceMeters && index !in next.completedTurnNowIndices ||
                 remaining > config.turnNowDistanceMeters &&
                 index !in next.completedTurnAheadIndices &&
                 !suppressAhead
+            }
         }
+        .toList()
+    val turnaround = eligible.firstOrNull { it.second.isTurnaround }
+    if (turnaround != null) {
+        val (index, turn, remaining) = turnaround
+        val ordinary = state.route.turns.asSequence().withIndex()
+            .map { (candidateIndex, candidateTurn) -> Triple(candidateIndex, candidateTurn, candidateTurn.s - match.projectedMeters) }
+            .filter { (_, candidateTurn, distance) -> !candidateTurn.isTurnaround && distance >= 0.0 && distance <= config.turnAheadDistanceMeters }
+            .firstOrNull { (candidateIndex, candidateTurn, distance) ->
+                val suppressAhead = candidateIndex > 0 &&
+                    candidateTurn.s - state.route.turns[candidateIndex - 1].s < config.turnMergeGapMeters
+                distance <= config.turnNowDistanceMeters && candidateIndex !in next.completedTurnNowIndices ||
+                    distance > config.turnNowDistanceMeters && candidateIndex !in next.completedTurnAheadIndices && !suppressAhead
+            }
+        if (ordinary != null) {
+            val (ordinaryIndex, _, ordinaryDistance) = ordinary
+            val event = if (ordinaryDistance <= config.turnNowDistanceMeters) "TURN_NOW" else "TURN_AHEAD"
+            next = next.copy(
+                discardedEvents = next.discardedEvents + DiscardedEvent(
+                    event = event,
+                    threshold = ordinaryIndex.toString(),
+                    reason = "priority-turnaround",
+                    progressMeters = match.projectedMeters,
+                ),
+                completedTurnAheadIndices = if (event == "TURN_AHEAD") next.completedTurnAheadIndices + ordinaryIndex else next.completedTurnAheadIndices,
+                completedTurnNowIndices = if (event == "TURN_NOW") next.completedTurnNowIndices + ordinaryIndex else next.completedTurnNowIndices,
+            )
+        }
+        val details = mapOf("turnIndex" to index.toString(), "turnS" to turn.s.toString(), "remainingMeters" to remaining.toString())
+        return if (remaining <= config.turnNowDistanceMeters) {
+            TurnEvaluation(
+                next.copy(
+                    completedTurnAheadIndices = next.completedTurnAheadIndices + index,
+                    completedTurnNowIndices = next.completedTurnNowIndices + index,
+                ),
+                Guidance.Turnaround,
+                Reason("turnaround.now", thresholds = thresholds, details = details),
+            )
+        } else {
+            TurnEvaluation(
+                next.copy(completedTurnAheadIndices = next.completedTurnAheadIndices + index),
+                Guidance.TurnaroundAhead(remaining),
+                Reason("turnaround.ahead", thresholds = thresholds, details = details),
+            )
+        }
+    }
+
+    val candidate = eligible.firstOrNull { !it.second.isTurnaround }
         ?: return TurnEvaluation(next, null, Reason("turn.none-eligible"))
     val index = candidate.first
     val turn = candidate.second
     val remaining = candidate.third
-    val thresholds = mapOf(
-        "turnAheadDistanceMeters" to config.turnAheadDistanceMeters,
-        "turnNowDistanceMeters" to config.turnNowDistanceMeters,
-        "turnOnRouteMaxOffsetMeters" to config.turnOnRouteMaxOffsetMeters
-    )
     val details = mapOf(
         "turnIndex" to index.toString(),
         "turnS" to turn.s.toString(),
@@ -1598,6 +1759,56 @@ private fun isArrivalCandidate(
         match.distanceMeters < config.offRouteEnterDistMeters &&
         distanceToEnd <= config.arriveRadiusMeters &&
         match.projectedMeters > route.totalLengthMeters * config.arriveProgressFraction
+}
+
+private fun routeEndpointGapMeters(route: RouteModel): Double? {
+    val points = route.sourceTrackPoints.ifEmpty { route.sourcePoints }
+    if (points.size < 2) return null
+    return RouteMath.distance(route.toEnu(points.first()), route.toEnu(points.last()))
+}
+
+private fun remainingToRoundTripLegEnd(route: RouteModel, progressMeters: Double, returnLeg: Boolean): Double {
+    val turnaround = route.roundTripTurnaroundMeters ?: return (route.totalLengthMeters - progressMeters).coerceAtLeast(0.0)
+    val legEnd = if (returnLeg) route.totalLengthMeters else turnaround
+    return (legEnd - progressMeters).coerceAtLeast(0.0)
+}
+
+private fun resetRoundTripRemainingEvents(state: GuideState, progressMeters: Double, config: GuideConfig): GuideState {
+    val remaining = remainingToRoundTripLegEnd(state.route, progressMeters, returnLeg = true)
+    val skipped = config.remainingAnnounceMeters.filter { it > remaining }
+    return state.copy(
+        consumedRemainingThresholds = skipped.toSet(),
+        pendingRemainingThresholds = emptySet(),
+        pendingRemainingDelayReason = null,
+        discardedEvents = state.discardedEvents + skipped.map { threshold ->
+            DiscardedEvent(
+                "E3",
+                threshold.toBigDecimal().stripTrailingZeros().toPlainString(),
+                "jump",
+                progressMeters,
+            )
+        },
+    )
+}
+
+private fun roundTripReturnLegAtProgress(
+    route: RouteModel,
+    progressMeters: Double,
+    previousReturnLeg: Boolean,
+    config: GuideConfig,
+): Boolean {
+    val turnaround = route.roundTripTurnaroundMeters ?: return false
+    return when {
+        progressMeters >= turnaround -> true
+        progressMeters < turnaround - config.arrivalMinAdvanceMeters -> false
+        else -> previousReturnLeg
+    }
+}
+
+private fun roundTripStartEligible(state: GuideState, config: GuideConfig): Boolean {
+    if (!state.startupEnabled || !config.roundTripEnabled || state.roundTripStartAnnounced || state.roundTripLoopIgnored) return false
+    if (state.route.roundTripTurnaroundMeters != null) return true
+    return routeEndpointGapMeters(state.route)?.let { it > config.roundTripLoopMaxGapMeters } == true
 }
 
 private fun requiredArrivalAdvance(

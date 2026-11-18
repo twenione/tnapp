@@ -46,3 +46,20 @@ def manifest_events(manifest: Any) -> tuple[bool, dict[str, bool] | None, str | 
 def event_config_overrides(events: dict[str, bool]) -> list[str]:
     """Translate a validated E1..E8 setting to EngineCli --config assignments."""
     return [f"{field}={int(events[event])}" for event, field in EVENT_CONFIG_FIELDS.items()]
+
+
+def manifest_round_trip(manifest: Any) -> tuple[bool, bool | None, str | None]:
+    """Read the optional engine.config.round_trip boolean."""
+    engine = manifest.get("engine") if isinstance(manifest, dict) else None
+    config = engine.get("config") if isinstance(engine, dict) else None
+    if not isinstance(config, dict) or "round_trip" not in config:
+        return False, None, None
+    value = config["round_trip"]
+    if type(value) is not bool:
+        return True, None, "expected a boolean"
+    return True, value, None
+
+
+def round_trip_cli_args(enabled: bool) -> list[str]:
+    """Translate an enabled session flag to the EngineCli option."""
+    return ["--round-trip"] if enabled else []

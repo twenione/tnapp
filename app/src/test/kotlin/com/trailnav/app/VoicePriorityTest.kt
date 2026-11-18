@@ -11,6 +11,8 @@ class VoicePriorityTest {
     @Test
     fun stateTransitionsAreHighestPriority() {
         assertEquals(VoicePriority.STATE_TRANSITION, priorityFor(Guidance.Arrived, null, false))
+        assertEquals(VoicePriority.STATE_TRANSITION, priorityFor(Guidance.RoundTripStart, "route.round-trip.start", false))
+        assertEquals(VoicePriority.STATE_TRANSITION, priorityFor(Guidance.ArrivedAtStart, "arrival.radius-and-progress", false))
         assertEquals(VoicePriority.STATE_TRANSITION, priorityFor(Guidance.OffRoute(30.0, "forward"), "off-route.enter", false))
         assertEquals(VoicePriority.STATE_TRANSITION, priorityFor(Guidance.Status("recovery"), null, true))
         assertTrue(isProtected(Guidance.Arrived, false))
@@ -21,7 +23,9 @@ class VoicePriorityTest {
     @Test
     fun onlyTurnNowIsTimeCritical() {
         assertEquals(VoicePriority.TIME_CRITICAL, priorityFor(Guidance.TurnNow(Side.RIGHT, 1), "turn.now", false))
+        assertEquals(VoicePriority.TIME_CRITICAL, priorityFor(Guidance.Turnaround, "turnaround.now", false))
         assertEquals(VoicePriority.NORMAL, priorityFor(Guidance.TurnAhead(20.0, Side.LEFT, 0), "turn.ahead", false))
+        assertEquals(VoicePriority.NORMAL, priorityFor(Guidance.TurnaroundAhead(20.0), "turnaround.ahead", false))
     }
 
     @Test

@@ -184,6 +184,9 @@ class JsonlSessionLogger(
             is com.trailnav.core.Guidance.Approach -> "APPROACH"
             is com.trailnav.core.Guidance.TurnAhead -> "TURN_AHEAD"
             is com.trailnav.core.Guidance.TurnNow -> "TURN_NOW"
+            is com.trailnav.core.Guidance.TurnaroundAhead -> "TURNAROUND_AHEAD"
+            com.trailnav.core.Guidance.Turnaround -> "TURNAROUND"
+            com.trailnav.core.Guidance.RoundTripStart -> "ROUND_TRIP_START"
             is com.trailnav.core.Guidance.Milestone -> "MILESTONE"
             is com.trailnav.core.Guidance.Elapsed -> "ELAPSED"
             is com.trailnav.core.Guidance.Remaining -> "REMAINING"
@@ -194,6 +197,7 @@ class JsonlSessionLogger(
             is com.trailnav.core.Guidance.Sunrise -> "SUNRISE"
             is com.trailnav.core.Guidance.Status -> "STATUS"
             com.trailnav.core.Guidance.Arrived -> "ARRIVED"
+            com.trailnav.core.Guidance.ArrivedAtStart -> "ARRIVED_AT_START"
         }
 
         private fun toJson(value: Any?): String = when (value) {

@@ -80,6 +80,8 @@ def assert_discard_shape(event: dict) -> None:
         "E8": {"event", "threshold", "reason", "progress_meters"},
         "TURN_AHEAD": {"event", "threshold", "reason", "progress_meters"},
         "TURN_NOW": {"event", "threshold", "reason", "progress_meters"},
+        "TURNAROUND_AHEAD": {"event", "threshold", "reason", "progress_meters"},
+        "TURNAROUND": {"event", "threshold", "reason", "progress_meters"},
     }.get(details.get("event"))
 
     if expected is None or set(details) != expected:
@@ -122,6 +124,8 @@ def event_stream(include_frame: bool = True) -> list[dict]:
     events.append(arrival_blocked_event())
     events.append(discarded_turn_event("TURN_AHEAD", 8))
     events.append(discarded_turn_event("TURN_NOW", 9))
+    events.append(discarded_turn_event("TURNAROUND_AHEAD", 10))
+    events.append(discarded_turn_event("TURNAROUND", 11))
     return events
 
 
@@ -140,10 +144,10 @@ def main() -> int:
         write_session(root, include_frame=True)
         errors, warnings, count = validate(root)
         assert not errors, errors
-        assert count == 10
+        assert count == 12
         emitted = [json.loads(raw) for raw in (root / "events.ndjson").read_text(encoding="utf-8").splitlines()]
         discards = [event for event in emitted if event.get("kind") == "event.discarded"]
-        assert [event["details"]["event"] for event in discards] == ["E4", "E6", "E1", "TURN_AHEAD", "TURN_NOW"]
+        assert [event["details"]["event"] for event in discards] == ["E4", "E6", "E1", "TURN_AHEAD", "TURN_NOW", "TURNAROUND_AHEAD", "TURNAROUND"]
         assert all(event["stream"] == "sys" for event in discards)
         for discard in discards:
             assert_discard_shape(discard)

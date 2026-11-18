@@ -92,9 +92,10 @@ VARIANTS = {
                             'return false /* D-033 turn pass always false */'),
  'turn-identity-zero': ('Guidance.TurnNow(turn.side, index)',
                         'Guidance.TurnNow(turn.side, 0) /* D-033 turn identity zero */'),
- 'turn-consumption': ('next.copy(completedTurnAheadIndices = next.completedTurnAheadIndices + index)',
-                      'next.copy(completedTurnAheadIndices = next.completedTurnAheadIndices) /* D-033 turn '
-                      'consumption removed */'),
+ 'turn-consumption': ('            next.copy(completedTurnAheadIndices = next.completedTurnAheadIndices + index),\n'
+                      '            Guidance.TurnAhead(remaining, turn.side, index),',
+                      '            next.copy(completedTurnAheadIndices = next.completedTurnAheadIndices),\n'
+                      '            Guidance.TurnAhead(remaining, turn.side, index), /* D-033 turn consumption removed */'),
  'turn-direction-gate': ('if (direction != ProgressDirection.FORWARD || match.distanceMeters >= '
                          'config.turnOnRouteMaxOffsetMeters)',
                          'if (true /* D-033 direction gate mutation */)'),
@@ -222,8 +223,8 @@ VARIANTS = {
                                       '        next.pendingRemainingThresholds.isNotEmpty()',
                                       'config.remainingEnabled && onRoute && eventIntervalOpen &&\n'
                                       '        next.pendingRemainingThresholds.isNotEmpty() /* D-071 reverse pending spoken */'),
- 'remaining-delayed-threshold-text': ('Guidance.Remaining(threshold, remaining)',
-                                      'Guidance.Remaining(threshold, threshold) /* D-071 delayed threshold text */'),
+ 'remaining-delayed-threshold-text': ('Guidance.Remaining(threshold, remaining, returnLeg = state.route.roundTripTurnaroundMeters != null && state.roundTripOnReturnLeg)',
+                                      'Guidance.Remaining(threshold, threshold, returnLeg = state.route.roundTripTurnaroundMeters != null && state.roundTripOnReturnLeg) /* D-071 delayed threshold text */'),
  'remaining-pending-not-cleared': ('val remainingPendingAfterSelection = next.pendingRemainingThresholds - selected.remainingThresholds\n'
                                    '    next = next.copy(\n'
                                    '        pendingSunsetThresholds = pending,\n'
@@ -421,8 +422,8 @@ VARIANTS.update({
         "                    .thenBy { directionTieOrder(it.direction) } /* TASK-093 M-4 */",
     ),
     "task093-m6-arrival-baseline-reset-removed": (
-        "systemEvents = initializedState.systemEvents + listOf(routeOrientation, directionDecided, baselineReset),",
-        "systemEvents = initializedState.systemEvents + listOf(routeOrientation, directionDecided), /* TASK-093 M-6 */",
+        "systemEvents = initializedState.systemEvents + listOfNotNull(routeOrientation, directionDecided, baselineReset, roundTripEvent),",
+        "systemEvents = initializedState.systemEvents + listOfNotNull(routeOrientation, directionDecided, roundTripEvent), /* TASK-093 M-6 */",
     ),
     "task093-m8-refit-uses-only-current-match-window": (
         "StartTrajectoryMatcher.match(initializedState.route, recentSamples, config)",
@@ -456,12 +457,12 @@ VARIANTS.update({
         '                if (discardReason != null) {\n                    if (!startupPending) discardedWaypoints += DiscardedWaypoint(index, waypoint.s, distance, discardReason) /* TASK-094 M1 */',
     ),
     "task094-m1-turn-ahead-direction-unknown-record-omitted": (
-        'if (index !in next.completedTurnAheadIndices) add("TURN_AHEAD")',
-        'if (false) add("TURN_AHEAD") /* TASK-094 M1 */',
+        'if (index !in next.completedTurnAheadIndices) add(if (turn.isTurnaround) "TURNAROUND_AHEAD" else "TURN_AHEAD")',
+        'if (false) add(if (turn.isTurnaround) "TURNAROUND_AHEAD" else "TURN_AHEAD") /* TASK-094 M1 */',
     ),
     "task094-m1-turn-now-direction-unknown-record-omitted": (
-        'if (index !in next.completedTurnNowIndices) add("TURN_NOW")',
-        'if (false) add("TURN_NOW") /* TASK-094 M1 */',
+        'if (index !in next.completedTurnNowIndices) add(if (turn.isTurnaround) "TURNAROUND" else "TURN_NOW")',
+        'if (false) add(if (turn.isTurnaround) "TURNAROUND" else "TURN_NOW") /* TASK-094 M1 */',
     ),
     "task095-a-no-eta-carryover": (
         "                startupEtaObservations.drop(1).forEach { observation ->",
@@ -838,8 +839,8 @@ MUTATION_REQUIRED_CONSUMERS.update({
 
 VARIANTS.update({
     "reorientation-keeps-consumed-event-state": (
-        "consumedWaypointIndices = if (reverse) emptySet() else initializedState.consumedWaypointIndices,",
-        "consumedWaypointIndices = initializedState.consumedWaypointIndices, /* TASK-102 mutation */",
+        "consumedWaypointIndices = if (buildRoundTrip) startupPassedWaypoints.toSet() else if (reverse) emptySet() else initializedState.consumedWaypointIndices,",
+        "consumedWaypointIndices = if (buildRoundTrip) startupPassedWaypoints.toSet() else initializedState.consumedWaypointIndices, /* TASK-102 mutation */",
     ),
 })
 APP_START_TEST_FILTERS.update({

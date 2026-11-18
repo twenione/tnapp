@@ -15,6 +15,8 @@ enum class TargetLabelKind {
     UNNAMED_WAYPOINT,
     ELEVATION_PEAK,
     DESTINATION,
+    TURNAROUND,
+    START,
 }
 
 data class RouteTargetEstimate(
@@ -57,6 +59,7 @@ class RouteEtaTracker(
         val s: Double,
         val source: String,
         val name: String?,
+        val labelKind: TargetLabelKind? = null,
     )
 
     private data class PredictedTravel(
@@ -128,21 +131,23 @@ class RouteEtaTracker(
                 correction = correction.first,
                 correctionActive = correction.second,
                 slopeSource = slopeSource(),
+                labelKind = if (route.roundTripTurnaroundMeters != null) TargetLabelKind.START else TargetLabelKind.DESTINATION,
             )
         }
 
-        val targets = targetCandidates()
-        val switchMeters = summitSwitchMeters(targets)
-        val candidate = if (progressMeters >= switchMeters) {
-            null
-        } else {
-            targets.firstOrNull { it.s > progressMeters }
-        }
+        val roundTrip = route.roundTripTurnaroundMeters != null
+        val returnLeg = route.roundTripTurnaroundMeters?.let { progressMeters >= it } == true
+        val targets = targetCandidates(returnLeg)
+        val switchMeters = if (roundTrip) Double.POSITIVE_INFINITY else summitSwitchMeters(targets)
+        val candidate = if (progressMeters >= switchMeters) null else targets.firstOrNull { it.s > progressMeters }
         if (candidate == null) {
             return destinationEstimate(progressMeters, correction)
         }
 
         val labelKind = when {
+            candidate.labelKind != null -> candidate.labelKind
+            roundTrip && candidate.source == TURNAROUND_SOURCE -> TargetLabelKind.TURNAROUND
+            roundTrip && candidate.s >= totalLengthMeters - config.arriveRadiusMeters -> TargetLabelKind.START
             candidate.source == WAYPOINT_SOURCE &&
                 candidate.s >= totalLengthMeters - config.arriveRadiusMeters -> TargetLabelKind.DESTINATION
             candidate.source == WAYPOINT_SOURCE && candidate.name != null && isGenericWaypointName(candidate.name) ->
@@ -183,12 +188,13 @@ class RouteEtaTracker(
             correction = correction.first,
             correctionActive = correction.second,
             slopeSource = slopeSource(),
+            labelKind = if (route.roundTripTurnaroundMeters != null) TargetLabelKind.START else TargetLabelKind.DESTINATION,
             etaUnavailableReason = unavailableReason,
         )
     }
 
-    private fun targetCandidates(): List<TargetCandidate> =
-        if (route.waypoints.isNotEmpty()) {
+    private fun targetCandidates(returnLeg: Boolean = false): List<TargetCandidate> {
+        val candidates = if (route.waypoints.isNotEmpty()) {
             route.waypoints
                 .map { TargetCandidate(it.s, WAYPOINT_SOURCE, it.name) }
                 .sortedBy { it.s }
@@ -197,6 +203,16 @@ class RouteEtaTracker(
                 .map { TargetCandidate(it.s, ELEVATION_PEAK_SOURCE, null) }
                 .sortedBy { it.s }
         }
+        val turnaround = route.roundTripTurnaroundMeters ?: return candidates
+        return if (!returnLeg) {
+            val outbound = candidates.filter { it.s <= turnaround }
+            if (outbound.none { it.source == WAYPOINT_SOURCE && abs(it.s - turnaround) <= config.arriveRadiusMeters }) {
+                (outbound + TargetCandidate(turnaround, TURNAROUND_SOURCE, null, TargetLabelKind.TURNAROUND)).sortedBy { it.s }
+            } else outbound
+        } else {
+            candidates.filter { it.s > turnaround && it.s < totalLengthMeters - config.arriveRadiusMeters }
+        }
+    }
 
     private fun summitSwitchMeters(targets: List<TargetCandidate>): Double {
         if (!hasUsableElevation) return targets.lastOrNull()?.s ?: 0.0
@@ -278,6 +294,7 @@ class RouteEtaTracker(
         const val WAYPOINT_SOURCE = "waypoint"
         const val ELEVATION_PEAK_SOURCE = "elevation-peak"
         const val DESTINATION_SOURCE = "destination"
+        const val TURNAROUND_SOURCE = "turnaround"
     }
 }
 

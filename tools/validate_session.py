@@ -14,7 +14,7 @@ import re
 import sys
 from pathlib import Path
 from typing import Any
-from session_events import manifest_events
+from session_events import manifest_events, manifest_round_trip
 
 # SCOPE: This tuple defines supported session schema versions, not omitted input targets.
 ALLOWED_SCHEMA_VERSIONS = ("0.1.0-draft", "1.0.0")
@@ -84,6 +84,9 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
     _, _, event_error = manifest_events(manifest)
     if event_error:
         errors.append("manifest.json: engine.config.events must contain exactly E1..E8 booleans")
+    _, _, round_trip_error = manifest_round_trip(manifest)
+    if round_trip_error:
+        errors.append("manifest.json: engine.config.round_trip must be a boolean when present")
     if manifest.get("schema_version") not in ALLOWED_SCHEMA_VERSIONS:
         errors.append(f"manifest.json: schema_version must be one of {ALLOWED_SCHEMA_VERSIONS}")
     session_id = manifest.get("session_id")

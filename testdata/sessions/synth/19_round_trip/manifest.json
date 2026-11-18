@@ -1,0 +1,64 @@
+{
+  "session_id": "f6824835-5701-4c1b-a2be-79a59bf5c2de",
+  "schema_version": "0.1.0-draft",
+  "started_at_wall": "2000-01-01T00:00:00Z",
+  "app": {
+    "version": "0.1.0",
+    "build": 0,
+    "code_hash": "git:fc88974e9c338c971dd59a35bc4c3cb28608210b-dirty"
+  },
+  "engine": {
+    "config": {
+      "stub": false,
+      "variant": "19_round_trip",
+      "implementation": "core-guide",
+      "round_trip": true,
+      "events": {
+        "E1": false,
+        "E2": false,
+        "E3": false,
+        "E4": true,
+        "E5": false,
+        "E6": false,
+        "E7": false,
+        "E8": false
+      }
+    },
+    "rng_seed": 1
+  },
+  "route": {
+    "gpx_id": "synthetic-task119-oneway",
+    "gpx_hash": "sha256:7965c21133038a02bc9aaf412bf8590147341ccb44e9d96aa06b9380ca72e24d",
+    "point_count": 6,
+    "elevation_use": {
+      "used": true,
+      "reason": "ok"
+    },
+    "elevation_source": "synthetic",
+    "waypoint_count": 0
+  },
+  "clock": {
+    "monotonic_source": "synthetic-sequence",
+    "timestamp_unit": "seconds",
+    "frame_intervals_seconds": [
+      1.0
+    ]
+  },
+  "privacy": {
+    "upload_default": false
+  },
+  "device": {
+    "model": "synthetic",
+    "os": "test",
+    "sensors": [
+      "gps"
+    ]
+  },
+  "scenario": {
+    "family": "round-trip",
+    "noise_sigma_m": 3.0,
+    "seed": 1,
+    "speed_mps": 1.2,
+    "description": "One-way GPX followed outbound and return at 1.2 m/s with deterministic 3 m Gaussian location noise."
+  }
+}

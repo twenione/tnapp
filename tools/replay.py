@@ -9,7 +9,7 @@ import subprocess
 import sys
 from xml.etree import ElementTree as ET
 from pathlib import Path
-from session_events import event_config_overrides, manifest_events
+from session_events import event_config_overrides, manifest_events, manifest_round_trip, round_trip_cli_args
 
 
 def resolve_cli(explicit: str | None) -> Path:
@@ -32,11 +32,13 @@ def invoke(
     root: Path,
     *,
     every_frame: bool = False,
+    round_trip: bool = False,
     overrides: list[str] | None = None,
 ) -> list[dict]:
     command = [str(cli), "--route", str(root / "route.gpx"), "--session", str(root)]
     if every_frame:
         command.append("--emit-every-frame")
+    command.extend(round_trip_cli_args(round_trip))
     for override in overrides or []:
         command.extend(["--config", override])
     if cli.suffix.lower() in {".bat", ".cmd"}:
@@ -183,9 +185,13 @@ def replay(root: Path, cli: Path, strict: bool, overrides: list[str] | None = No
     if event_error:
         print(f"FAIL: manifest engine.config.events invalid: {event_error}")
         return 1
+    round_trip_present, round_trip_value, round_trip_error = manifest_round_trip(manifest)
+    if round_trip_error:
+        print(f"FAIL: manifest engine.config.round_trip invalid: {round_trip_error}")
+        return 1
     effective_overrides = event_config_overrides(event_values) if events_present and event_values is not None else []
     effective_overrides.extend(overrides or [])
-    trace = invoke(cli, root, overrides=effective_overrides)
+    trace = invoke(cli, root, round_trip=round_trip_present and round_trip_value is True, overrides=effective_overrides)
     comparisons = [item for item in trace if item.get("kind") == "guide"]
     trigger_trace = [item for item in trace if item.get("kind") == "trigger"]
     startup_oracle = manifest.get("startup_oracle") if isinstance(manifest, dict) else None

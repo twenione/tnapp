@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Negative controls for optional manifest engine.config.events validation."""
+"""Negative controls for optional manifest engine.config events and route mode."""
 from __future__ import annotations
 
 import json
@@ -48,6 +48,33 @@ def test_session_event_validation() -> None:
             assert EXPECTED_ERROR in errors, f"{label} was accepted: {errors}"
 
 
+def test_round_trip_manifest_validation() -> None:
+    source = Path("testdata/sessions/golden/golden_engine")
+    expected = "manifest.json: engine.config.round_trip must be a boolean when present"
+    with tempfile.TemporaryDirectory(prefix="tnapp-session-round-trip-") as temporary:
+        root = Path(temporary) / "session"
+        shutil.copytree(source, root)
+        manifest_path = root / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+        for value in (None, True, False):
+            config = manifest.setdefault("engine", {}).setdefault("config", {})
+            if value is None:
+                config.pop("round_trip", None)
+            else:
+                config["round_trip"] = value
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            errors, _, _ = validate(root)
+            assert expected not in errors, f"valid round_trip={value!r} rejected: {errors}"
+
+        for value in ("true", 1, [], {}):
+            manifest.setdefault("engine", {}).setdefault("config", {})["round_trip"] = value
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            errors, _, _ = validate(root)
+            assert expected in errors, f"invalid round_trip={value!r} accepted: {errors}"
+
+
 if __name__ == "__main__":
     test_session_event_validation()
-    print("PASS: session event config accepts absent and exact E1..E8 booleans; rejects missing, extra, and string values")
+    test_round_trip_manifest_validation()
+    print("PASS: optional engine config accepts exact E1..E8 values and a boolean round_trip flag")
