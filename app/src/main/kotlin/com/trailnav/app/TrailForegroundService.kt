@@ -184,7 +184,8 @@ class TrailForegroundService : Service() {
             return
         }
         val eventSettings = NavigationPreferences.eventSettings(this)
-        val config = eventSettings.toGuideConfig()
+        val roundTripEnabled = NavigationPreferences.roundTripEnabled(this)
+        val config = guideConfigFor(eventSettings, roundTripEnabled)
         val parsedRoute = try {
             RouteModel.fromGpx(xml, config)
         } catch (error: Throwable) {
@@ -202,6 +203,7 @@ class TrailForegroundService : Service() {
             eventSettings = eventSettings.toWireMap(),
             routeHash = "sha256:${JsonlSessionLogger.sha256(xml)}",
             appVersion = BuildConfig.VERSION_NAME,
+            roundTripEnabled = config.roundTripEnabled,
             routeElevationUsed = parsedRoute.elevationUsed,
             routeElevationReason = parsedRoute.elevationReason,
             routeWaypointCount = parsedRoute.waypoints.size,
@@ -543,7 +545,10 @@ class TrailForegroundService : Service() {
         updateOffRoutePauseAvailability(currentOffRoute)
         previousOffRoute = currentOffRoute
         refreshPendingVoiceTurns(decision.result.nextState)
-        val spoken = guidance.toSpeech()
+        val startEtaSeconds = if (guidance is Guidance.Remaining && guidance.returnLeg) {
+            guideSession?.startEstimate()?.remainingSeconds
+        } else null
+        val spoken = guidance.toSpeech(decision.result.nextState, startEtaSeconds)
         val guidanceVoiceKind = voiceKindFor(guidance)
         val guidanceVoiceAllowed = shouldSpeakVoice(ending, paused, guidanceVoiceKind)
         val recoveryVoiceAllowed = shouldSpeakVoice(ending, paused, VoiceKind.RECOVERY)
@@ -785,6 +790,7 @@ class TrailForegroundService : Service() {
                 .putExtra(EXTRA_RIBBON_TARGET_REMAINING_METERS, ribbon.targetRemainingMeters ?: -1.0)
                 .putExtra(EXTRA_RIBBON_TARGET_LABEL_KIND, ribbon.targetLabelKind?.name.orEmpty())
                 .putExtra(EXTRA_RIBBON_TARGET_NAME, ribbon.targetName.orEmpty())
+                .putExtra(EXTRA_RIBBON_ROUND_TRIP_LEG, ribbon.roundTripLeg?.name.orEmpty())
                 .putExtra(EXTRA_RIBBON_NEXT_TURN_DISTANCE_METERS, ribbon.nextTurn?.distanceMeters ?: -1.0)
                 .putExtra(EXTRA_RIBBON_NEXT_TURN_SIDE, ribbon.nextTurn?.side?.name.orEmpty()),
         )
@@ -1062,6 +1068,7 @@ class TrailForegroundService : Service() {
         const val EXTRA_RIBBON_TARGET_REMAINING_METERS = "ribbon_target_remaining_meters"
         const val EXTRA_RIBBON_TARGET_LABEL_KIND = "ribbon_target_label_kind"
         const val EXTRA_RIBBON_TARGET_NAME = "ribbon_target_name"
+        const val EXTRA_RIBBON_ROUND_TRIP_LEG = "ribbon_round_trip_leg"
         const val EXTRA_RIBBON_NEXT_TURN_DISTANCE_METERS = "ribbon_next_turn_distance_meters"
         const val EXTRA_RIBBON_NEXT_TURN_SIDE = "ribbon_next_turn_side"
         private const val LOCATION_FIX_TIMEOUT_MILLIS = 15_000L
@@ -1074,7 +1081,10 @@ class TrailForegroundService : Service() {
 
 internal fun Guidance?.isReverseStatus(): Boolean = this is Guidance.Status && message == "역방향 진행 중"
 
-internal fun Guidance?.toSpeech(): String? = when (this) {
+internal fun Guidance?.toSpeech(
+    state: com.trailnav.core.GuideState? = null,
+    startEtaSeconds: Double? = null,
+): String? = when (this) {
     is Guidance.OffRoute -> GuidancePhrases.offRoute(distance)
     is Guidance.Approach -> GuidancePhrases.approach(distanceMeters, bearingDegrees)
     is Guidance.Status -> if (isReverseStatus()) null else message
@@ -1085,7 +1095,11 @@ internal fun Guidance?.toSpeech(): String? = when (this) {
     Guidance.Turnaround -> GuidancePhrases.turnaround()
     is Guidance.Milestone -> GuidancePhrases.milestone(distanceMeters)
     is Guidance.Elapsed -> GuidancePhrases.elapsed(hours)
-    is Guidance.Remaining -> GuidancePhrases.remaining(remainingMeters)
+    is Guidance.Remaining -> when {
+        returnLeg -> GuidancePhrases.remainingToStart(remainingMeters, startEtaSeconds)
+        state?.route?.roundTripTurnaroundMeters != null -> GuidancePhrases.remainingToTurnaround(remainingMeters)
+        else -> GuidancePhrases.remaining(remainingMeters)
+    }
     is Guidance.Slope -> GuidancePhrases.slope(kind)
     is Guidance.Elevation -> GuidancePhrases.elevation(elevationMeters)
     is Guidance.Waypoint -> GuidancePhrases.waypoint(name)

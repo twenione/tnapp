@@ -15,6 +15,7 @@ internal object NavigationPreferences {
     private const val KEY_ON_DEMAND_ENABLED = "ondemand_enabled"
     private const val KEY_ON_DEMAND_RESPONSE_MODE = "ondemand_response_mode"
     private const val KEY_IMU_COLLECT_ENABLED = "imu_collect_enabled"
+    private const val KEY_ROUND_TRIP_ENABLED = "round_trip_enabled"
     private const val KEY_SERVICE_STATE = "service_state"
     private const val KEY_ACTIVE_SESSION_ID = "active_session_id"
 
@@ -93,6 +94,15 @@ internal object NavigationPreferences {
     fun saveImuCollectEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_IMU_COLLECT_ENABLED, enabled)
+            .apply()
+    }
+
+    fun roundTripEnabled(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .getBoolean(KEY_ROUND_TRIP_ENABLED, false)
+
+    fun saveRoundTripEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_ROUND_TRIP_ENABLED, enabled)
             .apply()
     }
 

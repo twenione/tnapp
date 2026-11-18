@@ -3,6 +3,7 @@ package com.trailnav.app
 import com.trailnav.core.GuideConfig
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class EventSettingsTest {
@@ -94,6 +95,25 @@ class EventSettingsTest {
         )
 
         assertEquals(expected, actual)
+    }
+
+    @Test
+    fun sharedConfigHelperPreservesEventsAndRoundTripChangesItsDeterministicHash() {
+        val settings = GuideEvent.values().fold(EventSettings.defaults()) { current, event ->
+            current.withEnabled(event, event.ordinal % 2 == 0)
+        }
+        val disabled = guideConfigFor(settings, roundTripEnabled = false)
+        val enabled = guideConfigFor(settings, roundTripEnabled = true)
+
+        assertEquals(toggleValues(settings.toGuideConfig()), toggleValues(disabled))
+        assertEquals(toggleValues(settings.toGuideConfig()), toggleValues(enabled))
+        assertEquals(false, disabled.roundTripEnabled)
+        assertEquals(true, enabled.roundTripEnabled)
+        assertEquals(
+            JsonlSessionLogger.sha256(disabled.toString()),
+            JsonlSessionLogger.sha256(guideConfigFor(settings, roundTripEnabled = false).toString()),
+        )
+        assertNotEquals(JsonlSessionLogger.sha256(disabled.toString()), JsonlSessionLogger.sha256(enabled.toString()))
     }
 
     private fun toggleValues(config: GuideConfig): Map<GuideEvent, Boolean> = mapOf(

@@ -4,7 +4,9 @@ import java.text.DecimalFormatSymbols
 
 import com.trailnav.core.NextTurn
 import com.trailnav.core.Guidance
+import com.trailnav.core.GuideState
 import com.trailnav.core.ProgressDirection
+import com.trailnav.core.RouteModel
 import com.trailnav.core.RouteStatus
 import com.trailnav.core.RouteTargetEstimate
 import com.trailnav.core.Side
@@ -66,7 +68,7 @@ class GuidancePhrasesTest {
     fun roundTripGuidanceAndTargetsNameTheTurnaroundAndStart() {
         assertEquals("왕복 경로로 안내합니다", Guidance.RoundTripStart.toSpeech())
         assertEquals("잠시 후 반환점입니다", Guidance.TurnaroundAhead(60.0).toSpeech())
-        assertEquals("반환점입니다", Guidance.Turnaround.toSpeech())
+        assertEquals("반환점입니다. 왔던 길로 돌아갑니다", Guidance.Turnaround.toSpeech())
         assertEquals("출발지에 도착했습니다", Guidance.ArrivedAtStart.toSpeech())
         assertEquals("반환점", GuidancePhrases.targetSubject(TargetLabelKind.TURNAROUND, null))
         assertEquals("출발지", GuidancePhrases.targetSubject(TargetLabelKind.START, null))
@@ -92,6 +94,42 @@ class GuidancePhrasesTest {
     @Test
     fun sunrisePhraseIncludesMinutes() {
         assertEquals("일출까지 10분입니다", GuidancePhrases.sunrise(10))
+    }
+
+    @Test
+    fun remainingPhrasesNameTheStartAndTurnaroundWithoutChangingDestinationPhrase() {
+        assertEquals("출발지까지는 2킬로미터, 약 20분입니다", GuidancePhrases.remainingToStart(2_000.0, 1_200.0))
+        assertEquals("출발지까지는 500미터입니다", GuidancePhrases.remainingToStart(500.0, null))
+        assertEquals("출발지까지는 1킬로미터, 약 2분입니다", GuidancePhrases.remainingToStart(1_000.0, 90.0))
+        assertEquals("반환점까지 1킬로미터", GuidancePhrases.remainingToTurnaround(1_000.0))
+        assertEquals("목적지까지 1킬로미터", GuidancePhrases.remaining(1_000.0))
+        assertEquals("반환점입니다. 왔던 길로 돌아갑니다", GuidancePhrases.turnaround())
+    }
+
+    @Test
+    fun remainingSpeechSelectsTurnaroundStartOrDestinationFromEngineRouteState() {
+        val ordinaryRoute = RouteModel.fromGpx(
+            """<gpx><trk><trkseg><trkpt lat="0" lon="0"/><trkpt lat="0" lon="0.01"/></trkseg></trk></gpx>""",
+        )
+        val roundTripRoute = ordinaryRoute.copy(roundTripTurnaroundMeters = 500.0)
+        val outbound = GuideState.initial(roundTripRoute)
+        val returning = outbound.copy(roundTripOnReturnLeg = true)
+        val inactive = GuideState.initial(ordinaryRoute)
+
+        assertEquals(
+            "반환점까지 1킬로미터",
+            Guidance.Remaining(500.0, 1_000.0).toSpeech(outbound),
+        )
+        assertEquals(
+            "출발지까지는 1킬로미터, 약 20분입니다",
+            Guidance.Remaining(500.0, 1_000.0, returnLeg = true).toSpeech(returning, 1_200.0),
+        )
+        assertEquals(
+            "출발지까지는 1킬로미터입니다",
+            Guidance.Remaining(500.0, 1_000.0, returnLeg = true).toSpeech(returning),
+        )
+        assertEquals("목적지까지 1킬로미터", Guidance.Remaining(500.0, 1_000.0).toSpeech(inactive))
+        assertEquals("목적지까지 1킬로미터", Guidance.Remaining(500.0, 1_000.0).toSpeech())
     }
 
     @Test

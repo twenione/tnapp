@@ -25,10 +25,16 @@ object GuidancePhrases {
     fun arrivedAtStart(): String = "출발지에 도착했습니다"
     fun roundTripStart(): String = "왕복 경로로 안내합니다"
     fun turnaroundAhead(): String = "잠시 후 반환점입니다"
-    fun turnaround(): String = "반환점입니다"
+    fun turnaround(): String = "반환점입니다. 왔던 길로 돌아갑니다"
     fun milestone(distanceMeters: Double): String = "출발지로부터 ${formatDistance(distanceMeters)}"
     fun elapsed(hours: Int): String = "출발지로부터 ${hours}시간 경과"
     fun remaining(distanceMeters: Double): String = "목적지까지 ${formatDistance(distanceMeters)}"
+    fun remainingToStart(distanceMeters: Double, etaSeconds: Double?): String {
+        val distance = formatDistance(distanceMeters)
+        val time = etaPhrase(etaSeconds)
+        return if (time == null) "출발지까지는 ${distance}입니다" else "출발지까지는 ${distance}, ${time}입니다"
+    }
+    fun remainingToTurnaround(distanceMeters: Double): String = "반환점까지 ${formatDistance(distanceMeters)}"
     fun ended(): String = "안내를 종료합니다."
     fun slope(kind: SlopeKind): String = if (kind == SlopeKind.ASCENT) "잠시 후 오르막이 끝납니다" else "잠시 후 내리막입니다"
     fun elevation(elevationMeters: Double): String = "고도 ${round(elevationMeters).toInt()}미터 통과"

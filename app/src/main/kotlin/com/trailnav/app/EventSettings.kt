@@ -76,6 +76,9 @@ internal class EventSettings private constructor(
     }
 }
 
+internal fun guideConfigFor(eventSettings: EventSettings, roundTripEnabled: Boolean): GuideConfig =
+    eventSettings.toGuideConfig().copy(roundTripEnabled = roundTripEnabled)
+
 /** Pure dialog mapping keeps the Android multi-choice UI easy to verify. */
 internal object EventSettingsUi {
     fun labels(): List<String> = GuideEvent.values().map { it.label }
@@ -105,12 +108,14 @@ internal data class NavigationSettingsSelection(
     val onDemandEnabled: Boolean,
     val imuCollectEnabled: Boolean,
     val onDemandResponseMode: DistanceTimeMode = DistanceTimeMode.Both,
+    val roundTripEnabled: Boolean = false,
 )
 
 internal data class NavigationSettingsDefaults(
     val onDemandEnabled: Boolean = true,
     val imuCollectEnabled: Boolean = false,
     val onDemandResponseMode: DistanceTimeMode = DistanceTimeMode.Both,
+    val roundTripEnabled: Boolean = false,
 )
 
 /** Keeps independent navigation settings separate from the E1–E8 event selections. */
@@ -126,8 +131,9 @@ internal object NavigationSettingsUi {
         imuCollectEnabled: Boolean,
         accepted: Boolean,
         onDemandResponseMode: DistanceTimeMode = DistanceTimeMode.Both,
+        roundTripEnabled: Boolean = false,
     ): NavigationSettingsSelection? {
         val settings = EventSettingsUi.resolveDialogSelection(eventChecked, accepted) ?: return null
-        return NavigationSettingsSelection(settings, onDemandEnabled, imuCollectEnabled, onDemandResponseMode)
+        return NavigationSettingsSelection(settings, onDemandEnabled, imuCollectEnabled, onDemandResponseMode, roundTripEnabled)
     }
 }

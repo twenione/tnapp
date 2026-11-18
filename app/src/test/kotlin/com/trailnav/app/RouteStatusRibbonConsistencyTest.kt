@@ -2,6 +2,8 @@ package com.trailnav.app
 
 import com.trailnav.core.ElevationUse
 import com.trailnav.core.GuideConfig
+import com.trailnav.core.GuideState
+import com.trailnav.core.Guidance
 import com.trailnav.core.NextTurn
 import com.trailnav.core.Peak
 import com.trailnav.core.ProgressDirection
@@ -137,6 +139,38 @@ class RouteStatusRibbonConsistencyTest {
                 ),
                 hasEnteredRoute = false,
             ),
+            Row(
+                name = "round-trip-outbound-turnaround",
+                status = status(
+                    direction = ProgressDirection.FORWARD,
+                    remaining = 3_000.0,
+                    target = target(TargetKind.NEXT_SUMMIT, 1_234.0, 900.0, TargetLabelKind.TURNAROUND),
+                ),
+                ribbon = ribbon(
+                    direction = ProgressDirection.FORWARD,
+                    remaining = 3_000.0,
+                    targetKind = TargetKind.NEXT_SUMMIT,
+                    targetRemaining = 1_234.0,
+                    targetLabelKind = TargetLabelKind.TURNAROUND,
+                    roundTripLeg = RibbonRoundTripLeg.OUTBOUND,
+                ),
+            ),
+            Row(
+                name = "round-trip-return-start",
+                status = status(
+                    direction = ProgressDirection.FORWARD,
+                    remaining = 1_234.0,
+                    target = target(TargetKind.DESTINATION, 1_234.0, 900.0, TargetLabelKind.START),
+                ),
+                ribbon = ribbon(
+                    direction = ProgressDirection.FORWARD,
+                    remaining = 1_234.0,
+                    targetKind = TargetKind.DESTINATION,
+                    targetRemaining = 1_234.0,
+                    targetLabelKind = TargetLabelKind.START,
+                    roundTripLeg = RibbonRoundTripLeg.RETURN,
+                ),
+            ),
         )
 
         rows.forEach { row ->
@@ -146,6 +180,14 @@ class RouteStatusRibbonConsistencyTest {
                 assertTrue(differences.isEmpty(), "${row.name}/$mode: ${differences.joinToString()}")
             }
         }
+        assertEquals("왕복 · 가는 길", roundTripLegLabel(rows.first { it.name == "round-trip-outbound-turnaround" }.ribbon))
+        assertEquals("왕복 · 오는 길", roundTripLegLabel(rows.first { it.name == "round-trip-return-start" }.ribbon))
+        val returnSpeech = Guidance.Remaining(500.0, 450.0, returnLeg = true).toSpeech(
+            GuideState.initial(routeWithWaypointLabels().copy(roundTripTurnaroundMeters = 500.0))
+                .copy(roundTripOnReturnLeg = true),
+        )
+        assertTrue(returnSpeech.orEmpty().startsWith("출발지까지는 "), returnSpeech.orEmpty())
+        assertEquals("왕복 · 오는 길", roundTripLegLabel(rows.first { it.name == "round-trip-return-start" }.ribbon))
     }
 
     @Test
@@ -327,6 +369,7 @@ class RouteStatusRibbonConsistencyTest {
             "perpendicularDistanceMeters", "signedOffsetMeters", "direction", "offRoute",
             "enterBandMeters", "exitBandMeters", "accuracyRadiusMeters", "remainingDistanceMeters", "nextTurn",
             "targetKind", "targetRemainingMeters", "targetLabelKind", "targetName",
+            "roundTripLeg",
         )
         assertEquals(expected, fields)
         assertTrue(fields.none { it.contains("elevation", ignoreCase = true) || it.contains("waypoint", ignoreCase = true) })
@@ -497,6 +540,7 @@ class RouteStatusRibbonConsistencyTest {
         targetRemaining: Double? = null,
         targetLabelKind: TargetLabelKind? = null,
         targetName: String? = null,
+        roundTripLeg: RibbonRoundTripLeg? = null,
     ) = RouteRibbonState(
         perpendicularDistanceMeters = perpendicular,
         signedOffsetMeters = 0.0,
@@ -511,6 +555,7 @@ class RouteStatusRibbonConsistencyTest {
         targetRemainingMeters = targetRemaining,
         targetLabelKind = targetLabelKind,
         targetName = targetName,
+        roundTripLeg = roundTripLeg,
     )
 
     private data class Row(
