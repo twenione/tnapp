@@ -45,14 +45,22 @@ class RoundTripEngineTest {
         assertEquals("loop", loop.state.systemEvents.single { it.kind == "route.round_trip.ignored" }.fields["reason"])
         assertTrue(loop.state.systemEvents.single { it.kind == "route.round_trip.ignored" }.fields.getValue("gap_m").toDouble() <= 100.0)
 
-        val active = runPrefix(oneWay, enabled, 50.0)
+        val overThresholdRoute = route(listOf(
+            EnuPoint(0.0, 0.0), EnuPoint(50.0, 0.0), EnuPoint(100.0, 0.0), EnuPoint(150.0, 0.0),
+        ))
+        val active = runPrefix(overThresholdRoute, enabled, 50.0)
+        val endpointGap = RouteMath.distance(
+            overThresholdRoute.toEnu(overThresholdRoute.sourceTrackPoints.first()),
+            overThresholdRoute.toEnu(overThresholdRoute.sourceTrackPoints.last()),
+        )
+        assertEquals(150.0, endpointGap, 1.0)
         assertNotNull(active.state.route.roundTripTurnaroundMeters)
-        assertTrue(active.state.route.totalLengthMeters > oneWay.totalLengthMeters * 1.9)
+        assertTrue(active.state.route.totalLengthMeters > overThresholdRoute.totalLengthMeters * 1.9)
         assertEquals(1, active.state.systemEvents.count { it.kind == "route.round_trip" })
         val built = active.state.systemEvents.single { it.kind == "route.round_trip" }
-        assertTrue(built.fields.getValue("turnaround_m").toDouble() in (oneWay.totalLengthMeters - 1.0)..(oneWay.totalLengthMeters + 1.0))
-        assertTrue(built.fields.getValue("total_m").toDouble() > oneWay.totalLengthMeters * 1.9)
-        assertEquals(oneWay.sourceTrackPoints.size.toString(), built.fields["source_point_count"])
+        assertTrue(built.fields.getValue("turnaround_m").toDouble() in (overThresholdRoute.totalLengthMeters - 1.0)..(overThresholdRoute.totalLengthMeters + 1.0))
+        assertTrue(built.fields.getValue("total_m").toDouble() > overThresholdRoute.totalLengthMeters * 1.9)
+        assertEquals(overThresholdRoute.sourceTrackPoints.size.toString(), built.fields["source_point_count"])
     }
 
     @Test
