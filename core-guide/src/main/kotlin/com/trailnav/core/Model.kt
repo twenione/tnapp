@@ -28,9 +28,12 @@ sealed class Guidance {
     data class Approach(val distanceMeters: Double, val bearingDegrees: Double) : Guidance()
     data class TurnAhead(val distance: Double, val side: Side, val turnIndex: Int) : Guidance()
     data class TurnNow(val side: Side, val turnIndex: Int) : Guidance()
+    data class TurnaroundAhead(val distance: Double) : Guidance()
+    object Turnaround : Guidance()
+    object RoundTripStart : Guidance()
     data class Milestone(val distanceMeters: Double) : Guidance()
     data class Elapsed(val hours: Int) : Guidance()
-    data class Remaining(val thresholdMeters: Double, val remainingMeters: Double) : Guidance()
+    data class Remaining(val thresholdMeters: Double, val remainingMeters: Double, val returnLeg: Boolean = false) : Guidance()
     data class Slope(val kind: SlopeKind, val deltaMeters: Double) : Guidance()
     data class Elevation(val elevationMeters: Double) : Guidance()
     data class Waypoint(val index: Int, val name: String, val distanceMeters: Double) : Guidance()
@@ -42,6 +45,7 @@ sealed class Guidance {
         val direction: String? = null
     ) : Guidance()
     object Arrived : Guidance()
+    object ArrivedAtStart : Guidance()
 }
 
 /** The result of one pure guide evaluation. */
@@ -140,6 +144,10 @@ data class GuideConfig(
     val gapMaxWalkSpeedMps: Double = 2.0,
     /** Reverse distance required before switching the route interpretation. */
     val directionSwitchDistanceMeters: Double = 150.0,
+    /** Opt-in engine-only round-trip routing. */
+    val roundTripEnabled: Boolean = false,
+    /** Endpoint gap at or below this distance identifies a loop route. */
+    val roundTripLoopMaxGapMeters: Double = 100.0,
     val routeQualityGapWarnMeters: Double = 100.0,
     val routeQualityShortSegmentMeters: Double = 6.0,
 ) {
@@ -190,6 +198,7 @@ data class GuideConfig(
         require(positionGapRematchSeconds > 0.0)
         require(gapMaxWalkSpeedMps > 0.0)
         require(directionSwitchDistanceMeters > 0.0)
+        require(roundTripLoopMaxGapMeters >= 0.0)
         require(etaWindowSeconds > 0.0)
         require(etaMinWindowMeters >= 0.0)
         require(etaMinMovingSpeedMps >= 0.0)
@@ -224,6 +233,8 @@ data class GuideConfig(
         /** Explicit exclusions required by D-029 for non-sensitivity fields. */
         val sensitivityExcluded: Map<String, String> = mapOf(
             "accuracyRejectMeters" to "input filter threshold; covered by matching tests",
+            "roundTripEnabled" to "opt-in route mode; default false and covered by round-trip route tests",
+            "roundTripLoopMaxGapMeters" to "route eligibility parameter; covered by loop-ignore and active-round-trip tests",
             "stationarySpeedMps" to "movement classification; covered by matching tests",
             "searchWindowMeters" to "matching search bound; covered by out-and-back test",
             "arriveRadiusMeters" to "fixed Phase 1 arrival criterion; covered by arrival tests",
@@ -423,8 +434,15 @@ data class GuideState(
     val rematchPendingReason: String? = null,
     /** Directional fit distance accumulated while walking against the current route orientation. */
     val reverseWalkedMeters: Double = 0.0,
+    /** True while progressing along the return half of an enabled joined route. */
+    val roundTripOnReturnLeg: Boolean = false,
+    /** The one-time round-trip startup announcement has been emitted. */
+    val roundTripStartAnnounced: Boolean = false,
+    /** An enabled loop route was intentionally left one-way. */
+    val roundTripLoopIgnored: Boolean = false,
 ) {
     companion object {
+        // Without startup direction resolution, GuideState.initial does not construct a round-trip route.
         fun initial(route: RouteModel): GuideState = GuideState(route)
 
         /** Start an un-oriented session. Direction and first match are resolved by [Engine]. */

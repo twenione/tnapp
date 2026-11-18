@@ -3,6 +3,7 @@ package com.trailnav.app
 import java.text.DecimalFormatSymbols
 
 import com.trailnav.core.NextTurn
+import com.trailnav.core.Guidance
 import com.trailnav.core.ProgressDirection
 import com.trailnav.core.RouteStatus
 import com.trailnav.core.RouteTargetEstimate
@@ -59,6 +60,33 @@ class GuidancePhrasesTest {
             GuidancePhrases.turnAhead(60.0, Side.RIGHT),
             GuidancePhrases.turnAhead(59.0, Side.RIGHT),
         )
+    }
+
+    @Test
+    fun roundTripGuidanceAndTargetsNameTheTurnaroundAndStart() {
+        assertEquals("왕복 경로로 안내합니다", Guidance.RoundTripStart.toSpeech())
+        assertEquals("잠시 후 반환점입니다", Guidance.TurnaroundAhead(60.0).toSpeech())
+        assertEquals("반환점입니다", Guidance.Turnaround.toSpeech())
+        assertEquals("출발지에 도착했습니다", Guidance.ArrivedAtStart.toSpeech())
+        assertEquals("반환점", GuidancePhrases.targetSubject(TargetLabelKind.TURNAROUND, null))
+        assertEquals("출발지", GuidancePhrases.targetSubject(TargetLabelKind.START, null))
+
+        for (mode in DistanceTimeMode.values()) {
+            val turnaround = GuidancePhrases.onDemandResponse(
+                RouteStatus(true, null, ProgressDirection.FORWARD, 2_000.0, null, false,
+                    unavailableTarget(TargetLabelKind.TURNAROUND)),
+                mode,
+                hasEnteredRoute = true,
+            )
+            val start = GuidancePhrases.onDemandResponse(
+                RouteStatus(true, null, ProgressDirection.FORWARD, 1_000.0, null, false,
+                    unavailableTarget(TargetLabelKind.START)),
+                mode,
+                hasEnteredRoute = true,
+            )
+            assertEquals("반환점까지는 1.2킬로미터입니다. 다음 꺾임 정보가 없습니다", turnaround)
+            assertEquals("출발지까지는 1.2킬로미터입니다. 다음 꺾임 정보가 없습니다", start)
+        }
     }
 
     @Test

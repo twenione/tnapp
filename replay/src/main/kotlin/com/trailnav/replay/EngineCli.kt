@@ -21,7 +21,7 @@ import kotlin.math.PI
  */
 fun main(args: Array<String>) {
     val options = parseArgs(args.toList())
-    val config = GuideConfig().withOverrides(options.overrides)
+    val config = GuideConfig().withOverrides(options.overrides).copy(roundTripEnabled = options.roundTrip)
     if (options.probe) {
         runConfigProbe(config)
         return
@@ -103,6 +103,7 @@ private data class CliOptions(
     val route: String?,
     val session: String?,
     val everyFrame: Boolean,
+    val roundTrip: Boolean,
     val probe: Boolean,
     val probeSubsecond: Boolean,
     val overrides: Map<String, Double>
@@ -112,6 +113,7 @@ private fun parseArgs(args: List<String>): CliOptions {
     var route: String? = null
     var session: String? = null
     var everyFrame = false
+    var roundTrip = false
     var probe = false
     var probeSubsecond = false
     val overrides = linkedMapOf<String, Double>()
@@ -121,6 +123,7 @@ private fun parseArgs(args: List<String>): CliOptions {
             "--route" -> route = args[++index]
             "--session" -> session = args[++index]
             "--emit-every-frame" -> everyFrame = true
+            "--round-trip" -> roundTrip = true
             "--probe" -> probe = true
             "--probe-subsecond" -> probeSubsecond = true
             "--config" -> {
@@ -142,7 +145,7 @@ private fun parseArgs(args: List<String>): CliOptions {
         }
         index += 1
     }
-    return CliOptions(route, session, everyFrame, probe, probeSubsecond, overrides)
+    return CliOptions(route, session, everyFrame, roundTrip, probe, probeSubsecond, overrides)
 }
 
 private data class Output(
@@ -167,6 +170,9 @@ private fun decision(guidance: Guidance?): String = when (guidance) {
     is Guidance.Approach -> "APPROACH"
     is Guidance.TurnAhead -> "TURN_AHEAD"
     is Guidance.TurnNow -> "TURN_NOW"
+    is Guidance.TurnaroundAhead -> "TURNAROUND_AHEAD"
+    Guidance.Turnaround -> "TURNAROUND"
+    Guidance.RoundTripStart -> "ROUND_TRIP_START"
     is Guidance.Milestone -> "MILESTONE"
     is Guidance.Elapsed -> "ELAPSED"
     is Guidance.Remaining -> "REMAINING"
@@ -177,6 +183,7 @@ private fun decision(guidance: Guidance?): String = when (guidance) {
     is Guidance.Sunrise -> "SUNRISE"
     is Guidance.Status -> "STATUS"
     Guidance.Arrived -> "ARRIVED"
+    Guidance.ArrivedAtStart -> "ARRIVED_AT_START"
 }
 
 private fun com.trailnav.core.GuideResult.guidanceDistance(): Double? = when (val item = guidance) {
@@ -185,6 +192,7 @@ private fun com.trailnav.core.GuideResult.guidanceDistance(): Double? = when (va
     is Guidance.Status -> item.distance
     is Guidance.Milestone -> item.distanceMeters
     is Guidance.Remaining -> item.thresholdMeters
+    is Guidance.TurnaroundAhead -> item.distance
     is Guidance.Waypoint -> item.distanceMeters
     else -> null
 }

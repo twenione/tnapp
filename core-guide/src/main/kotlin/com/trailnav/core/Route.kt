@@ -28,7 +28,8 @@ data class RouteWarning(
 data class TurnPoint(
     val s: Double,
     val side: Side,
-    val angleDegrees: Double
+    val angleDegrees: Double,
+    val isTurnaround: Boolean = false,
 )
 
 /** Why the route elevation profile is or is not available to later event logic. */
@@ -107,6 +108,8 @@ data class RouteModel(
     val sourceWaypoints: List<RouteSourceWaypoint> = emptyList(),
     /** Progress ranges whose geometry has another route portion nearby at a distant progress. */
     val overlapProgressRanges: List<RouteProgressRange> = emptyList(),
+    /** Outbound distance of the turnaround on a joined round-trip route; null for ordinary routes. */
+    val roundTripTurnaroundMeters: Double? = null,
 ) {
     val totalLengthMeters: Double
         get() = cumulativeMeters.lastOrNull() ?: 0.0
@@ -138,6 +141,9 @@ data class RouteModel(
 
     /** Rebuilds the route in the opposite direction from its unfiltered imported data. */
     fun reversed(config: GuideConfig = GuideConfig()): RouteModel = GpxRouteParser.reversed(this, config)
+
+    /** Joins the oriented one-way route to its reversed return leg. */
+    fun roundTrip(config: GuideConfig = GuideConfig()): RouteModel = GpxRouteParser.roundTrip(this, config)
 
     companion object {
         fun empty(): RouteModel = RouteModel(
@@ -573,6 +579,41 @@ internal object GpxRouteParser {
         }
         val waypoints = route.sourceWaypoints.map { ParsedWaypoint(it.point, it.name) }
         return preprocess(reversedPoints, waypoints, config)
+    }
+
+    fun roundTrip(route: RouteModel, config: GuideConfig): RouteModel {
+        if (route.roundTripTurnaroundMeters != null) return route
+        val points = route.sourceTrackPoints.ifEmpty { route.sourcePoints }
+        if (points.size < 2) return route
+        val elevations = route.sourceTrackElevationMeters
+        val outbound = points.indices.map { index ->
+            ParsedRoutePoint(points[index], elevations.getOrNull(index))
+        }
+        val returning = (0 until points.lastIndex).reversed().map { index ->
+            ParsedRoutePoint(points[index], elevations.getOrNull(index))
+        }
+        val rebuilt = preprocess(
+            outbound + returning,
+            route.sourceWaypoints.map { ParsedWaypoint(it.point, it.name) },
+            config,
+        )
+        val turnaround = route.totalLengthMeters
+        val outboundWaypoints = rebuilt.waypoints.filter { it.s <= turnaround + 1e-6 }
+        val mirroredWaypoints = outboundWaypoints.map { waypoint ->
+            waypoint.copy(s = (rebuilt.totalLengthMeters - waypoint.s).coerceAtLeast(0.0))
+        }
+        val turns = rebuilt.turns.toMutableList()
+        val closestTurn = turns.indices.minByOrNull { abs(turns[it].s - turnaround) }
+        if (closestTurn != null && abs(turns[closestTurn].s - turnaround) <= config.maximumPointGapMeters) {
+            turns[closestTurn] = turns[closestTurn].copy(s = turnaround, isTurnaround = true)
+        } else {
+            turns += TurnPoint(turnaround, Side.LEFT, 180.0, isTurnaround = true)
+        }
+        return rebuilt.copy(
+            turns = turns.sortedBy { it.s },
+            waypoints = (outboundWaypoints + mirroredWaypoints).sortedBy { it.s },
+            roundTripTurnaroundMeters = turnaround,
+        )
     }
 
     private fun childText(node: org.w3c.dom.Node, tag: String): String? {

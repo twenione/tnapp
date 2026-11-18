@@ -32,7 +32,7 @@ class SpeakOrRecordInvariantTest {
         "E6" to setOf("disabled", "offroute", "reverse", "direction-unknown", "interval", "priority", "jump"),
         "E8" to setOf("disabled", "offroute", "interval", "priority"),
         "TURN_AHEAD" to setOf("direction-unknown"),
-        "TURN_NOW" to setOf("direction-unknown"),
+        "TURN_NOW" to setOf("direction-unknown", "priority-turnaround"),
     )
 
     @Test
@@ -77,7 +77,9 @@ class SpeakOrRecordInvariantTest {
 
         val gaps = mutableListOf<Gap>()
         val duplicates = mutableListOf<String>()
-        val runs = sessions.map { directory -> runSession(directory, gaps, duplicates) }
+        val fixtureRuns = sessions.map { directory -> runSession(directory, gaps, duplicates) }
+        val roundTripRuns = runRoundTripInvariantFixtures(gaps, duplicates)
+        val runs = fixtureRuns + roundTripRuns
         val exceptionFile = Files.readString(E5EventCountSupport.repositoryRoot().resolve("tools/known_exceptions.json"))
         val allowlist = jsonObjects(exceptionFile, "unrecorded_allowlist").map { fields ->
             fields.getValue("event") to fields.getValue("reason")
@@ -120,7 +122,7 @@ class SpeakOrRecordInvariantTest {
         val requiredRecordPairs = allRecordPairs - structurallyUnreachable
         val missingRecordPairs = requiredRecordPairs - recordPairs
 
-        val eventCounts = (1..8).map { "E$it" } + listOf("TURN_AHEAD", "TURN_NOW")
+        val eventCounts = (1..8).map { "E$it" } + listOf("TURN_AHEAD", "TURN_NOW", "TURNAROUND_AHEAD", "TURNAROUND")
         val observedEventCounts = eventCounts.associateWith { event -> targetCount(runs, event) }
         println("EVENT_TARGET_COUNTS " + observedEventCounts.entries.joinToString(" ") { "${it.key}=${it.value}" })
         val unobserved = observedEventCounts.filter { (event, count) -> count == 0 && event !in observationExempt }
@@ -220,7 +222,9 @@ class SpeakOrRecordInvariantTest {
         check(toggleChanges.size == 16 && EVENTS.all { event ->
             toggleChanges.any { it.event == event && !it.enabled } && toggleChanges.any { it.event == event && it.enabled }
         }) { "the all-events session did not switch E1-E8 off and back on" }
-        check(runs.size == sessions.size) { "not every golden, synth, and property session was replayed" }
+        check(fixtureRuns.size == sessions.size && roundTripRuns.size == 4) {
+            "not every golden, synth, property, and round-trip invariant input was replayed"
+        }
         println("speak_or_record_sessions=${runs.size} gaps=${gaps.size} duplicates=${duplicates.size} property_config_changes=${toggleChanges.size} observation_exempt=$observationExempt")
         check(missingRecordPairs.isEmpty()) {
             "D-174 §6.1-5 required record reasons not reached: $missingRecordPairs"
@@ -255,8 +259,11 @@ class SpeakOrRecordInvariantTest {
             remainingAnnounceMeters = configDoubleList(manifest, "remainingAnnounceMeters") ?: GuideConfig().remainingAnnounceMeters,
             peakAnnounceLeadMeters = configNumber(manifest, "peakAnnounceLeadMeters") ?: GuideConfig().peakAnnounceLeadMeters,
             waypointAnnounceLeadMeters = configNumber(manifest, "waypointAnnounceLeadMeters") ?: GuideConfig().waypointAnnounceLeadMeters,
+            turnAheadDistanceMeters = configNumber(manifest, "turnAheadDistanceMeters") ?: GuideConfig().turnAheadDistanceMeters,
+            turnNowDistanceMeters = configNumber(manifest, "turnNowDistanceMeters") ?: GuideConfig().turnNowDistanceMeters,
             sunsetAnnounceMinutes = configIntList(manifest, "sunsetAnnounceMinutes") ?: GuideConfig().sunsetAnnounceMinutes,
             sunriseAnnounceMinutes = configIntList(manifest, "sunriseAnnounceMinutes") ?: GuideConfig().sunriseAnnounceMinutes,
+            roundTripEnabled = Regex(""""round_trip"\s*:\s*true""").containsMatchIn(configRoot),
             offRouteEnterDwellSeconds = configNumber(manifest, "offRouteEnterDwellSeconds") ?: GuideConfig().offRouteEnterDwellSeconds,
             positionGapRematchSeconds = configNumber(manifest, "positionGapRematchSeconds") ?: Double.MAX_VALUE,
             taggingOffRouteDwellSeconds = configNumber(manifest, "taggingOffRouteDwellSeconds") ?: Double.MAX_VALUE,
@@ -264,7 +271,7 @@ class SpeakOrRecordInvariantTest {
         val seededProgress = configNumber(manifest, "property_seed_projected_meters")
         val seededDirection = Regex(""""property_seed_direction"\s*:\s*"([^"]+)"""").find(manifest)?.groupValues?.get(1)?.let(ProgressDirection::valueOf)
         val seededPeriodic = configNumber(manifest, "property_seed_last_periodic_event_at")?.times(1_000.0)?.toLong()
-        var state = if (directory.fileName.toString() in setOf(
+        var state = if (config.roundTripEnabled || directory.fileName.toString() in setOf(
             "e1_direction_unknown_attempt",
             "e3_direction_unknown_attempt",
             "e4_direction_unknown",
@@ -348,12 +355,125 @@ class SpeakOrRecordInvariantTest {
             state = result.nextState
         }
         check(changeCursor == changes.size) { "${directory.fileName}: config change points outside the frame stream" }
-        return RunResult(directory, route, transitions, changes)
+        return RunResult(directory, state.route, transitions, changes)
     }
 
     private fun assertRecord(run: RunResult, event: String, reason: String) {
         val matching = run.transitions.flatMap(::records).filter { it.event == event && it.reason == reason }
         check(matching.isNotEmpty()) { "${run.directory.fileName}: expected at least one $event/$reason record, found none" }
+    }
+
+    private fun runRoundTripInvariantFixtures(
+        gaps: MutableList<Gap>,
+        duplicates: MutableList<String>,
+    ): List<RunResult> {
+        val ordinaryPoints = listOf(
+            EnuPoint(0.0, 0.0), EnuPoint(400.0, 0.0), EnuPoint(800.0, 120.0),
+            EnuPoint(1_200.0, 120.0), EnuPoint(1_500.0, 500.0), EnuPoint(1_500.0, 900.0),
+        )
+        val waypoint = localGeo(1_000.0, 120.0)
+        val ordinaryGpx = roundTripGpx(ordinaryPoints, listOf(waypoint to "Ridge"))
+        val ordinaryConfig = roundTripConfig()
+        val ordinaryRoute = RouteModel.fromGpx(ordinaryGpx, ordinaryConfig)
+        val ordinaryRoundTrip = ordinaryRoute.roundTrip(ordinaryConfig)
+        val turnaround = requireNotNull(ordinaryRoundTrip.roundTripTurnaroundMeters)
+        val total = ordinaryRoundTrip.totalLengthMeters
+
+        val priorityConfig = roundTripConfig().copy(turnNowDistanceMeters = 2.0)
+        val priorityPoints = listOf(
+            EnuPoint(0.0, 0.0), EnuPoint(400.0, 0.0), EnuPoint(800.0, 120.0),
+            EnuPoint(1_200.0, 120.0), EnuPoint(1_500.0, 500.0), EnuPoint(1_500.0, 830.0),
+            EnuPoint(1_541.0122, 858.9878), EnuPoint(1_500.0, 900.0),
+        )
+        val priorityGpx = roundTripGpx(priorityPoints)
+        val priorityRoute = RouteModel.fromGpx(priorityGpx, priorityConfig)
+        val priorityRoundTrip = priorityRoute.roundTrip(priorityConfig)
+        val priorityMarker = requireNotNull(priorityRoundTrip.roundTripTurnaroundMeters)
+        val priorityStart = (priorityMarker - 59.8) % 1.2
+
+        val inputs = listOf(
+            Triple("mid-route-return", ordinaryGpx, progressPath(0.0 to (turnaround * 0.6), turnaround * 0.6 to 0.0)),
+            Triple(
+                "double-turnaround-waypoint",
+                ordinaryGpx,
+                progressPath(
+                    0.0 to (turnaround * 0.6),
+                    turnaround * 0.6 to (turnaround * 0.2),
+                    turnaround * 0.2 to turnaround,
+                    turnaround to total,
+                ),
+            ),
+            Triple("waypoint-round-trip", ordinaryGpx, progressPath(0.0 to total)),
+            Triple("turnaround-priority", priorityGpx, progressPath(priorityStart to (priorityMarker - 55.0))),
+        )
+
+        return inputs.mapIndexed { index, (name, gpx, progress) ->
+            val config = if (index == inputs.lastIndex) priorityConfig else ordinaryConfig
+            val temporary = Files.createTempDirectory("task119-$name-")
+            try {
+                Files.writeString(temporary.resolve("route.gpx"), gpx)
+                Files.writeString(temporary.resolve("manifest.json"), roundTripManifest(config))
+                Files.writeString(temporary.resolve("events.ndjson"), roundTripLocations(gpx, progress))
+                runSession(temporary, gaps, duplicates)
+            } finally {
+                Files.walk(temporary).use { paths ->
+                    paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists)
+                }
+            }
+        }
+    }
+
+    private fun roundTripConfig() = GuideConfig(
+        roundTripEnabled = true,
+        milestoneEnabled = false,
+        elapsedEnabled = false,
+        remainingEnabled = false,
+        slopeEnabled = false,
+        elevationEnabled = false,
+        waypointEnabled = false,
+        sunsetEnabled = false,
+        sunriseEnabled = false,
+    )
+
+    private fun roundTripManifest(config: GuideConfig): String =
+        """{"engine":{"config":{"round_trip":true,"turnNowDistanceMeters":${config.turnNowDistanceMeters},"events":{"E1":false,"E2":false,"E3":false,"E4":false,"E5":false,"E6":false,"E7":false,"E8":false}}}}"""
+
+    private fun roundTripGpx(points: List<EnuPoint>, waypoints: List<Pair<GeoPoint, String>> = emptyList()): String {
+        val waypointXml = waypoints.joinToString("") { (point, name) ->
+            "<wpt lat=\"${point.lat}\" lon=\"${point.lon}\"><name>$name</name></wpt>"
+        }
+        val trackXml = points.joinToString("") { point ->
+            val geo = localGeo(point.east, point.north)
+            "<trkpt lat=\"${geo.lat}\" lon=\"${geo.lon}\"/>"
+        }
+        return "<gpx>$waypointXml<trk><trkseg>$trackXml</trkseg></trk></gpx>"
+    }
+
+    private fun roundTripLocations(gpx: String, progress: List<Double>): String {
+        val route = RouteModel.fromGpx(gpx)
+        val joined = route.roundTrip(roundTripConfig())
+        return progress.mapIndexed { index, meters ->
+            val point = E5EventCountSupport.pointAt(joined, meters.coerceIn(0.0, joined.totalLengthMeters))
+            "{\"seq\":${index * 2},\"t\":${index.toDouble()},\"stream\":\"loc\",\"lat\":${point.lat},\"lon\":${point.lon},\"accuracy\":5.0,\"speed_mps\":1.2,\"provider\":\"synthetic\"}"
+        }.joinToString("\n", postfix = "\n")
+    }
+
+    private fun localGeo(east: Double, north: Double): GeoPoint = GeoPoint(
+        37.0 + Math.toDegrees(north / 6_371_008.8),
+        127.0 + Math.toDegrees(east / (6_371_008.8 * kotlin.math.cos(Math.toRadians(37.0)))),
+    )
+
+    private fun progressPath(vararg legs: Pair<Double, Double>): List<Double> = buildList {
+        legs.forEachIndexed { index, (start, end) ->
+            val span = kotlin.math.abs(end - start)
+            val count = kotlin.math.ceil(span / 1.2).toInt()
+            val direction = if (end >= start) 1.0 else -1.0
+            val segment = buildList {
+                add(start)
+                for (frame in 1..count) add(start + direction * minOf(frame * 1.2, span))
+            }
+            addAll(if (index == 0) segment else segment.drop(1))
+        }
     }
 
     private fun assertStartupFixture(session: String, event: String, isSpoken: (Guidance) -> Boolean) {
@@ -478,8 +598,9 @@ class SpeakOrRecordInvariantTest {
         }
         val firstMatch = state.firstMatchProgressMeters ?: return false
         return when (event) {
-            "E4" -> route.peaks[target.toInt()].s < firstMatch
-            "E6" -> route.waypoints[target.toInt()].s < firstMatch
+            "E4" -> state.route.peaks[target.toInt()].s < firstMatch
+            "E6" -> state.route.waypoints[target.toInt()].s < firstMatch
+            "TURNAROUND_AHEAD", "TURNAROUND" -> state.route.turns[target.toInt()].s < firstMatch
             else -> false
         }
     }
@@ -504,8 +625,10 @@ class SpeakOrRecordInvariantTest {
         "E6" to state.consumedWaypointIndices.map(Int::toString).toSet(),
         "E7" to state.consumedSunsetThresholds.map(Int::toString).toSet(),
         "E8" to state.consumedSunriseThresholds.map(Int::toString).toSet(),
-        "TURN_AHEAD" to state.completedTurnAheadIndices.map(Int::toString).toSet(),
-        "TURN_NOW" to state.completedTurnNowIndices.map(Int::toString).toSet(),
+        "TURN_AHEAD" to state.route.turns.indices.filter { !state.route.turns[it].isTurnaround && it in state.completedTurnAheadIndices }.map(Int::toString).toSet(),
+        "TURN_NOW" to state.route.turns.indices.filter { !state.route.turns[it].isTurnaround && it in state.completedTurnNowIndices }.map(Int::toString).toSet(),
+        "TURNAROUND_AHEAD" to state.route.turns.indices.filter { state.route.turns[it].isTurnaround && it in state.completedTurnAheadIndices }.map(Int::toString).toSet(),
+        "TURNAROUND" to state.route.turns.indices.filter { state.route.turns[it].isTurnaround && it in state.completedTurnNowIndices }.map(Int::toString).toSet(),
     )
 
     private fun spokenTargets(result: GuideResult): Set<Pair<String, String>> = buildSet {
@@ -527,6 +650,8 @@ class SpeakOrRecordInvariantTest {
             is Guidance.TurnNow -> {
                 details["turnIndex"]?.let { add("TURN_NOW" to it); add("TURN_AHEAD" to it) }
             }
+            is Guidance.TurnaroundAhead -> details["turnIndex"]?.let { add("TURNAROUND_AHEAD" to it) }
+            Guidance.Turnaround -> details["turnIndex"]?.let { add("TURNAROUND" to it); add("TURNAROUND_AHEAD" to it) }
             else -> Unit
         }
     }
@@ -540,7 +665,7 @@ class SpeakOrRecordInvariantTest {
         route: RouteModel,
     ): String {
         if (event == "E4") {
-            val s = route.peaks[target.toInt()].s
+            val s = after.route.peaks[target.toInt()].s
             val previousDistance = before.lastMatch?.let { s - it.projectedMeters }
             val currentDistance = after.lastMatch?.let { s - it.projectedMeters }
             return if (target.toInt() !in before.pendingSlopePeaks &&
@@ -548,7 +673,7 @@ class SpeakOrRecordInvariantTest {
             ) "jump" else "missing-record"
         }
         if (event == "E6") {
-            val s = route.waypoints[target.toInt()].s
+            val s = after.route.waypoints[target.toInt()].s
             val previousDistance = before.lastMatch?.let { s - it.projectedMeters }
             val currentDistance = after.lastMatch?.let { s - it.projectedMeters }
             return if ((previousDistance == null || previousDistance < 0.0 || previousDistance > config.waypointAnnounceLeadMeters) && currentDistance != null && currentDistance < 0.0) {

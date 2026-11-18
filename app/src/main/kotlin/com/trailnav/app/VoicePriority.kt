@@ -7,8 +7,9 @@ internal enum class VoicePriority { STATE_TRANSITION, TIME_CRITICAL, NORMAL }
 internal fun priorityFor(guidance: Guidance?, reasonRule: String?, recovery: Boolean): VoicePriority = when {
     recovery -> VoicePriority.STATE_TRANSITION
     guidance == Guidance.Arrived -> VoicePriority.STATE_TRANSITION
+    guidance == Guidance.ArrivedAtStart || guidance == Guidance.RoundTripStart -> VoicePriority.STATE_TRANSITION
     guidance is Guidance.OffRoute && reasonRule == "off-route.enter" -> VoicePriority.STATE_TRANSITION
-    guidance is Guidance.TurnNow -> VoicePriority.TIME_CRITICAL
+    guidance is Guidance.TurnNow || guidance == Guidance.Turnaround -> VoicePriority.TIME_CRITICAL
     else -> VoicePriority.NORMAL
 }
 

@@ -16,6 +16,44 @@ import kotlin.test.assertTrue
 
 class SessionLoggerTest {
     @Test
+    fun roundTripGuidanceUsesStableSessionDecisionNames() {
+        val directory = createTempDir(prefix = "tnapp-round-trip-session-")
+        val route = RouteModel.fromGpx(
+            """<gpx><trk><trkseg><trkpt lat="10.0" lon="20.0"/><trkpt lat="10.001" lon="20.0"/></trkseg></trk></gpx>""",
+        )
+        val location = TrailLocation(1_000L, 10.0, 20.0, 5f, 1f, null, "synthetic")
+        val state = GuideState.initial(route)
+        val guidance = listOf(
+            Guidance.RoundTripStart,
+            Guidance.TurnaroundAhead(60.0),
+            Guidance.Turnaround,
+            Guidance.ArrivedAtStart,
+        )
+        JsonlSessionLogger(
+            directory = directory,
+            sessionId = UUID.randomUUID().toString(),
+            codeHash = "sha256:test",
+            configHash = "sha256:config",
+            eventSettings = EventSettings.defaults().toWireMap(),
+            routeHash = "sha256:route",
+            appVersion = "test",
+        ).use { logger ->
+            guidance.forEachIndexed { index, item ->
+                logger.appendGuide(
+                    location,
+                    com.trailnav.core.GuideResult(item, state, com.trailnav.core.Reason("round-trip-test")),
+                    null,
+                    index.toLong(),
+                )
+            }
+        }
+        val decisions = File(directory, "events.ndjson").readLines()
+            .mapNotNull { Regex(""""decision":"([A-Z_]+)"""").find(it)?.groupValues?.get(1) }
+        assertEquals(listOf("ROUND_TRIP_START", "TURNAROUND_AHEAD", "TURNAROUND", "ARRIVED_AT_START"), decisions)
+        directory.deleteRecursively()
+    }
+
+    @Test
     fun loggerAppendsAdoptedStreamsWithMonotonicSequence() {
         val directory = createTempDir(prefix = "tnapp-session-")
         val route = RouteModel.fromGpx(

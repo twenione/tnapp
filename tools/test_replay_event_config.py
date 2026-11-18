@@ -7,8 +7,8 @@ import json
 import re
 from pathlib import Path
 
-from session_events import EVENT_CONFIG_FIELDS, event_config_overrides, manifest_events
-from replay import invoke_probe
+from session_events import EVENT_CONFIG_FIELDS, event_config_overrides, manifest_events, manifest_round_trip, round_trip_cli_args
+from replay import invoke, invoke_probe
 
 
 APP_MANIFEST_EVENTS = (
@@ -77,6 +77,24 @@ def test_cli_toggle_values(cli: Path) -> None:
     assert invoke_probe(cli, ["offRouteEnterDwellSeconds=20"]), "legacy numeric override was rejected"
 
 
+def test_round_trip_manifest_changes_replay(cli: Path) -> None:
+    present, enabled, error = manifest_round_trip({"engine": {"config": {"round_trip": True}}})
+    assert (present, enabled, error) == (True, True, None)
+    assert manifest_round_trip({"engine": {"config": {"round_trip": False}}}) == (True, False, None)
+    assert manifest_round_trip({"engine": {"config": {"round_trip": "true"}}}) == (True, None, "expected a boolean")
+    assert manifest_round_trip({"engine": {"config": {}}}) == (False, None, None)
+    assert round_trip_cli_args(True) == ["--round-trip"]
+    assert round_trip_cli_args(False) == []
+
+    session = Path("testdata/sessions/synth/19_round_trip")
+    enabled_trace = invoke(cli, session, round_trip=True)
+    default_trace = invoke(cli, session, round_trip=False)
+    enabled_decisions = [item["decision"] for item in enabled_trace if item.get("kind") == "guide"]
+    default_decisions = [item["decision"] for item in default_trace if item.get("kind") == "guide"]
+    assert "ROUND_TRIP_START" in enabled_decisions
+    assert enabled_decisions != default_decisions, "removing engine.config.round_trip must change replay output"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cli", type=Path, required=True)
@@ -84,6 +102,7 @@ def main() -> int:
     test_manifest_event_values()
     test_event_settings_match_guide_config_fields()
     test_cli_toggle_values(args.cli)
+    test_round_trip_manifest_changes_replay(args.cli)
     print("PASS: E1..E8 mapping, app-shaped manifest, GuideConfig coverage, and CLI toggle values")
     return 0
 

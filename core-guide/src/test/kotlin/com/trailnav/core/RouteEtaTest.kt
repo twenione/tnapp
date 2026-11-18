@@ -498,4 +498,39 @@ class RouteEtaTest {
 
         assertEquals(run(), run())
     }
+
+    @Test
+    fun roundTripTargetsEndEachLegAtTurnaroundAndStart() {
+        val roundTripRoute = route(distances = listOf(0.0, 1_000.0, 2_000.0, 3_000.0, 4_000.0))
+            .copy(roundTripTurnaroundMeters = 2_000.0)
+
+        val outboundLast = estimate(roundTripRoute, 1_500.0)!!
+        assertEquals(TargetLabelKind.TURNAROUND, outboundLast.labelKind)
+        assertEquals(500.0, outboundLast.remainingMeters)
+
+        val returnLast = estimate(roundTripRoute, 3_500.0)!!
+        assertEquals(TargetKind.DESTINATION, returnLast.kind)
+        assertEquals(TargetLabelKind.START, returnLast.labelKind)
+        assertEquals(500.0, returnLast.remainingMeters)
+
+        val routeWithTurnaroundWaypoint = route(
+            distances = listOf(0.0, 1_000.0, 2_000.0, 3_000.0, 4_000.0),
+            waypoints = listOf(
+                Waypoint("ridge", GeoPoint(0.0, 0.0), 1_000.0, 0.0),
+                Waypoint("return-point", GeoPoint(0.0, 0.0), 2_000.0, 0.0),
+                Waypoint("ridge", GeoPoint(0.0, 0.0), 3_000.0, 0.0),
+            ),
+        ).copy(roundTripTurnaroundMeters = 2_000.0)
+        val outboundWaypoint = estimate(routeWithTurnaroundWaypoint, 500.0)!!
+        assertEquals(TargetLabelKind.NAMED_WAYPOINT, outboundWaypoint.labelKind)
+        assertEquals("ridge", outboundWaypoint.name)
+        val namedTurnaround = estimate(routeWithTurnaroundWaypoint, 1_500.0)!!
+        assertEquals(TargetLabelKind.NAMED_WAYPOINT, namedTurnaround.labelKind)
+        assertEquals("return-point", namedTurnaround.name)
+        val returnWaypoint = estimate(routeWithTurnaroundWaypoint, 2_500.0)!!
+        assertEquals(TargetLabelKind.NAMED_WAYPOINT, returnWaypoint.labelKind)
+        assertEquals("ridge", returnWaypoint.name)
+        val returnDestination = estimate(routeWithTurnaroundWaypoint, 3_500.0)!!
+        assertEquals(TargetLabelKind.START, returnDestination.labelKind)
+    }
 }

@@ -12,6 +12,7 @@ import json
 import sys
 from pathlib import Path
 from xml.etree import ElementTree as ET
+from session_events import manifest_round_trip
 
 
 SHAPE_CHECKS = (
@@ -117,14 +118,25 @@ def main(argv: list[str]) -> int:
     parser.add_argument("session", type=Path)
     args = parser.parse_args(argv[1:])
     events = [json.loads(line) for line in (args.session / "events.ndjson").read_text(encoding="utf-8").splitlines() if line.strip()]
+    manifest_path = args.session / "manifest.json"
+    manifest_valid = True
+    if manifest_path.is_file():
+        try:
+            _, _, round_trip_error = manifest_round_trip(json.loads(manifest_path.read_text(encoding="utf-8")))
+            manifest_valid = round_trip_error is None
+        except (OSError, json.JSONDecodeError):
+            manifest_valid = False
     checks, metrics = check_shape(events, args.session / "route.gpx")
     loc_count, guide_count, envelope_count, subsecond, global_regressions, envelope_regressions = metrics
     print(f"RESULT loc={loc_count} guide={guide_count} envelope={envelope_count} subsecond={subsecond} global_regressions={global_regressions} keyed_regressions={envelope_regressions}")
     for name in SHAPE_CHECKS:
         passed = checks[name]
         print(f"{name}={'PASS' if passed else 'FAIL'}")
-    if not all(checks.values()):
+    print(f"round_trip_manifest={'PASS' if manifest_valid else 'FAIL'}")
+    if not all(checks.values()) or not manifest_valid:
         failed = ",".join(name for name, passed in checks.items() if not passed)
+        if not manifest_valid:
+            failed = ",".join(filter(None, (failed, "round_trip_manifest")))
         print(f"FAIL: fixture shape check failed: {failed}")
         return 1
     return 0

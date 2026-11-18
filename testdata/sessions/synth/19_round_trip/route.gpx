@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="TrailNav synthetic TASK-119" xmlns="http://www.topografix.com/GPX/1/1">
+<trk><name>one-way round-trip source</name><trkseg>
+<trkpt lat="11.00000000" lon="21.00000000"><ele>100.0</ele></trkpt>
+<trkpt lat="11.00000000" lon="21.00366461"><ele>145.0</ele></trkpt>
+<trkpt lat="11.00107918" lon="21.00732922"><ele>195.0</ele></trkpt>
+<trkpt lat="11.00107918" lon="21.01099383"><ele>235.0</ele></trkpt>
+<trkpt lat="11.00449660" lon="21.01374229"><ele>270.0</ele></trkpt>
+<trkpt lat="11.00809388" lon="21.01374229"><ele>230.0</ele></trkpt>
+</trkseg></trk></gpx>

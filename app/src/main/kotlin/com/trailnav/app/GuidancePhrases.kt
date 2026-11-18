@@ -22,6 +22,10 @@ object GuidancePhrases {
         if (bearingDegrees == null) "경로까지 ${formatDistance(distanceMeters)}"
         else "경로까지 ${formatDistance(distanceMeters)}, ${cardinal(bearingDegrees)}쪽입니다"
     fun arrived(): String = "목적지에 도착했습니다"
+    fun arrivedAtStart(): String = "출발지에 도착했습니다"
+    fun roundTripStart(): String = "왕복 경로로 안내합니다"
+    fun turnaroundAhead(): String = "잠시 후 반환점입니다"
+    fun turnaround(): String = "반환점입니다"
     fun milestone(distanceMeters: Double): String = "출발지로부터 ${formatDistance(distanceMeters)}"
     fun elapsed(hours: Int): String = "출발지로부터 ${hours}시간 경과"
     fun remaining(distanceMeters: Double): String = "목적지까지 ${formatDistance(distanceMeters)}"
@@ -126,6 +130,8 @@ object GuidancePhrases {
         TargetLabelKind.UNNAMED_WAYPOINT -> "다음 경유지"
         TargetLabelKind.ELEVATION_PEAK -> "다음 정상"
         TargetLabelKind.DESTINATION -> "도착지"
+        TargetLabelKind.TURNAROUND -> "반환점"
+        TargetLabelKind.START -> "출발지"
     }
 
     private fun nextTurnPhrase(turn: com.trailnav.core.NextTurn): String =
