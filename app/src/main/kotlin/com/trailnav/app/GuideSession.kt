@@ -28,6 +28,7 @@ class GuideSession(
     private var state: GuideState = if (startupEnabled) GuideState.starting(route, config) else GuideState.initial(route)
     private var etaRoute: RouteModel = route
     private var etaTracker = RouteEtaTracker(route, config)
+    private var startEtaTracker = RouteEtaTracker(route.withoutIntermediateEtaTargets(), config)
     private val startupEtaObservations = mutableListOf<StartupEtaObservation>()
 
     /** Immutable snapshot used by app-layer status surfaces and on-demand voice. */
@@ -38,6 +39,13 @@ class GuideSession(
         val status = com.trailnav.core.routeStatus(state, config) ?: return null
         val match = state.lastMatch ?: return status
         return status.copy(target = etaTracker.estimate(match.projectedMeters, state.direction, state.arrived))
+    }
+
+    /** ETA to the route endpoint, used for the spoken return-to-start estimate. */
+    fun startEstimate(): com.trailnav.core.RouteTargetEstimate? {
+        if (state.startupEnabled && !state.startupResolved) return null
+        val match = state.lastMatch ?: return null
+        return startEtaTracker.estimate(match.projectedMeters, state.direction, state.arrived)
     }
 
     fun accept(location: TrailLocation): SessionDecision {
@@ -58,6 +66,7 @@ class GuideSession(
         if (state.route !== etaRoute) {
             etaRoute = state.route
             etaTracker = RouteEtaTracker(etaRoute, config)
+            startEtaTracker = RouteEtaTracker(etaRoute.withoutIntermediateEtaTargets(), config)
         }
         if (previousState.startupEnabled && !previousState.startupResolved) {
             if (!state.startupResolved) {
@@ -72,7 +81,7 @@ class GuideSession(
                 val reversed = state.routeReversed
                 // The first buffered fix seeds the tracker but cannot represent a speed interval.
                 startupEtaObservations.drop(1).forEach { observation ->
-                    etaTracker.observe(
+                    observeEta(
                         timestampMillis = observation.timestampMillis,
                         projectedMeters = if (reversed) {
                             (state.route.totalLengthMeters - observation.projectedMeters).coerceIn(0.0, state.route.totalLengthMeters)
@@ -85,7 +94,7 @@ class GuideSession(
                 }
                 startupEtaObservations.clear()
                 state.lastMatch?.let { match ->
-                    etaTracker.observe(
+                    observeEta(
                         timestampMillis = location.timestampMillis,
                         projectedMeters = match.projectedMeters,
                         direction = state.direction,
@@ -95,7 +104,7 @@ class GuideSession(
             }
         } else if (state.startupResolved) {
             state.lastMatch?.let { match ->
-                etaTracker.observe(
+                observeEta(
                     timestampMillis = location.timestampMillis,
                     projectedMeters = match.projectedMeters,
                     direction = state.direction,
@@ -120,7 +129,14 @@ class GuideSession(
         state = Engine.finish(state)
         return state.systemEvents.drop(previousSystemEventCount)
     }
+
+    private fun observeEta(timestampMillis: Long, projectedMeters: Double, direction: com.trailnav.core.ProgressDirection, onRoute: Boolean) {
+        etaTracker.observe(timestampMillis, projectedMeters, direction, onRoute)
+        startEtaTracker.observe(timestampMillis, projectedMeters, direction, onRoute)
+    }
 }
+
+private fun RouteModel.withoutIntermediateEtaTargets(): RouteModel = copy(waypoints = emptyList(), peaks = emptyList())
 
 internal fun SessionEventSink?.appendEngineSystemEvents(records: Iterable<EngineSystemEvent>) {
     val sink = this ?: return

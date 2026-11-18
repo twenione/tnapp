@@ -153,6 +153,9 @@ class RouteRibbonView @JvmOverloads constructor(
             RibbonSide.CENTER -> "중심"
         }
         drawText(canvas, "$side · 경로에서 ${formatMeters(current.perpendicularDistanceMeters)}", left + dp(12f), top + dp(52f), 14f, Color.LTGRAY)
+        roundTripLegLabel(current)?.let {
+            drawText(canvas, it, right - dp(12f), top + dp(52f), 14f, Color.LTGRAY, Paint.Align.RIGHT)
+        }
         drawText(canvas, "↑ 진행 방향", centerX + dp(8f), ribbonTop + dp(16f), 12f, Color.WHITE)
         drawText(canvas, "↓ 지난 경로", centerX + dp(8f), ribbonBottom - dp(4f), 12f, Color.LTGRAY)
         drawText(canvas, "진입 ${formatMeters(current.enterBandMeters)}", left + dp(10f), ribbonTop + dp(22f), 14f, Color.LTGRAY)

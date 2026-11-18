@@ -103,6 +103,11 @@ class MainActivity : AppCompatActivity() {
                 }.getOrNull(),
                 targetName = intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_TARGET_NAME)
                     ?.takeIf { it.isNotBlank() },
+                roundTripLeg = runCatching {
+                    RibbonRoundTripLeg.valueOf(
+                        intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_ROUND_TRIP_LEG).orEmpty(),
+                    )
+                }.getOrNull(),
                 targetRemainingMeters = intent.getDoubleExtra(
                     TrailForegroundService.EXTRA_RIBBON_TARGET_REMAINING_METERS,
                     -1.0,
@@ -696,6 +701,10 @@ class MainActivity : AppCompatActivity() {
             text = "원 가속도 수집(연구용)"
             isChecked = NavigationPreferences.imuCollectEnabled(this@MainActivity)
         }
+        val roundTripEnabled = CheckBox(this).apply {
+            text = "왕복 안내 (편도 경로를 갔다가 돌아올 때)"
+            isChecked = NavigationPreferences.roundTripEnabled(this@MainActivity)
+        }
         val eventCheckBoxes = EventSettingsUi.labels().mapIndexed { index, label ->
             CheckBox(this).apply {
                 text = label
@@ -708,6 +717,13 @@ class MainActivity : AppCompatActivity() {
             setPadding((20 * density).roundToInt(), 0, (20 * density).roundToInt(), 0)
             addView(onDemandEnabled)
             addView(responseModeGroup)
+            addView(roundTripEnabled)
+            addView(TextView(this@MainActivity).apply {
+                text = "순환형 경로에는 적용되지 않습니다. 다음 안내 시작부터 적용됩니다"
+                textSize = 12f
+                setTextColor(Color.DKGRAY)
+                setPadding((8 * density).roundToInt(), 0, (8 * density).roundToInt(), (4 * density).roundToInt())
+            })
             addView(imuCollectEnabled)
             addView(TextView(this@MainActivity).apply {
                 text = "안내 이벤트 (E1–E8)"
@@ -735,11 +751,13 @@ class MainActivity : AppCompatActivity() {
                     onDemandResponseMode = responseModes.firstOrNull {
                         it.ordinal + 1 == responseModeGroup.checkedRadioButtonId
                     } ?: DistanceTimeMode.Both,
+                    roundTripEnabled = roundTripEnabled.isChecked,
                 )?.let { selection ->
                     NavigationPreferences.saveEventSettings(this, selection.eventSettings)
                     NavigationPreferences.saveOnDemandEnabled(this, selection.onDemandEnabled)
                     NavigationPreferences.saveImuCollectEnabled(this, selection.imuCollectEnabled)
                     NavigationPreferences.saveOnDemandResponseMode(this, selection.onDemandResponseMode)
+                    NavigationPreferences.saveRoundTripEnabled(this, selection.roundTripEnabled)
                     status.text = "안내 설정을 저장했습니다"
                 }
             }
@@ -751,6 +769,7 @@ class MainActivity : AppCompatActivity() {
                 onDemandEnabled.isChecked = defaults.onDemandEnabled
                 imuCollectEnabled.isChecked = defaults.imuCollectEnabled
                 responseModeGroup.check(defaults.onDemandResponseMode.ordinal + 1)
+                roundTripEnabled.isChecked = defaults.roundTripEnabled
                 eventCheckBoxes.forEachIndexed { index, checkBox -> checkBox.isChecked = checked[index] }
             }
         }

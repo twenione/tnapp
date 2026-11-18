@@ -16,6 +16,15 @@ import kotlin.test.assertTrue
 
 class SessionLoggerTest {
     @Test
+    fun manifestAlwaysRecordsRoundTripSettingTrueOrFalse() {
+        val enabled = manifest(roundTripEnabled = true)
+        val disabled = manifest(roundTripEnabled = false)
+
+        assertTrue(enabled.contains("\"round_trip\":true"))
+        assertTrue(disabled.contains("\"round_trip\":false"))
+    }
+
+    @Test
     fun roundTripGuidanceUsesStableSessionDecisionNames() {
         val directory = createTempDir(prefix = "tnapp-round-trip-session-")
         val route = RouteModel.fromGpx(
@@ -433,5 +442,19 @@ class SessionLoggerTest {
         val manifest = File(directory, "manifest.json").readText()
         directory.deleteRecursively()
         return manifest
+    }
+
+    private fun manifest(roundTripEnabled: Boolean): String {
+        val directory = createTempDir(prefix = "tnapp-round-trip-manifest-")
+        JsonlSessionLogger(
+            directory = directory,
+            codeHash = "sha256:test",
+            configHash = "sha256:config",
+            eventSettings = EventSettings.defaults().toWireMap(),
+            routeHash = "sha256:route",
+            appVersion = "test",
+            roundTripEnabled = roundTripEnabled,
+        ).close()
+        return File(directory, "manifest.json").readText().also { directory.deleteRecursively() }
     }
 }

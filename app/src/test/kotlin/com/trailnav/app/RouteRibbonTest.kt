@@ -70,6 +70,26 @@ class RouteRibbonTest {
     }
 
     @Test
+    fun calculatorDerivesRoundTripLegFromEngineStateAndKeepsInactiveRoutesNull() {
+        val config = GuideConfig(roundTripEnabled = true)
+        val roundTripRoute = route().copy(roundTripTurnaroundMeters = 100.0)
+        val location = location(eastMeters = 5.0, accuracy = 4f)
+        val outboundResult = guide(GuideState.initial(roundTripRoute), location.toSensorFrame(), config)
+        val outbound = RouteRibbonCalculator.calculate(location, outboundResult, roundTripRoute, config)!!
+        val returnResult = outboundResult.copy(
+            nextState = outboundResult.nextState.copy(roundTripOnReturnLeg = true),
+        )
+        val returning = RouteRibbonCalculator.calculate(location, returnResult, roundTripRoute, config)!!
+        val ordinaryRoute = route()
+        val ordinaryResult = guide(GuideState.initial(ordinaryRoute), location.toSensorFrame(), GuideConfig())
+        val ordinary = RouteRibbonCalculator.calculate(location, ordinaryResult, ordinaryRoute, GuideConfig())!!
+
+        assertEquals(RibbonRoundTripLeg.OUTBOUND, outbound.roundTripLeg)
+        assertEquals(RibbonRoundTripLeg.RETURN, returning.roundTripLeg)
+        assertNull(ordinary.roundTripLeg)
+    }
+
+    @Test
     fun ribbonDistanceLabelUsesTargetSubjectAndFallsBackToDestinationDistance() {
         val state = RouteRibbonState(
             perpendicularDistanceMeters = 0.0,
@@ -116,6 +136,13 @@ class RouteRibbonTest {
                 targetLabelKind = TargetLabelKind.ELEVATION_PEAK,
             )),
         )
+        assertEquals(
+            "출발지까지 2000m",
+            ribbonDistanceLabel(state.copy(roundTripLeg = RibbonRoundTripLeg.RETURN)),
+        )
+        assertEquals("왕복 · 가는 길", roundTripLegLabel(state.copy(roundTripLeg = RibbonRoundTripLeg.OUTBOUND)))
+        assertEquals("왕복 · 오는 길", roundTripLegLabel(state.copy(roundTripLeg = RibbonRoundTripLeg.RETURN)))
+        assertNull(roundTripLegLabel(state))
     }
 
     @Test

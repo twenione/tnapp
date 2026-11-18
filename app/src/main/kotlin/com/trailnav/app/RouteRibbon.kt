@@ -29,6 +29,7 @@ data class RouteRibbonState(
     val targetRemainingMeters: Double? = null,
     val targetLabelKind: TargetLabelKind? = null,
     val targetName: String? = null,
+    val roundTripLeg: RibbonRoundTripLeg? = null,
 ) {
     val side: RibbonSide
         get() = when {
@@ -42,6 +43,8 @@ data class RibbonNextTurn(val distanceMeters: Double, val side: RibbonTurnSide)
 
 enum class RibbonTurnSide { LEFT, RIGHT }
 
+enum class RibbonRoundTripLeg { OUTBOUND, RETURN }
+
 enum class RibbonSide { LEFT, RIGHT, CENTER }
 
 /** Formats the destination or segment target label shown on the route ribbon. */
@@ -53,7 +56,14 @@ fun ribbonDistanceLabel(state: RouteRibbonState): String = when {
         }
         "${GuidancePhrases.targetSubject(labelKind, state.targetName)}까지 ${formatMeters(state.targetRemainingMeters)}"
     }
+    state.roundTripLeg == RibbonRoundTripLeg.RETURN -> "출발지까지 ${formatMeters(state.remainingDistanceMeters)}"
     else -> "도착지까지 ${formatMeters(state.remainingDistanceMeters)}"
+}
+
+fun roundTripLegLabel(state: RouteRibbonState): String? = when (state.roundTripLeg) {
+    RibbonRoundTripLeg.OUTBOUND -> "왕복 · 가는 길"
+    RibbonRoundTripLeg.RETURN -> "왕복 · 오는 길"
+    null -> null
 }
 
 internal fun formatMeters(value: Double): String =
@@ -91,6 +101,11 @@ object RouteRibbonCalculator {
             targetRemainingMeters = target?.remainingMeters,
             targetLabelKind = target?.labelKind,
             targetName = target?.name,
+            roundTripLeg = when {
+                result.nextState.route.roundTripTurnaroundMeters == null -> null
+                result.nextState.roundTripOnReturnLeg -> RibbonRoundTripLeg.RETURN
+                else -> RibbonRoundTripLeg.OUTBOUND
+            },
         )
     }
 
