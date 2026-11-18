@@ -138,12 +138,14 @@ VARIANTS = {
                       '    // an arbitrary epoch (which introduces a multi-day seasonal drift).\n'
                       '    val dayOfYear = localDate.toEpochDay() - LocalDate.of(2000, 1, 1).toEpochDay() /* '
                       'D-033 seasonal epoch drift */'),
- 'sunset-skip-accuracy': ('if (frame.accuracy.toDouble() > config.accuracyRejectMeters) {\n'
+ 'sunset-skip-accuracy': ('        }\n'
                           '        val sunset = evaluateSunsetStandalone(initializedState, frame, config, '
-                          'higherPriority = false)',
-                          'if (frame.accuracy.toDouble() > config.accuracyRejectMeters) {\n'
+                          'higherPriority = false)\n'
+                          '        if (sunset.guidance != null) {',
+                          '        }\n'
                           '        val sunset = StandaloneSunsetEvaluation(initializedState, null, '
-                          'Reason("event.none")) /* D-033 skip E7 on accuracy frames */'),
+                          'Reason("event.none")) /* D-033 skip E7 on accuracy frames */\n'
+                          '        if (sunset.guidance != null) {'),
  'event-offroute-gate': ('    if (next.offRoute) {',
                          '    if (false) { /* D-033 off-route event gate removed */'),
  'event-reverse-gate': ('if (!config.slopeEnabled || !forward) {',
@@ -360,8 +362,7 @@ VARIANTS = {
                              'val sunsetEvaluation = evaluateSunset(previous, next, frame, config, '
                              'eventIntervalOpen, candidates.isNotEmpty() || config.elevationEnabled || '
                              'config.sunriseEnabled) /* TASK-040 E5/E8 incorrectly delay E7 */'),
- 'sunrise-consumes-rejected-accuracy': ('    if (frame.accuracy.toDouble() > config.accuracyRejectMeters) {\n'
-                                        '        val sunset = evaluateSunsetStandalone(initializedState, '
+ 'sunrise-consumes-rejected-accuracy': ('        val sunset = evaluateSunsetStandalone(initializedState, '
                                         'frame, config, higherPriority = false)\n'
                                         '        if (sunset.guidance != null) {\n'
                                         '            return GuideResult(sunset.guidance, sunset.state, '
@@ -377,9 +378,7 @@ VARIANTS = {
                                         '                details = mapOf("accuracy" to '
                                         'frame.accuracy.toString())\n'
                                         '            )\n'
-                                        '        )\n'
-                                        '    }',
-                                        '    if (frame.accuracy.toDouble() > config.accuracyRejectMeters) {\n'
+                                        '        )',
                                         '        val sunset = evaluateSunsetStandalone(initializedState, '
                                         'frame, config, higherPriority = false)\n'
                                         '        val sunriseState = evaluateSunriseStandalone(sunset.state, '
@@ -398,8 +397,7 @@ VARIANTS = {
                                         '                details = mapOf("accuracy" to '
                                         'frame.accuracy.toString())\n'
                                         '            )\n'
-                                        '        )\n'
-                                        '    }'),
+                                        '        )'),
 }
 
 VARIANTS.update({

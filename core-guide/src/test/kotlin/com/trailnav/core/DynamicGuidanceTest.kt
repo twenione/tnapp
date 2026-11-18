@@ -706,6 +706,7 @@ class DynamicGuidanceTest {
         val segment = route.cumulativeMeters.indexOfLast { it <= progress }.coerceIn(0, route.points.lastIndex - 1)
         return GuideState.initial(route).copy(
             hasEnteredRoute = true,
+            waitingDecisionEvaluated = true,
             lastMatch = MatchResult(0.0, progress, segment, route.points[segment], direction),
             lastTimestamp = timestamp,
             sessionStartTimestamp = timestamp,

@@ -21,6 +21,8 @@ object GuidancePhrases {
     fun approach(distanceMeters: Double, bearingDegrees: Double?): String =
         if (bearingDegrees == null) "경로까지 ${formatDistance(distanceMeters)}"
         else "경로까지 ${formatDistance(distanceMeters)}, ${cardinal(bearingDegrees)}쪽입니다"
+    fun waitingStart(distanceMeters: Double): String =
+        "경로에서 ${formatDistance(distanceMeters)} 떨어져 있습니다. 가까워지면 안내를 시작합니다"
     fun arrived(): String = "목적지에 도착했습니다"
     fun arrivedAtStart(): String = "출발지에 도착했습니다"
     fun roundTripStart(): String = "왕복 경로로 안내합니다"

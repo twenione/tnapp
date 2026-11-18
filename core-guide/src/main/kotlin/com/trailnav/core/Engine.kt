@@ -12,6 +12,8 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
+private const val WAITING_DISTANCE_EPSILON_METERS = 1e-9
+
 /** Pure Phase 1 guidance engine. It reads no clock, random source, or I/O. */
 object Engine {
     fun guide(state: GuideState, frame: SensorFrame, config: GuideConfig = GuideConfig()): GuideResult =
@@ -38,6 +40,13 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         return GuideResult(null, initializedState, Reason("arrived.already-complete"))
     }
     if (frame.accuracy.toDouble() > config.accuracyRejectMeters) {
+        if (initializedState.waitingForRoute) {
+            return GuideResult(
+                null,
+                initializedState,
+                Reason("waiting.accuracy-filter", thresholds = mapOf("accuracyRejectMeters" to config.accuracyRejectMeters)),
+            )
+        }
         val sunset = evaluateSunsetStandalone(initializedState, frame, config, higherPriority = false)
         if (sunset.guidance != null) {
             return GuideResult(sunset.guidance, sunset.state, sunset.reason.copy(rule = "input.accuracy-filter"))
@@ -99,6 +108,59 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         if (startupPending) null else initializedState.lastMatch?.projectedMeters,
         config,
     )
+    if (initializedState.waitingForRoute) {
+        if (match == null) {
+            return GuideResult(null, initializedState, Reason("waiting.match-unavailable"))
+        }
+        if (match.distanceMeters < config.waitingExitMeters - WAITING_DISTANCE_EPSILON_METERS) {
+            val waitingStartedAt = initializedState.waitingStartedAtMillis ?: frame.timestamp
+            initializedState = initializedState.copy(
+                waitingForRoute = false,
+                waitingStartedAtMillis = null,
+                sessionStartTimestamp = frame.timestamp,
+                lastTimestamp = frame.timestamp,
+                systemEvents = initializedState.systemEvents + EngineSystemEvent(
+                    "waiting.exit",
+                    mapOf(
+                        "distance_m" to match.distanceMeters.toString(),
+                        "waited_seconds" to ((frame.timestamp - waitingStartedAt).coerceAtLeast(0L) / 1_000.0).toString(),
+                    ),
+                ),
+            )
+        } else {
+            return GuideResult(
+                null,
+                initializedState.copy(lastTimestamp = frame.timestamp),
+                Reason(
+                    "waiting.for-route",
+                    thresholds = mapOf("waitingExitMeters" to config.waitingExitMeters),
+                    details = mapOf("distanceMeters" to match.distanceMeters.toString()),
+                ),
+            )
+        }
+    } else if (!initializedState.waitingDecisionEvaluated && match != null) {
+        initializedState = initializedState.copy(waitingDecisionEvaluated = true)
+        if (match.distanceMeters >= config.waitingEnterMeters - WAITING_DISTANCE_EPSILON_METERS) {
+            initializedState = initializedState.copy(
+                waitingForRoute = true,
+                waitingStartedAtMillis = frame.timestamp,
+                lastTimestamp = frame.timestamp,
+                systemEvents = initializedState.systemEvents + EngineSystemEvent(
+                    "waiting.enter",
+                    mapOf("distance_m" to match.distanceMeters.toString()),
+                ),
+            )
+            return GuideResult(
+                Guidance.WaitingStart(match.distanceMeters),
+                initializedState,
+                Reason(
+                    "waiting.enter",
+                    thresholds = mapOf("waitingEnterMeters" to config.waitingEnterMeters),
+                    details = mapOf("distanceMeters" to match.distanceMeters.toString()),
+                ),
+            )
+        }
+    }
     if (match == null) {
         if (roundTripStartEligible(initializedState, config)) {
             return GuideResult(
