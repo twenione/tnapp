@@ -116,6 +116,8 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
     guide_events: list[tuple[int, int | None, bool]] = []
     count = 0
     guide_count = 0
+    waiting_enter_count = 0
+    waiting_exit_count = 0
     for line_number, raw in enumerate(lines, 1):
         if not raw.strip():
             # SCOPE: Blank NDJSON lines are treated as framing whitespace.
@@ -134,6 +136,30 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
         seq = event.get("seq")
         timestamp = event.get("t")
         stream = event.get("stream")
+        kind = event.get("kind")
+        if stream == "sys" and isinstance(kind, str) and kind in {"waiting.enter", "waiting.exit"}:
+            details = event.get("details")
+            required = ("distance_m",) if kind == "waiting.enter" else ("distance_m", "waited_seconds")
+            if not isinstance(details, dict):
+                errors.append(f"events.ndjson:{line_number}: {kind} details must be an object")
+            else:
+                if set(details) != set(required):
+                    errors.append(f"events.ndjson:{line_number}: {kind} details must contain exactly {required}")
+                for field in required:
+                    value = details.get(field)
+                    if not isinstance(value, str):
+                        errors.append(f"events.ndjson:{line_number}: {kind} details.{field} must be a string")
+                    else:
+                        try:
+                            numeric = float(value)
+                        except ValueError:
+                            numeric = float("nan")
+                        if not (numeric >= 0.0 and numeric < float("inf")):
+                            errors.append(f"events.ndjson:{line_number}: {kind} details.{field} must be a finite non-negative number string")
+            if kind == "waiting.enter":
+                waiting_enter_count += 1
+            else:
+                waiting_exit_count += 1
         if not isinstance(seq, int) or isinstance(seq, bool):
             errors.append(f"events.ndjson:{line_number}: seq must be integer")
         elif seq <= previous_seq:
@@ -204,6 +230,8 @@ def validate(root: Path) -> tuple[list[str], list[str], int]:
         errors.append(
             f"events.ndjson: loc/frame guide count mismatch ({len(loc_sequences)} loc vs {len(frame_guides)} frame guides)"
         )
+    if waiting_enter_count > 1 or waiting_exit_count > 1 or waiting_exit_count > waiting_enter_count:
+        errors.append("events.ndjson: waiting.enter/waiting.exit session counts are inconsistent")
     return errors, warnings, count
 
 

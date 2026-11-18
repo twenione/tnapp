@@ -122,6 +122,20 @@ def details_match(recorded: object, actual: object, *, tolerance: float = 1e-6) 
     return type(recorded) is type(actual) and recorded == actual
 
 
+def waiting_event_details_match(recorded: object, actual: object) -> bool:
+    """Compare waiting diagnostics, allowing only sub-meter coordinate serialization noise."""
+    if not isinstance(recorded, dict) or not isinstance(actual, dict) or set(recorded) != set(actual):
+        return False
+    for key in recorded:
+        if key == "distance_m":
+            left, right = _numeric(recorded[key]), _numeric(actual[key])
+            if left is None or right is None or abs(left - right) > 0.1:
+                return False
+        elif not details_match(recorded[key], actual[key]):
+            return False
+    return True
+
+
 def contract_probe(cli: Path) -> int:
     """Check D-033 dwell and caller-config contracts through the real CLI."""
     dwell = invoke_probe(cli, ["offRouteEnterDwellSeconds=20"])
@@ -194,6 +208,8 @@ def replay(root: Path, cli: Path, strict: bool, overrides: list[str] | None = No
     trace = invoke(cli, root, round_trip=round_trip_present and round_trip_value is True, overrides=effective_overrides)
     comparisons = [item for item in trace if item.get("kind") == "guide"]
     trigger_trace = [item for item in trace if item.get("kind") == "trigger"]
+    waiting_trace = [item for item in trace if item.get("kind") == "system" and item.get("event_kind") in {"waiting.enter", "waiting.exit"}]
+    recorded_waiting = [event for event in events if event.get("stream") == "sys" and event.get("kind") in {"waiting.enter", "waiting.exit"}]
     startup_oracle = manifest.get("startup_oracle") if isinstance(manifest, dict) else None
     if startup_oracle is not None:
         if not isinstance(startup_oracle, dict):
@@ -224,6 +240,22 @@ def replay(root: Path, cli: Path, strict: bool, overrides: list[str] | None = No
         print(f"FAIL: engine comparison count {len(comparisons)} does not match frame guide event count {len(frame_guide_events)}")
         return 1
     mismatches: list[str] = []
+    if len(waiting_trace) != len(recorded_waiting):
+        mismatches.append("waiting system event count")
+        print(f"waiting system event count actual={len(waiting_trace)} recorded={len(recorded_waiting)}")
+    for index, recorded in enumerate(recorded_waiting):
+        if index >= len(waiting_trace):
+            break
+        actual = waiting_trace[index]
+        recorded_details = recorded.get("details", {})
+        actual_details = actual.get("details", {})
+        if recorded.get("kind") != actual.get("event_kind") or not waiting_event_details_match(recorded_details, actual_details):
+            mismatches.append(f"waiting system event index {index}")
+            print(
+                f"waiting system event index={index} MISMATCH actual={actual.get('event_kind')} "
+                f"{json.dumps(actual_details, sort_keys=True)} recorded={recorded.get('kind')} "
+                f"{json.dumps(recorded_details, sort_keys=True)}"
+            )
     recorded_frame_guides = [event for event in guide_events if "trigger" not in event]
     recorded_triggers = [event for event in guide_events if "trigger" in event]
     if len(recorded_triggers) != len(trigger_trace):

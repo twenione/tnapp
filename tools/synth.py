@@ -418,6 +418,111 @@ def make_continuous_reverse_overlap_session(root: Path) -> None:
     )
 
 
+def make_waiting_short_route_session(root: Path) -> None:
+    """Create a synthetic far-start session that enters waiting, exits, and hikes a short segment."""
+    name = "20_waiting_short_route"
+    session = root / name
+    session.mkdir(parents=True, exist_ok=True)
+    radius = 6_371_008.8
+    origin_latitude, origin_longitude = 10.0, 20.0
+    points = [
+        (origin_latitude + index * 30.0 / radius * 180.0 / math.pi, origin_longitude)
+        for index in range(11)
+    ]
+    write_gpx(session / "route.gpx", points)
+    route_bytes = "\n".join(f"{lat:.8f},{lon:.8f}" for lat, lon in points).encode()
+    route_hash = "sha256:" + hashlib.sha256(route_bytes).hexdigest()
+    seed = 3120
+    manifest = {
+        "session_id": str(uuid.uuid5(SYNTH_NAMESPACE, name)),
+        "schema_version": "0.1.0-draft",
+        "started_at_wall": "2026-01-01T00:00:00Z",
+        "app": {"version": "0.1.0", "build": 0, "code_hash": "sha256:synthetic"},
+        "engine": {
+            "config": {
+                "stub": False,
+                "variant": name,
+                "implementation": "core-guide",
+                "events": {f"E{index}": False for index in range(1, 9)},
+            },
+            "rng_seed": seed,
+        },
+        "route": {
+            "gpx_id": "synthetic-waiting-short-route",
+            "gpx_hash": route_hash,
+            "point_count": len(points),
+            "elevation_use": {"used": False, "reason": "absent"},
+            "waypoint_count": 0,
+        },
+        "clock": {
+            "monotonic_source": "synthetic-sequence",
+            "timestamp_unit": "seconds",
+            "frame_intervals_seconds": [1_800.0, 1_800.0, 450.0, 45.0, 403.0, 1.0],
+        },
+        "privacy": {"upload_default": False},
+        "device": {"model": "synthetic", "os": "test", "sensors": ["gps"]},
+        "scenario": {
+            "family": "waiting-short-route",
+            "seed": seed,
+            "speed_mps": 1.2,
+            "description": "Synthetic 5 km off-route start, quiet waiting to 500 m, route approach, and a short hike.",
+        },
+    }
+    (session / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    # Hand-authored expected decisions cover the entry, quiet waiting, exit,
+    # existing approach hold, and a short on-route walk.
+    frames = [
+        (0.0, 5_000.0, 150.0, "WAITING_START", "waiting.enter", {"distanceMeters": "5000.0"}, "waiting.enter"),
+        (1_800.0, 3_000.0, 150.0, "CONTINUE", "waiting.for-route", {"distanceMeters": "3000.0"}, None),
+        (3_600.0, 1_000.0, 150.0, "CONTINUE", "waiting.for-route", {"distanceMeters": "1000.0"}, None),
+        (4_050.0, 499.9, 150.0, "APPROACH", "approach.pre-entry", {"distanceMeters": "499.9", "bearingDegrees": "270.0"}, "waiting.exit"),
+        (4_095.0, 450.0, 150.0, "CONTINUE", "approach.holding", {"distanceMeters": "450.0"}, None),
+        (4_498.0, 14.0, 150.0, "CONTINUE", "startup.direction-pending", {}, None),
+        (4_499.0, 5.0, 150.0, "CONTINUE", "startup.direction-pending", {}, None),
+        (4_500.0, 5.0, 151.2, "CONTINUE", "startup.direction-pending", {}, None),
+        (4_501.0, 5.0, 152.4, "CONTINUE", "startup.direction-pending", {}, None),
+        (4_502.0, 5.0, 153.6, "CONTINUE", "startup.direction-pending", {}, None),
+        (4_503.0, 5.0, 154.8, "CONTINUE", "startup.direction-pending", {}, None),
+    ]
+    events = []
+    for index, (timestamp, east_meters, north_meters, decision, rule, reason_details, system_kind) in enumerate(frames):
+        latitude = origin_latitude + north_meters / radius * 180.0 / math.pi
+        longitude = origin_longitude + east_meters / (radius * math.cos(math.radians(origin_latitude))) * 180.0 / math.pi
+        loc_seq = len(events)
+        events.append(event(
+            loc_seq,
+            timestamp,
+            "loc",
+            lat=round(latitude, 15),
+            lon=round(longitude, 15),
+            accuracy=5.0,
+            provider="synthetic",
+            speed_mps=1.2,
+            bearing_deg=270.0,
+        ))
+        if system_kind == "waiting.enter":
+            events.append(event(
+                len(events), timestamp, "sys", kind="waiting.enter", battery_pct=None,
+                details={"distance_m": "5000.0"},
+            ))
+        if system_kind == "waiting.exit":
+            events.append(event(
+                len(events), timestamp, "sys", kind="waiting.exit", battery_pct=None,
+                details={"distance_m": "499.9", "waited_seconds": "4050.0"},
+            ))
+        events.append(event(
+            len(events), timestamp + 0.1, "guide", decision=decision, src_seq=loc_seq,
+            inputs={"frame_count": index + 1, "rng_seed": seed},
+            reason={"rule": rule, "details": reason_details},
+            state_hash="sha256:synthetic",
+        ))
+    (session / "events.ndjson").write_text(
+        "\n".join(json.dumps(item, sort_keys=True) for item in events) + "\n",
+        encoding="utf-8",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", type=Path, default=Path("testdata/routes/base.gpx"))
@@ -450,9 +555,10 @@ def main() -> int:
     make_session(synth, "16_waypoint_profile", points, "waypoint_profile", 3016, waypoint_name="Synthetic Summit")
     make_e4_deferred_session(synth)
     make_continuous_reverse_overlap_session(synth)
+    make_waiting_short_route_session(synth)
     print(f"base={args.base}")
     print("generated_golden=1")
-    print(f"generated_synth={len(variants) + 9}")
+    print(f"generated_synth={len(variants) + 10}")
     print(f"source={source}; original measured GPX and offset are not retained")
     return 0
 

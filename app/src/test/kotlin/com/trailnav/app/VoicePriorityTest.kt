@@ -10,12 +10,14 @@ import kotlin.test.assertTrue
 class VoicePriorityTest {
     @Test
     fun stateTransitionsAreHighestPriority() {
+        assertEquals(VoicePriority.STATE_TRANSITION, priorityFor(Guidance.WaitingStart(5_000.0), "waiting.enter", false))
         assertEquals(VoicePriority.STATE_TRANSITION, priorityFor(Guidance.Arrived, null, false))
         assertEquals(VoicePriority.STATE_TRANSITION, priorityFor(Guidance.RoundTripStart, "route.round-trip.start", false))
         assertEquals(VoicePriority.STATE_TRANSITION, priorityFor(Guidance.ArrivedAtStart, "arrival.radius-and-progress", false))
         assertEquals(VoicePriority.STATE_TRANSITION, priorityFor(Guidance.OffRoute(30.0, "forward"), "off-route.enter", false))
         assertEquals(VoicePriority.STATE_TRANSITION, priorityFor(Guidance.Status("recovery"), null, true))
         assertTrue(isProtected(Guidance.Arrived, false))
+        assertTrue(isProtected(Guidance.WaitingStart(5_000.0), false, "waiting.enter"))
         assertTrue(isProtected(Guidance.OffRoute(30.0, "forward"), false, "off-route.enter"))
         assertTrue(isProtected(Guidance.OffRoute(30.0, "forward"), true))
     }

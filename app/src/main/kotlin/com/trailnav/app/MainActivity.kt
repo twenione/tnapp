@@ -149,7 +149,7 @@ class MainActivity : AppCompatActivity() {
                 val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 0xff) }
                 // Parse once at import time so malformed files are rejected before starting the service.
                 val route = com.trailnav.core.RouteModel.fromGpx(bytes.toString(Charsets.UTF_8))
-                importWarning = RouteImportWarning.from(route.quality)
+                importWarning = RouteImportWarning.from(route.quality, route.totalLengthMeters)
                 val displayName = contentResolver.query(
                     uri,
                     arrayOf(OpenableColumns.DISPLAY_NAME),

@@ -1,0 +1,66 @@
+{
+  "session_id": "738562d4-711b-5067-97e8-de5e37007eec",
+  "schema_version": "0.1.0-draft",
+  "started_at_wall": "2026-01-01T00:00:00Z",
+  "app": {
+    "version": "0.1.0",
+    "build": 0,
+    "code_hash": "sha256:synthetic"
+  },
+  "engine": {
+    "config": {
+      "stub": false,
+      "variant": "20_waiting_short_route",
+      "implementation": "core-guide",
+      "events": {
+        "E1": false,
+        "E2": false,
+        "E3": false,
+        "E4": false,
+        "E5": false,
+        "E6": false,
+        "E7": false,
+        "E8": false
+      }
+    },
+    "rng_seed": 3120
+  },
+  "route": {
+    "gpx_id": "synthetic-waiting-short-route",
+    "gpx_hash": "sha256:4d9e088995ae3a164c8a4b760cd14512130fa77d0700e44c20578bd9c506acd4",
+    "point_count": 11,
+    "elevation_use": {
+      "used": false,
+      "reason": "absent"
+    },
+    "waypoint_count": 0
+  },
+  "clock": {
+    "monotonic_source": "synthetic-sequence",
+    "timestamp_unit": "seconds",
+    "frame_intervals_seconds": [
+      1800.0,
+      1800.0,
+      450.0,
+      45.0,
+      403.0,
+      1.0
+    ]
+  },
+  "privacy": {
+    "upload_default": false
+  },
+  "device": {
+    "model": "synthetic",
+    "os": "test",
+    "sensors": [
+      "gps"
+    ]
+  },
+  "scenario": {
+    "family": "waiting-short-route",
+    "seed": 3120,
+    "speed_mps": 1.2,
+    "description": "Synthetic 5 km off-route start, quiet waiting to 500 m, route approach, and a short hike."
+  }
+}

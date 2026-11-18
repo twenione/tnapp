@@ -37,6 +37,7 @@ import java.util.UUID
  */
 class TrailForegroundService : Service() {
     private var source: LocationSource? = null
+    private var locationIntervalController: LocationIntervalController? = null
     private var logger: JsonlSessionLogger? = null
     private var guideSession: GuideSession? = null
     private var tts: TtsController? = null
@@ -291,6 +292,7 @@ class TrailForegroundService : Service() {
         installOnDemandTriggers()
         installImuRecorder(sessionDirectory)
         source = FusedLocationSource(this).also { locationSource ->
+            locationIntervalController = LocationIntervalController(locationSource, config)
             locationSource.start(
                 onLocation = ::onLocation,
                 onError = { error ->
@@ -313,6 +315,7 @@ class TrailForegroundService : Service() {
         mainHandler.removeCallbacks(noLocationWarning)
         source?.stop()
         source = null
+        locationIntervalController = null
         uninstallOnDemandTriggers()
         tonePlayer?.close()
         onRouteVoiceScheduler?.reset()
@@ -520,6 +523,7 @@ class TrailForegroundService : Service() {
                 )
         logger.appendArrivalBlockedEvents(decision.newlyBlockedArrivals)
         val nextState = decision.result.nextState
+        locationIntervalController?.updateWaitingState(nextState.waitingForRoute)
         currentRoute = nextState.route
         val previousPreparation = when {
             !previousState.startupHasMatch -> RoutePreparationStage.PREPARING
@@ -636,6 +640,7 @@ class TrailForegroundService : Service() {
         turnExpiryCallbacks.clear()
         source?.stop()
         source = null
+        locationIntervalController = null
         val voiceShutdown = voiceQueue.shutdown()
         voiceShutdown.active?.let { item ->
             logger?.appendSystem("tts.done", voiceItemFields(item) + ("outcome" to TtsController.OUTCOME_STOPPED))
@@ -1087,6 +1092,7 @@ internal fun Guidance?.toSpeech(
 ): String? = when (this) {
     is Guidance.OffRoute -> GuidancePhrases.offRoute(distance)
     is Guidance.Approach -> GuidancePhrases.approach(distanceMeters, bearingDegrees)
+    is Guidance.WaitingStart -> GuidancePhrases.waitingStart(distanceMeters)
     is Guidance.Status -> if (isReverseStatus()) null else message
     Guidance.Arrived -> GuidancePhrases.arrived()
     Guidance.ArrivedAtStart -> GuidancePhrases.arrivedAtStart()

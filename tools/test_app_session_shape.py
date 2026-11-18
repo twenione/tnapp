@@ -69,6 +69,13 @@ def arrival_blocked_event() -> dict:
     }
 
 
+def waiting_event(kind: str, seq: int, details: dict[str, str]) -> dict:
+    return {
+        "seq": seq, "t": 1.0, "stream": "sys", "kind": kind, "battery_pct": None,
+        "details": details,
+    }
+
+
 def assert_discard_shape(event: dict) -> None:
     details = event["details"]
     expected = {
@@ -126,6 +133,8 @@ def event_stream(include_frame: bool = True) -> list[dict]:
     events.append(discarded_turn_event("TURN_NOW", 9))
     events.append(discarded_turn_event("TURNAROUND_AHEAD", 10))
     events.append(discarded_turn_event("TURNAROUND", 11))
+    events.append(waiting_event("waiting.enter", 12, {"distance_m": "5000.0"}))
+    events.append(waiting_event("waiting.exit", 13, {"distance_m": "499.9", "waited_seconds": "120.0"}))
     return events
 
 
@@ -144,7 +153,7 @@ def main() -> int:
         write_session(root, include_frame=True)
         errors, warnings, count = validate(root)
         assert not errors, errors
-        assert count == 12
+        assert count == 14
         emitted = [json.loads(raw) for raw in (root / "events.ndjson").read_text(encoding="utf-8").splitlines()]
         discards = [event for event in emitted if event.get("kind") == "event.discarded"]
         assert [event["details"]["event"] for event in discards] == ["E4", "E6", "E1", "TURN_AHEAD", "TURN_NOW", "TURNAROUND_AHEAD", "TURNAROUND"]
@@ -167,6 +176,25 @@ def main() -> int:
         assert len(blocked) == 1 and blocked[0]["stream"] == "sys"
         assert_arrival_blocked_shape(blocked[0])
 
+        waiting = [event for event in emitted if event.get("kind") in {"waiting.enter", "waiting.exit"}]
+        assert [event["kind"] for event in waiting] == ["waiting.enter", "waiting.exit"]
+        assert all(all(isinstance(value, str) for value in event["details"].values()) for event in waiting)
+        for invalid in (
+            waiting_event("waiting.enter", 12, {"distance_m": 5_000.0}),
+            waiting_event("waiting.exit", 13, {"distance_m": "499.9", "waited_seconds": "NaN"}),
+        ):
+            invalid_root = root_dir / f"invalid-waiting-{len(list(root_dir.iterdir()))}"
+            shutil.copytree(root, invalid_root)
+            invalid_events = [json.loads(raw) for raw in (invalid_root / "events.ndjson").read_text(encoding="utf-8").splitlines()]
+            invalid_events[-2:] = [invalid]
+            (invalid_root / "events.ndjson").write_text(
+                "\n".join(json.dumps(item, ensure_ascii=False) for item in invalid_events) + "\n",
+                encoding="utf-8",
+            )
+            errors, _, _ = validate(invalid_root)
+            assert any("waiting." in error for error in errors), errors
+            shutil.rmtree(invalid_root)
+
         for forbidden_key in ("lat", "timestamp"):
             invalid_arrival = arrival_blocked_event()
             invalid_arrival["details"][forbidden_key] = "10.0"
@@ -184,7 +212,7 @@ def main() -> int:
         assert any("loc/frame guide count mismatch" in error for error in errors), errors
     finally:
         shutil.rmtree(root_dir, ignore_errors=True)
-    print("app_session_shape=PASS all_discard_shapes=PASS sensitive_discard_fields_rejected=PASS arrival_blocked_shape=PASS separate_frame_and_slot_trigger=PASS missing_frame_rejected=PASS")
+    print("app_session_shape=PASS all_discard_shapes=PASS sensitive_discard_fields_rejected=PASS arrival_blocked_shape=PASS waiting_event_fields=PASS separate_frame_and_slot_trigger=PASS missing_frame_rejected=PASS")
     return 0
 
 

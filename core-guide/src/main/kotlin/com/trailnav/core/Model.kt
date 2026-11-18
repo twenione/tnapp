@@ -26,6 +26,7 @@ data class Reason(
 sealed class Guidance {
     data class OffRoute(val distance: Double, val direction: String) : Guidance()
     data class Approach(val distanceMeters: Double, val bearingDegrees: Double) : Guidance()
+    data class WaitingStart(val distanceMeters: Double) : Guidance()
     data class TurnAhead(val distance: Double, val side: Side, val turnIndex: Int) : Guidance()
     data class TurnNow(val side: Side, val turnIndex: Int) : Guidance()
     data class TurnaroundAhead(val distance: Double) : Guidance()
@@ -148,6 +149,12 @@ data class GuideConfig(
     val roundTripEnabled: Boolean = false,
     /** Endpoint gap at or below this distance identifies a loop route. */
     val roundTripLoopMaxGapMeters: Double = 100.0,
+    /** First accepted frame at or beyond this route distance starts a quiet waiting phase. */
+    val waitingEnterMeters: Double = 2_000.0,
+    /** Waiting ends on the first accepted frame strictly inside this route distance. */
+    val waitingExitMeters: Double = 500.0,
+    /** Location provider interval requested while the engine is waiting for the route. */
+    val waitingLocationIntervalMillis: Long = 5_000L,
     val routeQualityGapWarnMeters: Double = 100.0,
     val routeQualityShortSegmentMeters: Double = 6.0,
 ) {
@@ -199,6 +206,9 @@ data class GuideConfig(
         require(gapMaxWalkSpeedMps > 0.0)
         require(directionSwitchDistanceMeters > 0.0)
         require(roundTripLoopMaxGapMeters >= 0.0)
+        require(waitingEnterMeters > waitingExitMeters)
+        require(waitingExitMeters > offRouteExitDistMeters)
+        require(waitingLocationIntervalMillis >= 1_000L)
         require(etaWindowSeconds > 0.0)
         require(etaMinWindowMeters >= 0.0)
         require(etaMinMovingSpeedMps >= 0.0)
@@ -235,6 +245,9 @@ data class GuideConfig(
             "accuracyRejectMeters" to "input filter threshold; covered by matching tests",
             "roundTripEnabled" to "opt-in route mode; default false and covered by round-trip route tests",
             "roundTripLoopMaxGapMeters" to "route eligibility parameter; covered by loop-ignore and active-round-trip tests",
+            "waitingEnterMeters" to "waiting entry threshold; covered by WaitingStateTest entry-boundary and one-time decision tests",
+            "waitingExitMeters" to "waiting exit threshold; covered by WaitingStateTest exit-boundary and same-frame approach tests",
+            "waitingLocationIntervalMillis" to "app location-provider cadence while waiting; covered by location interval policy tests",
             "stationarySpeedMps" to "movement classification; covered by matching tests",
             "searchWindowMeters" to "matching search bound; covered by out-and-back test",
             "arriveRadiusMeters" to "fixed Phase 1 arrival criterion; covered by arrival tests",
@@ -386,6 +399,11 @@ data class GuideState(
     val routeReversed: Boolean = false,
     val systemEvents: List<EngineSystemEvent> = emptyList(),
     val hasEnteredRoute: Boolean = false,
+    /** True after the first accuracy-accepted route-distance decision for this session. */
+    val waitingDecisionEvaluated: Boolean = false,
+    /** True between the one-time far-start decision and the first near-route frame. */
+    val waitingForRoute: Boolean = false,
+    val waitingStartedAtMillis: Long? = null,
     val lastMatch: MatchResult? = null,
     val firstMatchProgressMeters: Double? = null,
     val lastTimestamp: Long? = null,

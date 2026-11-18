@@ -26,4 +26,5 @@ fun TrailLocation.toSensorFrame(): SensorFrame = SensorFrame(
 interface LocationSource {
     fun start(onLocation: (TrailLocation) -> Unit, onError: (Throwable) -> Unit)
     fun stop()
+    fun setUpdateIntervalMillis(intervalMillis: Long) = Unit
 }

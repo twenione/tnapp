@@ -12,36 +12,61 @@ import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 
-/** Android adapter for the mandated one-Hz high-accuracy fused provider. */
+/** Android adapter for the high-accuracy fused provider. */
 class FusedLocationSource(context: Context) : LocationSource {
     private val client: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(context)
     private var callback: LocationCallback? = null
+    private var onLocation: ((TrailLocation) -> Unit)? = null
+    private var onError: ((Throwable) -> Unit)? = null
+    private var intervalMillis = 1_000L
 
     @SuppressLint("MissingPermission")
     override fun start(onLocation: (TrailLocation) -> Unit, onError: (Throwable) -> Unit) {
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1_000L)
-            .setMinUpdateIntervalMillis(1_000L)
-            .setMaxUpdateDelayMillis(1_000L)
+        this.onLocation = onLocation
+        this.onError = onError
+        requestLocationUpdates()
+    }
+
+    @SuppressLint("MissingPermission")
+    override fun setUpdateIntervalMillis(intervalMillis: Long) {
+        if (this.intervalMillis == intervalMillis) return
+        this.intervalMillis = intervalMillis
+        if (callback != null) {
+            callback?.let(client::removeLocationUpdates)
+            callback = null
+            requestLocationUpdates()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun requestLocationUpdates() {
+        val locationHandler = onLocation ?: return
+        val errorHandler = onError ?: return
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, intervalMillis)
+            .setMinUpdateIntervalMillis(intervalMillis)
+            .setMaxUpdateDelayMillis(intervalMillis)
             .build()
         val listener = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
-                result.locations.forEach { onLocation(it.toTrailLocation()) }
+                result.locations.forEach { locationHandler(it.toTrailLocation()) }
             }
 
             override fun onLocationAvailability(availability: LocationAvailability) {
                 if (!availability.isLocationAvailable) {
-                    onError(IllegalStateException("location unavailable"))
+                    errorHandler(IllegalStateException("location unavailable"))
                 }
             }
         }
         callback = listener
         client.requestLocationUpdates(request, listener, Looper.getMainLooper())
-            .addOnFailureListener(onError)
+            .addOnFailureListener(errorHandler)
     }
 
     override fun stop() {
         callback?.let { client.removeLocationUpdates(it) }
         callback = null
+        onLocation = null
+        onError = null
     }
 
     private fun Location.toTrailLocation(): TrailLocation = TrailLocation(

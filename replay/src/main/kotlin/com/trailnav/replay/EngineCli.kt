@@ -51,8 +51,13 @@ fun main(args: Array<String>) {
                 speed = numberField(line, "speed_mps")?.toFloat(),
                 gpsBearing = numberField(line, "bearing_deg")?.toFloat()
             )
+            val previousSystemEventCount = state.systemEvents.size
             val result = guide(state, frame, config)
+            val newSystemEvents = result.nextState.systemEvents.drop(previousSystemEventCount)
             state = result.nextState
+            newSystemEvents.forEach { event ->
+                println("{\"kind\":\"system\",\"event_kind\":\"${escape(event.kind)}\",\"details\":${mapJson(event.fields)}}")
+            }
             locCount += 1
             val distance = result.guidanceDistance() ?: result.reason.details["distanceMeters"]?.toDoubleOrNull()
             val sourceSeq = numberField(line, "seq")?.toLong() ?: error("loc event is missing seq")
@@ -168,6 +173,7 @@ private fun decision(guidance: Guidance?): String = when (guidance) {
     null -> "CONTINUE"
     is Guidance.OffRoute -> "OFF_ROUTE"
     is Guidance.Approach -> "APPROACH"
+    is Guidance.WaitingStart -> "WAITING_START"
     is Guidance.TurnAhead -> "TURN_AHEAD"
     is Guidance.TurnNow -> "TURN_NOW"
     is Guidance.TurnaroundAhead -> "TURNAROUND_AHEAD"
@@ -189,6 +195,7 @@ private fun decision(guidance: Guidance?): String = when (guidance) {
 private fun com.trailnav.core.GuideResult.guidanceDistance(): Double? = when (val item = guidance) {
     is Guidance.OffRoute -> item.distance
     is Guidance.Approach -> item.distanceMeters
+    is Guidance.WaitingStart -> item.distanceMeters
     is Guidance.Status -> item.distance
     is Guidance.Milestone -> item.distanceMeters
     is Guidance.Remaining -> item.thresholdMeters
