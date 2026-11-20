@@ -70,6 +70,7 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     testImplementation(kotlin("test"))
+    testImplementation(kotlin("reflect"))
     testImplementation("junit:junit:4.13.2")
 }
 
