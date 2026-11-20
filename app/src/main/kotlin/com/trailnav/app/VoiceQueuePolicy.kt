@@ -15,9 +15,6 @@ internal data class VoiceQueueItem(
 ) {
     init {
         require(source in VOICE_SOURCES) { "unknown voice source: $source" }
-        require(priority != VoicePriority.TIME_CRITICAL || turnIndex != null) {
-            "TIME_CRITICAL utterances must identify their turn"
-        }
     }
 
     companion object {
@@ -74,6 +71,18 @@ internal class VoiceQueuePolicy {
             waiting.addLast(item)
         }
         return VoiceEnqueueResult(dropped = dropped, stopActive = stop)
+    }
+
+    /** Removes only the named pending item after a failed voice-queue setup. */
+    fun removePending(id: String): VoiceQueueItem? {
+        val retained = ArrayDeque<VoiceQueueItem>()
+        var removed: VoiceQueueItem? = null
+        while (waiting.isNotEmpty()) {
+            val item = waiting.removeFirst()
+            if (item.id == id && removed == null) removed = item else retained.addLast(item)
+        }
+        waiting.addAll(retained)
+        return removed
     }
 
     /** Drops passed or stale queued TURN_NOW entries and remembers passed indexes monotonically. */

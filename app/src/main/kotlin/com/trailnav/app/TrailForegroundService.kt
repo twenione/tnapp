@@ -331,7 +331,9 @@ class TrailForegroundService : Service() {
     private fun finishUserEnd() {
         if (!ending) return
         mainHandler.removeCallbacks(endTimeout)
-        stopSelfResult(endStartId ?: return)
+        val startId = endStartId ?: return
+        endStartId = null
+        stopSelfResult(startId)
     }
 
     private fun formatDistance(value: Double?): String = value?.let { "%.2f".format(it) } ?: ""
@@ -382,30 +384,66 @@ class TrailForegroundService : Service() {
         protected: Boolean = false,
         turnIndex: Int? = null,
         onFinished: (() -> Unit)? = null,
+        guidance: Guidance? = null,
+        reasonRule: String? = null,
+        recovery: Boolean = false,
+        onDemand: Boolean = false,
     ): Boolean {
         if (text.isBlank() || ending && source != "system") return false
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post {
-                enqueueVoice(text, source, priority, protected, turnIndex, onFinished)
+                enqueueVoice(
+                    text = text,
+                    source = source,
+                    priority = priority,
+                    protected = protected,
+                    turnIndex = turnIndex,
+                    onFinished = onFinished,
+                    guidance = guidance,
+                    reasonRule = reasonRule,
+                    recovery = recovery,
+                    onDemand = onDemand,
+                )
             }
             return true
         }
-        val item = VoiceQueueItem(
-            id = UUID.randomUUID().toString(),
-            text = text,
-            priority = priority,
-            protected = protected,
-            source = source,
-            turnIndex = turnIndex,
-            enqueuedAtMillis = SystemClock.elapsedRealtime(),
-        )
-        if (onFinished != null) voiceCompletionCallbacks[item.id] = onFinished
-        val result = voiceQueue.enqueue(item)
+        var itemForFailure: VoiceQueueItem? = null
+        val (item, result) = try {
+            val item = voiceQueueItemFor(
+                id = UUID.randomUUID().toString(),
+                text = text,
+                source = source,
+                priority = priority,
+                protected = protected,
+                turnIndex = turnIndex,
+                enqueuedAtMillis = SystemClock.elapsedRealtime(),
+                guidance = guidance,
+                reasonRule = reasonRule,
+                recovery = recovery,
+                onDemand = onDemand,
+            ).also { itemForFailure = it }
+            if (onFinished != null) voiceCompletionCallbacks[item.id] = onFinished
+            if (item.priority == VoicePriority.TIME_CRITICAL && item.turnIndex != null) {
+                scheduleTurnExpiry(item)
+            }
+            item to voiceQueue.enqueue(item)
+        } catch (error: Exception) {
+            itemForFailure?.let { failedItem ->
+                runCatching { cancelTurnExpiry(failedItem.id) }
+                voiceQueue.removePending(failedItem.id)
+            }
+            val completion = itemForFailure?.let { voiceCompletionCallbacks.remove(it.id) } ?: onFinished
+            runCatching {
+                logger?.appendError(
+                    "voice-enqueue",
+                    "${error.javaClass.simpleName}: ${error.message.orEmpty()}",
+                )
+            }
+            runCatching { completion?.invoke() }
+            return false
+        }
         logVoiceDrops(result.dropped)
         result.stopActive?.let { tts?.stop() }
-        if (priority == VoicePriority.TIME_CRITICAL && item in voiceQueue.pendingItems) {
-            scheduleTurnExpiry(item)
-        }
         val controller = tts
         if (controller == null || !controller.isReady) controller?.reportPending()
         else pumpVoiceQueue()
@@ -627,9 +665,8 @@ class TrailForegroundService : Service() {
         enqueueVoice(
             text = text,
             source = "guidance",
-            priority = priorityFor(guidance, reasonRule, recovery = false),
-            protected = isProtected(guidance, recovery = false, reasonRule = reasonRule),
-            turnIndex = (guidance as? Guidance.TurnNow)?.turnIndex,
+            guidance = guidance,
+            reasonRule = reasonRule,
         )
     }
 
@@ -966,8 +1003,9 @@ class TrailForegroundService : Service() {
         enqueueVoice(
             text = text,
             source = "ondemand",
-            priority = onDemandVoicePriority(guidance),
-            protected = isProtected(guidance, recovery = false),
+            guidance = guidance,
+            reasonRule = "on-demand.route-status",
+            onDemand = true,
         )
     }
 
