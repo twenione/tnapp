@@ -66,7 +66,7 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         !initializedState.roundTripLoopIgnored
     ) {
         val gapMeters = routeEndpointGapMeters(initializedState.route)
-        if (gapMeters != null && gapMeters <= config.roundTripLoopMaxGapMeters) {
+        if (isClosedRoute(initializedState.route, config)) {
             initializedState = initializedState.copy(
                 roundTripLoopIgnored = true,
                 systemEvents = initializedState.systemEvents + EngineSystemEvent(
@@ -198,7 +198,7 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
             }
             val loopGapMeters = routeEndpointGapMeters(orientedOneWayRoute)
             val buildRoundTrip = config.roundTripEnabled && !initializedState.roundTripLoopIgnored &&
-                loopGapMeters != null && loopGapMeters > config.roundTripLoopMaxGapMeters
+                loopGapMeters != null && !isClosedRoute(orientedOneWayRoute, config)
             val orientedRoute = if (buildRoundTrip) orientedOneWayRoute.roundTrip(config) else orientedOneWayRoute
             val oneWayMatch = RouteMatcher.nearest(orientedOneWayRoute, frame, expectedProgress, config) ?: match
             val orientedMatch = RouteMatcher.nearest(orientedRoute, frame, expectedProgress, config) ?: oneWayMatch
@@ -1193,6 +1193,12 @@ private fun evaluateDynamicGuidance(
             consumedWaypointIndices += index
             return@forEachIndexed
         }
+        val turnaround = state.route.roundTripTurnaroundMeters
+        if (turnaround != null && abs(waypoint.s - turnaround) <= config.arriveRadiusMeters) {
+            consumedWaypointIndices += index
+            discardedWaypoints += DiscardedWaypoint(index, waypoint.s, waypoint.s - match.projectedMeters, "turnaround-coincident")
+            return@forEachIndexed
+        }
         val distance = waypoint.s - match.projectedMeters
         if (distance < 0.0) {
             consumedWaypointIndices += index
@@ -1829,6 +1835,12 @@ private fun routeEndpointGapMeters(route: RouteModel): Double? {
     return RouteMath.distance(route.toEnu(points.first()), route.toEnu(points.last()))
 }
 
+/** Shared D-161 predicate for routes whose endpoints identify one closed loop. */
+fun isClosedRoute(route: RouteModel, config: GuideConfig = GuideConfig()): Boolean {
+    if (route.roundTripTurnaroundMeters != null) return false
+    return routeEndpointGapMeters(route)?.let { it <= config.roundTripLoopMaxGapMeters } == true
+}
+
 private fun remainingToRoundTripLegEnd(route: RouteModel, progressMeters: Double, returnLeg: Boolean): Double {
     val turnaround = route.roundTripTurnaroundMeters ?: return (route.totalLengthMeters - progressMeters).coerceAtLeast(0.0)
     val legEnd = if (returnLeg) route.totalLengthMeters else turnaround
@@ -1870,7 +1882,7 @@ private fun roundTripReturnLegAtProgress(
 private fun roundTripStartEligible(state: GuideState, config: GuideConfig): Boolean {
     if (!state.startupEnabled || !config.roundTripEnabled || state.roundTripStartAnnounced || state.roundTripLoopIgnored) return false
     if (state.route.roundTripTurnaroundMeters != null) return true
-    return routeEndpointGapMeters(state.route)?.let { it > config.roundTripLoopMaxGapMeters } == true
+    return routeEndpointGapMeters(state.route)?.let { !isClosedRoute(state.route, config) } == true
 }
 
 private fun requiredArrivalAdvance(

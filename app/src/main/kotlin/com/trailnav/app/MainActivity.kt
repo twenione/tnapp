@@ -108,6 +108,7 @@ class MainActivity : AppCompatActivity() {
                         intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_ROUND_TRIP_LEG).orEmpty(),
                     )
                 }.getOrNull(),
+                closedRoute = intent.getBooleanExtra(TrailForegroundService.EXTRA_RIBBON_CLOSED_ROUTE, false),
                 targetRemainingMeters = intent.getDoubleExtra(
                     TrailForegroundService.EXTRA_RIBBON_TARGET_REMAINING_METERS,
                     -1.0,

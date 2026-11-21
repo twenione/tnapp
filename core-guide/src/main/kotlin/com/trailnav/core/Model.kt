@@ -83,7 +83,7 @@ data class GuideConfig(
     val turnLookaheadMeters: Double = 30.0,
     val turnAngleThresholdDegrees: Double = 45.0,
     val turnAheadDistanceMeters: Double = 60.0,
-    val turnNowDistanceMeters: Double = 15.0,
+    val turnNowDistanceMeters: Double = 10.0,
     val turnMergeGapMeters: Double = 40.0,
     val turnOnRouteMaxOffsetMeters: Double = 15.0,
     val eventMinIntervalSeconds: Double = 60.0,
@@ -487,7 +487,9 @@ data class RouteStatus(
     val remainingMeters: Double,
     val nextTurn: NextTurn?,
     val arrived: Boolean,
-    val target: RouteTargetEstimate? = null
+    val target: RouteTargetEstimate? = null,
+    val closedRoute: Boolean = false,
+    val roundTripReturnLeg: Boolean? = null,
 )
 
 /** Pure state report shared by on-demand voice and the route ribbon. */
@@ -515,6 +517,8 @@ fun routeStatus(state: GuideState, config: GuideConfig = GuideConfig()): RouteSt
         direction = state.direction,
         remainingMeters = (state.route.totalLengthMeters - match.projectedMeters).coerceAtLeast(0.0),
         nextTurn = nextTurn,
-        arrived = state.arrived
+        arrived = state.arrived,
+        closedRoute = isClosedRoute(state.route, config),
+        roundTripReturnLeg = if (state.route.roundTripTurnaroundMeters == null) null else state.roundTripOnReturnLeg,
     )
 }

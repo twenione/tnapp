@@ -139,12 +139,11 @@ class RouteRibbonView @JvmOverloads constructor(
         pointPaint.color = if (current.offRoute) Color.rgb(255, 82, 82) else Color.rgb(80, 220, 120)
         canvas.drawCircle(pointX, pointY, dp(7f), pointPaint)
 
-        val direction = when (current.direction) {
-            ProgressDirection.FORWARD -> "정방향"
-            ProgressDirection.REVERSE -> "역방향"
-            ProgressDirection.STATIONARY -> "정지"
-            ProgressDirection.UNKNOWN -> "방향 확인 중"
-        }
+        val direction = GuidancePhrases.routeDirectionLabel(
+            current.direction,
+            current.closedRoute,
+            current.roundTripLeg?.let { it == RibbonRoundTripLeg.RETURN },
+        )
         val status = if (current.offRoute) "경로 이탈" else "경로 위"
         drawText(canvas, "$status · $direction", left + dp(12f), top + dp(25f), 20f)
         val side = when (current.side) {

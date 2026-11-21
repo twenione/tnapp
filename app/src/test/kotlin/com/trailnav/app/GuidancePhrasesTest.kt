@@ -7,6 +7,7 @@ import com.trailnav.core.Guidance
 import com.trailnav.core.GuideState
 import com.trailnav.core.ProgressDirection
 import com.trailnav.core.RouteModel
+import com.trailnav.core.RouteEtaTracker
 import com.trailnav.core.RouteStatus
 import com.trailnav.core.RouteTargetEstimate
 import com.trailnav.core.Side
@@ -92,8 +93,56 @@ class GuidancePhrasesTest {
     }
 
     @Test
+    fun coincidentRoundTripEndpointWaypointUsesTurnaroundForOnDemandTarget() {
+        val config = com.trailnav.core.GuideConfig(roundTripEnabled = true)
+        val route = RouteModel.fromGpx(
+            """<gpx><trk><trkseg><trkpt lat="0" lon="0"/><trkpt lat="0" lon="0.005"/><trkpt lat="0" lon="0.01"/></trkseg></trk><wpt lat="0" lon="0.01"><name>도착지</name></wpt></gpx>""",
+            config,
+        ).roundTrip(config)
+        val target = RouteEtaTracker(route, config).estimate(0.0, ProgressDirection.FORWARD, arrived = false)
+        val status = RouteStatus(
+            onRoute = true,
+            offRouteDistanceMeters = null,
+            direction = ProgressDirection.FORWARD,
+            remainingMeters = route.totalLengthMeters,
+            nextTurn = null,
+            arrived = false,
+            target = target,
+        )
+
+        assertEquals(TargetLabelKind.TURNAROUND, target?.labelKind)
+        assertEquals(null, target?.name)
+        assertEquals(
+            "반환점까지는 ${GuidancePhrases.formatDistance(target!!.remainingMeters)}입니다. 다음 꺾임 정보가 없습니다",
+            GuidancePhrases.onDemandResponse(status, DistanceTimeMode.DistanceOnly, hasEnteredRoute = true),
+        )
+    }
+
+    @Test
     fun sunrisePhraseIncludesMinutes() {
         assertEquals("일출까지 10분입니다", GuidancePhrases.sunrise(10))
+    }
+
+    @Test
+    fun sunsetZeroMinutesUsesLessThanOneMinuteAndNullKeepsItsExistingWording() {
+        assertEquals("일몰까지 1분 미만입니다", GuidancePhrases.sunset(0, afterSunset = false))
+        assertEquals("일몰까지 0분입니다", GuidancePhrases.sunset(null, afterSunset = false))
+    }
+
+    @Test
+    fun routeDirectionNamesTheRelevantEndpointForOpenRoutesAndKeepsClosedRouteWording() {
+        assertEquals("정방향", GuidancePhrases.routeDirectionLabel(ProgressDirection.FORWARD, true, null))
+        assertEquals("역방향", GuidancePhrases.routeDirectionLabel(ProgressDirection.REVERSE, true, null))
+
+        assertEquals("반환점 방향", GuidancePhrases.routeDirectionLabel(ProgressDirection.FORWARD, false, false))
+        assertEquals("출발지 방향", GuidancePhrases.routeDirectionLabel(ProgressDirection.REVERSE, false, false))
+        assertEquals("출발지 방향", GuidancePhrases.routeDirectionLabel(ProgressDirection.FORWARD, false, true))
+        assertEquals("반환점 방향", GuidancePhrases.routeDirectionLabel(ProgressDirection.REVERSE, false, true))
+
+        assertEquals("도착지 방향", GuidancePhrases.routeDirectionLabel(ProgressDirection.FORWARD, false, null))
+        assertEquals("출발지 방향", GuidancePhrases.routeDirectionLabel(ProgressDirection.REVERSE, false, null))
+        assertEquals("정지", GuidancePhrases.routeDirectionLabel(ProgressDirection.STATIONARY, false, null))
+        assertEquals("방향 확인 중", GuidancePhrases.routeDirectionLabel(ProgressDirection.UNKNOWN, false, null))
     }
 
     @Test
