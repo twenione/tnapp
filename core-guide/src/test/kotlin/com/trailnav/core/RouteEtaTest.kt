@@ -525,8 +525,8 @@ class RouteEtaTest {
         assertEquals(TargetLabelKind.NAMED_WAYPOINT, outboundWaypoint.labelKind)
         assertEquals("ridge", outboundWaypoint.name)
         val namedTurnaround = estimate(routeWithTurnaroundWaypoint, 1_500.0)!!
-        assertEquals(TargetLabelKind.NAMED_WAYPOINT, namedTurnaround.labelKind)
-        assertEquals("return-point", namedTurnaround.name)
+        assertEquals(TargetLabelKind.TURNAROUND, namedTurnaround.labelKind)
+        assertNull(namedTurnaround.name)
         val returnWaypoint = estimate(routeWithTurnaroundWaypoint, 2_500.0)!!
         assertEquals(TargetLabelKind.NAMED_WAYPOINT, returnWaypoint.labelKind)
         assertEquals("ridge", returnWaypoint.name)

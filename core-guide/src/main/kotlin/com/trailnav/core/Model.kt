@@ -487,7 +487,9 @@ data class RouteStatus(
     val remainingMeters: Double,
     val nextTurn: NextTurn?,
     val arrived: Boolean,
-    val target: RouteTargetEstimate? = null
+    val target: RouteTargetEstimate? = null,
+    val closedRoute: Boolean = false,
+    val roundTripReturnLeg: Boolean? = null,
 )
 
 /** Pure state report shared by on-demand voice and the route ribbon. */
@@ -515,6 +517,8 @@ fun routeStatus(state: GuideState, config: GuideConfig = GuideConfig()): RouteSt
         direction = state.direction,
         remainingMeters = (state.route.totalLengthMeters - match.projectedMeters).coerceAtLeast(0.0),
         nextTurn = nextTurn,
-        arrived = state.arrived
+        arrived = state.arrived,
+        closedRoute = isClosedRoute(state.route, config),
+        roundTripReturnLeg = if (state.route.roundTripTurnaroundMeters == null) null else state.roundTripOnReturnLeg,
     )
 }

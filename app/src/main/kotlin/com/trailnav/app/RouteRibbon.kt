@@ -8,6 +8,7 @@ import com.trailnav.core.RouteModel
 import com.trailnav.core.Side
 import com.trailnav.core.TargetLabelKind
 import com.trailnav.core.TargetKind
+import com.trailnav.core.isClosedRoute
 import kotlin.math.hypot
 
 /**
@@ -30,6 +31,7 @@ data class RouteRibbonState(
     val targetLabelKind: TargetLabelKind? = null,
     val targetName: String? = null,
     val roundTripLeg: RibbonRoundTripLeg? = null,
+    val closedRoute: Boolean = false,
 ) {
     val side: RibbonSide
         get() = when {
@@ -101,6 +103,7 @@ object RouteRibbonCalculator {
             targetRemainingMeters = target?.remainingMeters,
             targetLabelKind = target?.labelKind,
             targetName = target?.name,
+            closedRoute = isClosedRoute(route, config),
             roundTripLeg = when {
                 result.nextState.route.roundTripTurnaroundMeters == null -> null
                 result.nextState.roundTripOnReturnLeg -> RibbonRoundTripLeg.RETURN

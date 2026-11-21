@@ -231,6 +231,57 @@ class RoundTripEngineTest {
     }
 
     @Test
+    fun turnaroundCoincidentWaypointsAreDiscardedInsteadOfAnnounced() {
+        val config = GuideConfig(
+            roundTripEnabled = true,
+            waypointEnabled = true,
+            eventMinIntervalSeconds = 0.0,
+            sunsetEnabled = false,
+            sunriseEnabled = false,
+        )
+        val endpoint = outwardPoints().last()
+        val imported = route(outwardPoints(), listOf(localToGeo(endpoint.east, endpoint.north) to "도착지"))
+        val reference = imported.roundTrip(config)
+        val turnaround = assertNotNull(reference.roundTripTurnaroundMeters)
+        val coincidentIndices = reference.waypoints.indices.filter {
+            kotlin.math.abs(reference.waypoints[it].s - turnaround) <= config.arriveRadiusMeters
+        }
+        assertEquals(2, coincidentIndices.size, "roundTrip duplicates the endpoint waypoint at the turnaround")
+
+        val trace = walkProgressPath(imported, reference, regularProgress(0.0, reference.totalLengthMeters), config)
+
+        assertEquals(1, trace.frames.count { it.result.guidance is Guidance.TurnaroundAhead })
+        assertEquals(0, trace.frames.count { (it.result.guidance as? Guidance.Waypoint)?.name == "도착지" })
+        assertTrue(trace.state.consumedWaypointIndices.containsAll(coincidentIndices))
+        val discarded = trace.state.discardedWaypoints.filter { it.reason == "turnaround-coincident" }
+        assertEquals(2, discarded.size)
+        assertTrue(discarded.all { kotlin.math.abs(it.waypointS - turnaround) <= config.arriveRadiusMeters })
+    }
+
+    @Test
+    fun namedWaypointSixtyMetersBeforeTurnaroundStillAnnouncesOnBothLegs() {
+        val config = GuideConfig(
+            roundTripEnabled = true,
+            waypointEnabled = true,
+            eventMinIntervalSeconds = 0.0,
+            sunsetEnabled = false,
+            sunriseEnabled = false,
+        )
+        val imported = route(outwardPoints(), listOf(localToGeo(1_500.0, 840.0) to "갈림길"))
+        val reference = imported.roundTrip(config)
+        val turnaround = assertNotNull(reference.roundTripTurnaroundMeters)
+        val waypointDistances = reference.waypoints.filter { it.name == "갈림길" }.map { kotlin.math.abs(it.s - turnaround) }
+        assertEquals(2, waypointDistances.size)
+        assertTrue(waypointDistances.all { it > config.arriveRadiusMeters && kotlin.math.abs(it - 60.0) <= 1.0 })
+
+        val trace = walkProgressPath(imported, reference, regularProgress(0.0, reference.totalLengthMeters), config)
+        val spoken = trace.frames.mapNotNull { it.result.guidance as? Guidance.Waypoint }
+
+        assertEquals(2, spoken.count { it.name == "갈림길" })
+        assertFalse(trace.state.discardedWaypoints.any { it.reason == "turnaround-coincident" })
+    }
+
+    @Test
     fun turnaroundWinsSameFrameAndRecordsTheOrdinaryTurnNowTarget() {
         val config = GuideConfig(roundTripEnabled = true, turnNowDistanceMeters = 2.0, sunsetEnabled = false, sunriseEnabled = false)
         val points = listOf(

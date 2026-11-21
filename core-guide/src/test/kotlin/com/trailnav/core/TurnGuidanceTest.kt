@@ -18,6 +18,29 @@ class TurnGuidanceTest {
     )
 
     @Test
+    fun closedRoutePredicateUsesTheSharedHundredMeterBoundary() {
+        val config = GuideConfig(roundTripLoopMaxGapMeters = 100.0)
+        fun routeWithGap(meters: Double): RouteModel {
+            val longitude = Math.toDegrees(meters / 6_371_008.8)
+            return RouteModel.fromGpx(
+                """<gpx><trk><trkseg><trkpt lat="0" lon="0"/><trkpt lat="0" lon="$longitude"/></trkseg></trk></gpx>""",
+                config,
+            )
+        }
+
+        listOf(0.0, 5.7, 100.0).forEach { gap ->
+            assertTrue(isClosedRoute(routeWithGap(gap), config), "gap=$gap")
+        }
+        listOf(100.1, 840.8).forEach { gap ->
+            assertFalse(isClosedRoute(routeWithGap(gap), config), "gap=$gap")
+        }
+        assertFalse(
+            isClosedRoute(routeWithGap(840.8).copy(roundTripTurnaroundMeters = 840.8), config),
+            "a constructed open round-trip route keeps its leg-aware wording",
+        )
+    }
+
+    @Test
     fun rightTurnAheadThenNowIsAnnouncedOnce() {
         val route = route()
         assertTrue(route.turns.isNotEmpty(), "synthetic right-angle route must contain a turn")

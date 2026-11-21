@@ -45,7 +45,9 @@ object GuidancePhrases {
         return "잠시 후 ${spokenName}입니다"
     }
     fun sunset(minutesRemaining: Int?, afterSunset: Boolean): String =
-        if (afterSunset) "일몰 시각이 지났습니다" else "일몰까지 ${minutesRemaining ?: 0}분입니다"
+        if (afterSunset) "일몰 시각이 지났습니다"
+        else if (minutesRemaining == 0) "일몰까지 1분 미만입니다"
+        else "일몰까지 ${minutesRemaining ?: 0}분입니다"
 
     fun sunrise(minutesRemaining: Int): String = "일출까지 ${minutesRemaining}분입니다"
 
@@ -63,17 +65,33 @@ object GuidancePhrases {
         } else {
             "경로 밖, 경로에서 ${formatDistance(status.offRouteDistanceMeters ?: 0.0)} 떨어져 있습니다"
         }
-        val direction = when (status.direction) {
-            ProgressDirection.FORWARD -> "정방향"
-            ProgressDirection.REVERSE -> "역방향"
-            ProgressDirection.STATIONARY -> "정지"
-            ProgressDirection.UNKNOWN -> "방향 확인 중"
-        }
+        val direction = routeDirectionLabel(status.direction, status.closedRoute, status.roundTripReturnLeg)
         val remaining = "목적지까지 ${formatDistance(status.remainingMeters)}"
         val next = status.nextTurn?.let {
             "다음 꺾임은 ${formatDistance(it.distanceMeters)} 앞 ${sideLabel(it.side)}"
         } ?: "다음 꺾임 정보가 없습니다"
         return "$route, $direction, $remaining, $next"
+    }
+
+    internal fun routeDirectionLabel(
+        direction: ProgressDirection,
+        closedRoute: Boolean,
+        roundTripReturnLeg: Boolean?,
+    ): String = when (direction) {
+        ProgressDirection.FORWARD -> when {
+            closedRoute -> "정방향"
+            roundTripReturnLeg == null -> "도착지 방향"
+            roundTripReturnLeg -> "출발지 방향"
+            else -> "반환점 방향"
+        }
+        ProgressDirection.REVERSE -> when {
+            closedRoute -> "역방향"
+            roundTripReturnLeg == null -> "출발지 방향"
+            roundTripReturnLeg -> "반환점 방향"
+            else -> "출발지 방향"
+        }
+        ProgressDirection.STATIONARY -> "정지"
+        ProgressDirection.UNKNOWN -> "방향 확인 중"
     }
 
     /** On-demand response wording. This deliberately stays separate from [routeStatus], which feeds the ribbon consistency surface. */

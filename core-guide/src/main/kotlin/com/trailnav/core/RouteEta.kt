@@ -206,9 +206,16 @@ class RouteEtaTracker(
         val turnaround = route.roundTripTurnaroundMeters ?: return candidates
         return if (!returnLeg) {
             val outbound = candidates.filter { it.s <= turnaround }
-            if (outbound.none { it.source == WAYPOINT_SOURCE && abs(it.s - turnaround) <= config.arriveRadiusMeters }) {
-                (outbound + TargetCandidate(turnaround, TURNAROUND_SOURCE, null, TargetLabelKind.TURNAROUND)).sortedBy { it.s }
-            } else outbound
+            val coincidentWaypoint = outbound.any {
+                it.source == WAYPOINT_SOURCE && abs(it.s - turnaround) <= config.arriveRadiusMeters
+            }
+            val withoutCoincidentWaypoints = if (coincidentWaypoint) {
+                outbound.filterNot { it.source == WAYPOINT_SOURCE && abs(it.s - turnaround) <= config.arriveRadiusMeters }
+            } else {
+                outbound
+            }
+            (withoutCoincidentWaypoints + TargetCandidate(turnaround, TURNAROUND_SOURCE, null, TargetLabelKind.TURNAROUND))
+                .sortedBy { it.s }
         } else {
             candidates.filter { it.s > turnaround && it.s < totalLengthMeters - config.arriveRadiusMeters }
         }
