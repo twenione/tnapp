@@ -833,6 +833,7 @@ class TrailForegroundService : Service() {
                 .putExtra(EXTRA_RIBBON_TARGET_LABEL_KIND, ribbon.targetLabelKind?.name.orEmpty())
                 .putExtra(EXTRA_RIBBON_TARGET_NAME, ribbon.targetName.orEmpty())
                 .putExtra(EXTRA_RIBBON_ROUND_TRIP_LEG, ribbon.roundTripLeg?.name.orEmpty())
+                .putExtra(EXTRA_RIBBON_CLOSED_ROUTE, ribbon.closedRoute)
                 .putExtra(EXTRA_RIBBON_NEXT_TURN_DISTANCE_METERS, ribbon.nextTurn?.distanceMeters ?: -1.0)
                 .putExtra(EXTRA_RIBBON_NEXT_TURN_SIDE, ribbon.nextTurn?.side?.name.orEmpty()),
         )
@@ -1112,6 +1113,7 @@ class TrailForegroundService : Service() {
         const val EXTRA_RIBBON_TARGET_LABEL_KIND = "ribbon_target_label_kind"
         const val EXTRA_RIBBON_TARGET_NAME = "ribbon_target_name"
         const val EXTRA_RIBBON_ROUND_TRIP_LEG = "ribbon_round_trip_leg"
+        const val EXTRA_RIBBON_CLOSED_ROUTE = "ribbon_closed_route"
         const val EXTRA_RIBBON_NEXT_TURN_DISTANCE_METERS = "ribbon_next_turn_distance_meters"
         const val EXTRA_RIBBON_NEXT_TURN_SIDE = "ribbon_next_turn_side"
         private const val LOCATION_FIX_TIMEOUT_MILLIS = 15_000L

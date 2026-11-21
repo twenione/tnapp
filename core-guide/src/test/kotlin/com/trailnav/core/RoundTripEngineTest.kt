@@ -80,7 +80,7 @@ class RoundTripEngineTest {
                 val aheadDistance = ahead.single().result.reason.details.getValue("remainingMeters").toDouble()
                 val nowDistance = now.single().result.reason.details.getValue("remainingMeters").toDouble()
                 assertTrue(aheadDistance in 15.0..60.0, "sigma=$sigma seed=$seed ahead distance=$aheadDistance")
-                assertTrue(nowDistance in 0.0..15.0, "sigma=$sigma seed=$seed now distance=$nowDistance")
+                assertTrue(nowDistance in 0.0..10.0, "sigma=$sigma seed=$seed now distance=$nowDistance")
                 if (sigma == 5.0 && seed == 1) {
                     val beforeThirtyMeters = trace.frames.count {
                         it.walkedMeters in (turnaround - 30.0)..turnaround &&
@@ -113,6 +113,52 @@ class RoundTripEngineTest {
                 assertEquals(1, trace.state.systemEvents.count { it.kind == "arrival.baseline-reset" && it.fields["reason"] == "round-trip-turnaround" })
             }
         }
+    }
+
+    @Test
+    fun turnaroundNowUsesTheTenMeterBoundaryAndAnnouncesOnce() {
+        val config = GuideConfig(
+            roundTripEnabled = true,
+            eventMinIntervalSeconds = 0.0,
+            sunsetEnabled = false,
+            sunriseEnabled = false,
+        )
+        val imported = route(outwardPoints())
+        val reference = imported.roundTrip(config)
+        val turnaround = assertNotNull(reference.roundTripTurnaroundMeters)
+        val turnaroundIndex = reference.turns.indexOfFirst { it.isTurnaround }
+        assertTrue(turnaroundIndex >= 0)
+
+        val progressAtTwelveMeters = regularProgress(0.0, turnaround - 12.0)
+        val approach = walkProgressPath(imported, reference, progressAtTwelveMeters, config)
+        val timestamp = (approach.frames.last().index + 1L) * 1_000L
+        val readyAtTwelve = approach.state.copy(
+            completedTurnAheadIndices = approach.state.completedTurnAheadIndices - turnaroundIndex,
+            completedTurnNowIndices = approach.state.completedTurnNowIndices - turnaroundIndex,
+        )
+        val ahead = Engine.guide(
+            readyAtTwelve,
+            frameAt(reference, turnaround - 12.0, timestamp),
+            config,
+        )
+        assertTrue(ahead.guidance is Guidance.TurnaroundAhead)
+        assertTrue(ahead.reason.details.getValue("remainingMeters").toDouble() > config.turnNowDistanceMeters)
+
+        val now = Engine.guide(
+            ahead.nextState,
+            frameAt(reference, turnaround - 9.5, timestamp + 1_000L),
+            config,
+        )
+        assertEquals(Guidance.Turnaround, now.guidance)
+        assertTrue(now.reason.details.getValue("remainingMeters").toDouble() <= config.turnNowDistanceMeters)
+
+        val after = Engine.guide(
+            now.nextState,
+            frameAt(reference, turnaround - 8.0, timestamp + 2_000L),
+            config,
+        )
+        assertTrue(after.guidance != Guidance.Turnaround)
+        assertEquals(1, listOf(ahead, now, after).count { it.guidance == Guidance.Turnaround })
     }
 
     @Test
@@ -228,6 +274,57 @@ class RoundTripEngineTest {
         val returnWaypoint = laterTrace.frames.mapNotNull { frame -> frame.result.guidance as? Guidance.Waypoint }
         assertEquals(1, returnWaypoint.count { it.name == "Ridge" })
         assertTrue(laterTrace.state.roundTripOnReturnLeg)
+    }
+
+    @Test
+    fun turnaroundCoincidentWaypointsAreDiscardedInsteadOfAnnounced() {
+        val config = GuideConfig(
+            roundTripEnabled = true,
+            waypointEnabled = true,
+            eventMinIntervalSeconds = 0.0,
+            sunsetEnabled = false,
+            sunriseEnabled = false,
+        )
+        val endpoint = outwardPoints().last()
+        val imported = route(outwardPoints(), listOf(localToGeo(endpoint.east, endpoint.north) to "도착지"))
+        val reference = imported.roundTrip(config)
+        val turnaround = assertNotNull(reference.roundTripTurnaroundMeters)
+        val coincidentIndices = reference.waypoints.indices.filter {
+            kotlin.math.abs(reference.waypoints[it].s - turnaround) <= config.arriveRadiusMeters
+        }
+        assertEquals(2, coincidentIndices.size, "roundTrip duplicates the endpoint waypoint at the turnaround")
+
+        val trace = walkProgressPath(imported, reference, regularProgress(0.0, reference.totalLengthMeters), config)
+
+        assertEquals(1, trace.frames.count { it.result.guidance is Guidance.TurnaroundAhead })
+        assertEquals(0, trace.frames.count { (it.result.guidance as? Guidance.Waypoint)?.name == "도착지" })
+        assertTrue(trace.state.consumedWaypointIndices.containsAll(coincidentIndices))
+        val discarded = trace.state.discardedWaypoints.filter { it.reason == "turnaround-coincident" }
+        assertEquals(2, discarded.size)
+        assertTrue(discarded.all { kotlin.math.abs(it.waypointS - turnaround) <= config.arriveRadiusMeters })
+    }
+
+    @Test
+    fun namedWaypointSixtyMetersBeforeTurnaroundStillAnnouncesOnBothLegs() {
+        val config = GuideConfig(
+            roundTripEnabled = true,
+            waypointEnabled = true,
+            eventMinIntervalSeconds = 0.0,
+            sunsetEnabled = false,
+            sunriseEnabled = false,
+        )
+        val imported = route(outwardPoints(), listOf(localToGeo(1_500.0, 840.0) to "갈림길"))
+        val reference = imported.roundTrip(config)
+        val turnaround = assertNotNull(reference.roundTripTurnaroundMeters)
+        val waypointDistances = reference.waypoints.filter { it.name == "갈림길" }.map { kotlin.math.abs(it.s - turnaround) }
+        assertEquals(2, waypointDistances.size)
+        assertTrue(waypointDistances.all { it > config.arriveRadiusMeters && kotlin.math.abs(it - 60.0) <= 1.0 })
+
+        val trace = walkProgressPath(imported, reference, regularProgress(0.0, reference.totalLengthMeters), config)
+        val spoken = trace.frames.mapNotNull { it.result.guidance as? Guidance.Waypoint }
+
+        assertEquals(2, spoken.count { it.name == "갈림길" })
+        assertFalse(trace.state.discardedWaypoints.any { it.reason == "turnaround-coincident" })
     }
 
     @Test

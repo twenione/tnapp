@@ -369,7 +369,7 @@ class RouteStatusRibbonConsistencyTest {
             "perpendicularDistanceMeters", "signedOffsetMeters", "direction", "offRoute",
             "enterBandMeters", "exitBandMeters", "accuracyRadiusMeters", "remainingDistanceMeters", "nextTurn",
             "targetKind", "targetRemainingMeters", "targetLabelKind", "targetName",
-            "roundTripLeg",
+            "roundTripLeg", "closedRoute",
         )
         assertEquals(expected, fields)
         assertTrue(fields.none { it.contains("elevation", ignoreCase = true) || it.contains("waypoint", ignoreCase = true) })

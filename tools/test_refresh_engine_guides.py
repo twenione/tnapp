@@ -3,8 +3,54 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
+import refresh_engine_guides
 from refresh_engine_guides import rewrite_events
+
+
+def test_refresh_session_passes_manifest_round_trip() -> None:
+    with TemporaryDirectory() as temporary:
+        session = Path(temporary)
+        (session / "manifest.json").write_text(
+            json.dumps({"engine": {"config": {"round_trip": True}}}),
+            encoding="utf-8",
+        )
+        (session / "events.ndjson").write_text(
+            json.dumps({"seq": 1, "stream": "guide", "decision": "CONTINUE"}) + "\n",
+            encoding="utf-8",
+        )
+        observed: list[bool] = []
+
+        def capture_invoke(cli, root, *, round_trip=False, overrides=None):
+            observed.append(round_trip)
+            return [{"seq": 1, "kind": "guide", "decision": "CONTINUE"}]
+
+        original_invoke = refresh_engine_guides.invoke
+        refresh_engine_guides.invoke = capture_invoke
+        try:
+            refresh_engine_guides.refresh_session(session, Path("unused-cli"))
+        finally:
+            refresh_engine_guides.invoke = original_invoke
+
+        assert observed == [True], f"refresh_session did not forward manifest round_trip=True: {observed}"
+
+
+def test_refresh_session_rejects_invalid_manifest_round_trip() -> None:
+    with TemporaryDirectory() as temporary:
+        session = Path(temporary)
+        (session / "manifest.json").write_text(
+            json.dumps({"engine": {"config": {"round_trip": "true"}}}),
+            encoding="utf-8",
+        )
+        (session / "events.ndjson").write_text("", encoding="utf-8")
+        try:
+            refresh_engine_guides.refresh_session(session, Path("unused-cli"))
+        except ValueError as error:
+            assert str(error) == "manifest engine.config.round_trip invalid: expected a boolean"
+        else:
+            raise AssertionError("invalid manifest round_trip value was silently accepted")
 
 
 def main() -> int:
@@ -31,7 +77,9 @@ def main() -> int:
     assert events[1]["reason"]["details"] == {"distanceMeters": "0.5"}
     assert events[2]["trigger"] == "slot"
     assert events[2]["reason"]["details"] == {"prompt": "원문 유지"}
-    print("refresh_engine_guides=PASS subsecond_t_preserved=PASS trigger_fields_preserved=PASS reason_fields_preserved=PASS")
+    test_refresh_session_passes_manifest_round_trip()
+    test_refresh_session_rejects_invalid_manifest_round_trip()
+    print("refresh_engine_guides=PASS subsecond_t_preserved=PASS trigger_fields_preserved=PASS reason_fields_preserved=PASS round_trip_forwarded=PASS invalid_round_trip_rejected=PASS")
     return 0
 
 

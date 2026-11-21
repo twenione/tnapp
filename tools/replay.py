@@ -152,8 +152,8 @@ def contract_probe(cli: Path) -> int:
         "CONTINUE",   # frame 5: the on-route exit dwell completes
         "TURN_AHEAD", # frame 6: the next turn is inside the 60 m advance window
         "CONTINUE",   # frame 7: the one-shot advance warning was already consumed
-        "TURN_NOW",   # frame 8: the same turn enters the 15 m immediate window
-        "CONTINUE",   # frame 9: no new threshold was crossed
+        "CONTINUE",   # frame 8: the same turn remains outside the 10 m immediate window
+        "TURN_NOW",   # frame 9: the same turn enters the 10 m immediate window
     ]
     if dwell_decisions != expected_dwell:
         print(f"FAIL: D-033 dwell contract actual={dwell_decisions} expected={expected_dwell}")
@@ -164,7 +164,8 @@ def contract_probe(cli: Path) -> int:
         4: "off-route.reannounce",
         6: "turn.ahead",
         7: "matching.on-route",
-        8: "turn.now",
+        8: "matching.on-route",
+        9: "turn.now",
     }
     actual_reasons = {index: dwell_frames[index].get("reason_rule") for index in expected_reasons}
     if actual_reasons != expected_reasons:
