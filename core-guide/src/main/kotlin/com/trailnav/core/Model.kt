@@ -83,7 +83,7 @@ data class GuideConfig(
     val turnLookaheadMeters: Double = 30.0,
     val turnAngleThresholdDegrees: Double = 45.0,
     val turnAheadDistanceMeters: Double = 60.0,
-    val turnNowDistanceMeters: Double = 15.0,
+    val turnNowDistanceMeters: Double = 10.0,
     val turnMergeGapMeters: Double = 40.0,
     val turnOnRouteMaxOffsetMeters: Double = 15.0,
     val eventMinIntervalSeconds: Double = 60.0,

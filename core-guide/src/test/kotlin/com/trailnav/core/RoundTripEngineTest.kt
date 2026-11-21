@@ -80,7 +80,7 @@ class RoundTripEngineTest {
                 val aheadDistance = ahead.single().result.reason.details.getValue("remainingMeters").toDouble()
                 val nowDistance = now.single().result.reason.details.getValue("remainingMeters").toDouble()
                 assertTrue(aheadDistance in 15.0..60.0, "sigma=$sigma seed=$seed ahead distance=$aheadDistance")
-                assertTrue(nowDistance in 0.0..15.0, "sigma=$sigma seed=$seed now distance=$nowDistance")
+                assertTrue(nowDistance in 0.0..10.0, "sigma=$sigma seed=$seed now distance=$nowDistance")
                 if (sigma == 5.0 && seed == 1) {
                     val beforeThirtyMeters = trace.frames.count {
                         it.walkedMeters in (turnaround - 30.0)..turnaround &&
@@ -113,6 +113,52 @@ class RoundTripEngineTest {
                 assertEquals(1, trace.state.systemEvents.count { it.kind == "arrival.baseline-reset" && it.fields["reason"] == "round-trip-turnaround" })
             }
         }
+    }
+
+    @Test
+    fun turnaroundNowUsesTheTenMeterBoundaryAndAnnouncesOnce() {
+        val config = GuideConfig(
+            roundTripEnabled = true,
+            eventMinIntervalSeconds = 0.0,
+            sunsetEnabled = false,
+            sunriseEnabled = false,
+        )
+        val imported = route(outwardPoints())
+        val reference = imported.roundTrip(config)
+        val turnaround = assertNotNull(reference.roundTripTurnaroundMeters)
+        val turnaroundIndex = reference.turns.indexOfFirst { it.isTurnaround }
+        assertTrue(turnaroundIndex >= 0)
+
+        val progressAtTwelveMeters = regularProgress(0.0, turnaround - 12.0)
+        val approach = walkProgressPath(imported, reference, progressAtTwelveMeters, config)
+        val timestamp = (approach.frames.last().index + 1L) * 1_000L
+        val readyAtTwelve = approach.state.copy(
+            completedTurnAheadIndices = approach.state.completedTurnAheadIndices - turnaroundIndex,
+            completedTurnNowIndices = approach.state.completedTurnNowIndices - turnaroundIndex,
+        )
+        val ahead = Engine.guide(
+            readyAtTwelve,
+            frameAt(reference, turnaround - 12.0, timestamp),
+            config,
+        )
+        assertTrue(ahead.guidance is Guidance.TurnaroundAhead)
+        assertTrue(ahead.reason.details.getValue("remainingMeters").toDouble() > config.turnNowDistanceMeters)
+
+        val now = Engine.guide(
+            ahead.nextState,
+            frameAt(reference, turnaround - 9.5, timestamp + 1_000L),
+            config,
+        )
+        assertEquals(Guidance.Turnaround, now.guidance)
+        assertTrue(now.reason.details.getValue("remainingMeters").toDouble() <= config.turnNowDistanceMeters)
+
+        val after = Engine.guide(
+            now.nextState,
+            frameAt(reference, turnaround - 8.0, timestamp + 2_000L),
+            config,
+        )
+        assertTrue(after.guidance != Guidance.Turnaround)
+        assertEquals(1, listOf(ahead, now, after).count { it.guidance == Guidance.Turnaround })
     }
 
     @Test

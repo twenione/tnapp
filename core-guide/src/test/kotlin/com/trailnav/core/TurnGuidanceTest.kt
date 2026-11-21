@@ -41,6 +41,14 @@ class TurnGuidanceTest {
     }
 
     @Test
+    fun defaultTurnNowDistanceIsTenMetersWithoutChangingTurnAheadDistance() {
+        val config = GuideConfig()
+
+        assertEquals(10.0, config.turnNowDistanceMeters)
+        assertEquals(60.0, config.turnAheadDistanceMeters)
+    }
+
+    @Test
     fun rightTurnAheadThenNowIsAnnouncedOnce() {
         val route = route()
         assertTrue(route.turns.isNotEmpty(), "synthetic right-angle route must contain a turn")
@@ -56,8 +64,12 @@ class TurnGuidanceTest {
         val repeatedAhead = guide(state, SensorFrame(1_500L, 10.00135, 20.0, 5f, 1f, null), GuideConfig())
         assertNull(repeatedAhead.guidance, "a turn-ahead announcement is consumed per turn index")
         state = repeatedAhead.nextState
-        val now = guide(state, SensorFrame(2_000L, 10.0017, 20.0, 5f, 1f, null), GuideConfig())
+        val outsideNowDistance = guide(state, SensorFrame(1_750L, 10.0017, 20.0, 5f, 1f, null), GuideConfig())
+        assertTrue(outsideNowDistance.guidance !is Guidance.TurnNow)
+        state = outsideNowDistance.nextState
+        val now = guide(state, SensorFrame(2_000L, 10.00175, 20.0, 5f, 1f, null), GuideConfig())
         assertIs<Guidance.TurnNow>(now.guidance)
+        assertTrue(now.reason.details.getValue("remainingMeters").toDouble() <= GuideConfig().turnNowDistanceMeters)
         assertEquals(Side.RIGHT, (now.guidance as Guidance.TurnNow).side)
         assertEquals(0, (now.guidance as Guidance.TurnNow).turnIndex)
         assertEquals("turn.now", now.reason.rule)
@@ -68,6 +80,37 @@ class TurnGuidanceTest {
         assertTrue(turnPassed(afterTurn.nextState, turnIndex))
         val repeated = guide(afterTurn.nextState, SensorFrame(3_000L, 10.0018, 20.0002, 5f, 1f, null), GuideConfig())
         assertNull(repeated.guidance)
+    }
+
+    @Test
+    fun turnNowUsesTheExactTenMeterBoundaryAndDoesNotRepeatInsideIt() {
+        val route = route()
+        val config = GuideConfig(eventMinIntervalSeconds = 0.0)
+        val turn = route.turns.first()
+        val turnPoint = route.points[1]
+        val origin = route.sourcePoints.first()
+        fun frameAtRemaining(remainingMeters: Double, timestampMillis: Long): SensorFrame {
+            val north = turnPoint.north - remainingMeters
+            var latitude = origin.lat + Math.toDegrees(north / 6_371_008.8)
+            while (turn.s - route.toEnu(GeoPoint(latitude, origin.lon)).north > remainingMeters) {
+                latitude = Math.nextUp(latitude)
+            }
+            return SensorFrame(timestampMillis, latitude, origin.lon, 5f, 1f, null)
+        }
+
+        val starting = guide(GuideState.initial(route), frameAtRemaining(turn.s, 0L), config)
+        val outside = guide(starting.nextState, frameAtRemaining(10.01, 1_000L), config)
+        assertIs<Guidance.TurnAhead>(outside.guidance)
+        assertTrue(outside.reason.details.getValue("remainingMeters").toDouble() > 10.0)
+
+        val atBoundary = guide(outside.nextState, frameAtRemaining(10.0, 2_000L), config)
+        assertIs<Guidance.TurnNow>(atBoundary.guidance)
+        val remainingAtBoundary = atBoundary.reason.details.getValue("remainingMeters").toDouble()
+        assertTrue(remainingAtBoundary <= 10.0)
+        assertTrue(kotlin.math.abs(remainingAtBoundary - 10.0) < 1e-6)
+
+        val justInside = guide(atBoundary.nextState, frameAtRemaining(9.99, 3_000L), config)
+        assertNull(justInside.guidance, "turn-now is announced once even after crossing inside the boundary")
     }
 
     @Test
