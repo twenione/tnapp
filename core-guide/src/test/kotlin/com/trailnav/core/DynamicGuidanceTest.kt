@@ -634,12 +634,85 @@ class DynamicGuidanceTest {
     }
 
     @Test
+    fun sunsetAtThirtyMinuteBoundarySpeaks() {
+        val result = guide(
+            GuideState.initial(sunsetWindowRoute()),
+            sunsetWindowFrame(30.0),
+            GuideConfig(eventMinIntervalSeconds = 0.0),
+        )
+        check(result.guidance is Guidance.Sunset)
+        check((result.guidance as Guidance.Sunset).afterSunset)
+        check(result.reason.details["afterSunset"] == "true")
+    }
+
+    @Test
+    fun sunsetLateStartIsConsumedAndRecordedOnce() {
+        val config = GuideConfig(eventMinIntervalSeconds = 0.0)
+        val first = guide(GuideState.initial(sunsetWindowRoute()), sunsetWindowFrame(31.0), config)
+        check(first.guidance !is Guidance.Sunset)
+        check(0 in first.nextState.consumedSunsetThresholds)
+        check(0 !in first.nextState.pendingSunsetThresholds)
+        val records = first.nextState.discardedEvents.filter { it.event == "E7" }
+        check(records.size == 1)
+        check(records.single().threshold == "0")
+        check(records.single().reason == "late-start")
+        check(records.single().progressMeters == (first.nextState.lastMatch?.projectedMeters ?: 0.0))
+
+        var state = first.nextState
+        listOf(32.0, 60.0).forEach { minutesAfterSunset ->
+            val later = guide(state, sunsetWindowFrame(minutesAfterSunset), config)
+            check(later.guidance !is Guidance.Sunset)
+            state = later.nextState
+        }
+        check(state.discardedEvents.count { it.event == "E7" && it.reason == "late-start" } == 1)
+    }
+
+    @Test
+    fun sunsetLateStartWhenDisabledIsConsumedWithoutRecord() {
+        val result = guide(
+            GuideState.initial(sunsetWindowRoute()),
+            sunsetWindowFrame(31.0),
+            GuideConfig(sunsetEnabled = false, eventMinIntervalSeconds = 0.0),
+        )
+        check(result.guidance !is Guidance.Sunset)
+        check(0 in result.nextState.consumedSunsetThresholds)
+        check(0 !in result.nextState.pendingSunsetThresholds)
+        check(result.nextState.discardedEvents.none { it.event == "E7" })
+    }
+
+    @Test
+    fun sunsetCrossedAfterFirstEvaluationStillSpeaks() {
+        val config = GuideConfig(eventMinIntervalSeconds = 0.0)
+        val first = guide(GuideState.initial(sunsetWindowRoute()), sunsetWindowFrame(-10.0), config)
+        check(first.guidance is Guidance.Sunset)
+        check(!(first.guidance as Guidance.Sunset).afterSunset)
+
+        val crossed = guide(first.nextState, sunsetWindowFrame(1.0), config)
+        check(crossed.guidance is Guidance.Sunset)
+        check((crossed.guidance as Guidance.Sunset).afterSunset)
+        check(crossed.reason.details["afterSunset"] == "true")
+    }
+
+    @Test
     fun elapsedThreshold() {
         val config = GuideConfig(elapsedEnabled = true, eventMinIntervalSeconds = 0.0)
         val first = guide(GuideState.initial(route), SensorFrame(0L, 10.0005, 20.0, 5f, 1f, null), config)
         val second = guide(first.nextState, SensorFrame(3_600_000L, 10.0015, 20.0, 5f, 1f, null), config)
         check(second.guidance is Guidance.Elapsed)
         check((second.guidance as Guidance.Elapsed).hours == 1)
+    }
+
+    private fun sunsetWindowRoute(): RouteModel = RouteModel.fromGpx(
+        "<gpx><trk><trkseg><trkpt lat=\"37.5665\" lon=\"126.9780\"/><trkpt lat=\"37.5865\" lon=\"126.9780\"/></trkseg></trk></gpx>"
+    )
+
+    private fun sunsetWindowFrame(minutesAfterSunset: Double): SensorFrame {
+        val referenceFrame = SensorFrame(epoch("2026-09-21T09:31:43Z"), 37.5665, 126.9780, 5f, 0f, null)
+        val sunset = guide(GuideState.initial(sunsetWindowRoute()), referenceFrame)
+            .reason.details["sunsetEpochSeconds"]?.toDouble()
+            ?: error("reference sunset evaluation did not expose sunsetEpochSeconds")
+        val timestamp = (sunset * 1_000.0 + minutesAfterSunset * 60_000.0).toLong()
+        return referenceFrame.copy(timestamp = timestamp)
     }
 
     private fun peakEventRoute(): RouteModel {

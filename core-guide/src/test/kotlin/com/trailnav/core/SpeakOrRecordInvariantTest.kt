@@ -1,5 +1,6 @@
 package com.trailnav.core
 
+import java.time.Instant
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
@@ -30,6 +31,7 @@ class SpeakOrRecordInvariantTest {
         "E3" to setOf("disabled", "reverse", "direction-unknown", "jump"),
         "E4" to setOf("passed", "disabled", "reverse", "direction-unknown", "jump"),
         "E6" to setOf("disabled", "offroute", "reverse", "direction-unknown", "interval", "priority", "jump"),
+        "E7" to setOf("late-start"),
         "E8" to setOf("disabled", "offroute", "interval", "priority"),
         "TURN_AHEAD" to setOf("direction-unknown"),
         "TURN_NOW" to setOf("direction-unknown", "priority-turnaround"),
@@ -79,7 +81,8 @@ class SpeakOrRecordInvariantTest {
         val duplicates = mutableListOf<String>()
         val fixtureRuns = sessions.map { directory -> runSession(directory, gaps, duplicates) }
         val roundTripRuns = runRoundTripInvariantFixtures(gaps, duplicates)
-        val runs = fixtureRuns + roundTripRuns
+        val e7LateStartRun = runE7LateStartInvariantFixture(gaps, duplicates)
+        val runs = fixtureRuns + roundTripRuns + e7LateStartRun
         val exceptionFile = Files.readString(E5EventCountSupport.repositoryRoot().resolve("tools/known_exceptions.json"))
         val allowlist = jsonObjects(exceptionFile, "unrecorded_allowlist").map { fields ->
             fields.getValue("event") to fields.getValue("reason")
@@ -427,6 +430,27 @@ class SpeakOrRecordInvariantTest {
                 Files.walk(temporary).use { paths ->
                     paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists)
                 }
+            }
+        }
+    }
+
+    private fun runE7LateStartInvariantFixture(
+        gaps: MutableList<Gap>,
+        duplicates: MutableList<String>,
+    ): RunResult {
+        val temporary = Files.createTempDirectory("task126-e7-late-start-")
+        val routeGpx = "<gpx><trk><trkseg><trkpt lat=\"37.5665\" lon=\"126.9780\"/><trkpt lat=\"37.5865\" lon=\"126.9780\"/></trkseg></trk></gpx>"
+        val config = """{"engine":{"config":{"eventMinIntervalSeconds":0.0,"events":{"E1":false,"E2":false,"E3":false,"E4":false,"E5":false,"E6":false,"E7":true,"E8":false}}}}"""
+        val timestampSeconds = Instant.parse("2026-09-21T10:30:00Z").toEpochMilli() / 1_000.0
+        val events = """{"seq":0,"t":$timestampSeconds,"stream":"loc","lat":37.5665,"lon":126.9780,"accuracy":5.0,"speed_mps":1.2,"provider":"synthetic"}""" + "\n"
+        try {
+            Files.writeString(temporary.resolve("route.gpx"), routeGpx)
+            Files.writeString(temporary.resolve("manifest.json"), config)
+            Files.writeString(temporary.resolve("events.ndjson"), events)
+            return runSession(temporary, gaps, duplicates)
+        } finally {
+            Files.walk(temporary).use { paths ->
+                paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists)
             }
         }
     }

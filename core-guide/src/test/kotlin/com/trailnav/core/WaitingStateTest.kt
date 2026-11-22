@@ -137,6 +137,34 @@ class WaitingStateTest {
     }
 
     @Test
+    fun lateSunsetStartAfterWaitingIsRecordedWithoutSpeech() {
+        val config = GuideConfig(eventMinIntervalSeconds = 0.0)
+        val sunset = Instant.parse("2026-09-21T09:31:43Z").toEpochMilli()
+        var state = GuideState.initial(route)
+        val entry = guide(state, frame(2_500.0, 5_000.0, sunset - 65 * 60_000L), config)
+        state = entry.nextState
+        assertIs<Guidance.WaitingStart>(entry.guidance)
+
+        val waitingFrames = listOf(-58L, -28L).map { minutes ->
+            val result = guide(state, frame(2_500.0, 5_000.0, sunset + minutes * 60_000L), config)
+            state = result.nextState
+            result
+        }
+        assertTrue(waitingFrames.none { it.guidance is Guidance.Sunset })
+        assertFalse(state.sunsetEvaluated)
+
+        val lateStart = guide(state, frame(5.0, 5_000.0, sunset + 31 * 60_000L), config)
+        assertTrue(lateStart.guidance !is Guidance.Sunset)
+        assertTrue(lateStart.nextState.sunsetEvaluated)
+        assertTrue(0 in lateStart.nextState.consumedSunsetThresholds)
+        assertTrue(0 !in lateStart.nextState.pendingSunsetThresholds)
+        val record = lateStart.nextState.discardedEvents.single { it.event == "E7" }
+        assertEquals("0", record.threshold)
+        assertEquals("late-start", record.reason)
+    }
+
+
+    @Test
     fun sunsetAndSunriseStaySilentDuringWaitingAndSunsetStartsOnceAfterExit() {
         val sunsetConfig = GuideConfig(eventMinIntervalSeconds = 0.0)
         val sunset = Instant.parse("2026-09-21T09:31:43Z").toEpochMilli() / 1_000.0
