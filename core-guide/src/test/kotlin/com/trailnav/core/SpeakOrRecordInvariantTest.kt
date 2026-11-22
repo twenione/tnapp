@@ -88,12 +88,20 @@ class SpeakOrRecordInvariantTest {
             fields.getValue("event") to fields.getValue("reason")
         }.toSet()
         val observationExempt = jsonObjects(exceptionFile, "observation_exempt").map { it.getValue("event") }.toSet()
+        val mergedTurnAheadGaps = gaps.filter { it.event == "TURN_AHEAD" && it.category == "passed-or-merged" }
+        check(mergedTurnAheadGaps.size == 1 &&
+            mergedTurnAheadGaps.single().session.startsWith("task119-turnaround-priority-") &&
+            mergedTurnAheadGaps.single().target == "2"
+        ) {
+            "D-245 expected exactly one intentionally merged TURN_AHEAD target 2 in the turnaround-priority fixture, found $mergedTurnAheadGaps"
+        }
         val observed = gaps.map { it.event to it.category }.toSet()
         gaps.forEach { gap -> println("PROPERTY_GAP event=${gap.event} category=${gap.category} session=${gap.session} frame=${gap.frame} target=${gap.target}") }
         duplicates.forEach { println("PROPERTY_DUPLICATE $it") }
         check(duplicates.isEmpty()) { "a consumed target was both spoken and recorded or was recorded more than once: ${duplicates.joinToString()}" }
-        check(observed == allowlist) {
-            "D-168 unrecorded_allowlist mismatch: new=${observed - allowlist}; stale=${allowlist - observed}"
+        val expectedUnrecorded = allowlist + ("TURN_AHEAD" to "passed-or-merged")
+        check(observed == expectedUnrecorded) {
+            "D-168 unrecorded_allowlist mismatch: new=${observed - expectedUnrecorded}; stale=${expectedUnrecorded - observed}"
         }
 
         val startupTurnFrame = runs.single { it.directory.fileName.toString() == "startup_lollipop_reverse" }.transitions.first()

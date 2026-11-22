@@ -28,7 +28,7 @@ object GuidancePhrases {
     fun roundTripStart(): String = "왕복 경로로 안내합니다"
     fun turnaroundAhead(): String = "잠시 후 반환점입니다"
     fun turnaround(): String = "반환점입니다. 왔던 길로 돌아갑니다"
-    fun milestone(distanceMeters: Double): String = "출발지로부터 ${formatDistance(distanceMeters)}"
+    fun milestone(distanceMeters: Double): String = "${formatDistance(distanceMeters)} 걸었습니다"
     fun elapsed(hours: Int): String = "출발지로부터 ${hours}시간 경과"
     fun remaining(distanceMeters: Double): String = "목적지까지 ${formatDistance(distanceMeters)}"
     fun remainingToStart(distanceMeters: Double, etaSeconds: Double?): String {
@@ -40,9 +40,11 @@ object GuidancePhrases {
     fun ended(): String = "안내를 종료합니다."
     fun slope(kind: SlopeKind): String = if (kind == SlopeKind.ASCENT) "잠시 후 오르막이 끝납니다" else "잠시 후 내리막입니다"
     fun elevation(elevationMeters: Double): String = "고도 ${round(elevationMeters).toInt()}미터 통과"
-    fun waypoint(name: String): String {
+    fun waypoint(name: String, distanceMeters: Double): String {
         val spokenName = name.replace("#", "").replace(Regex("\\s+"), " ").trim().ifBlank { "지점" }
-        return "잠시 후 ${spokenName}입니다"
+        val roundedDistanceMeters = (floor(distanceMeters.coerceAtLeast(0.0) / 10.0 + 0.5).toInt() * 10)
+            .coerceAtLeast(10)
+        return "약 ${roundedDistanceMeters}미터 앞 ${spokenName}입니다"
     }
     fun sunset(minutesRemaining: Int?, afterSunset: Boolean): String =
         if (afterSunset) "일몰 시각이 지났습니다"

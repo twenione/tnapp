@@ -1148,7 +1148,7 @@ internal fun Guidance?.toSpeech(
     }
     is Guidance.Slope -> GuidancePhrases.slope(kind)
     is Guidance.Elevation -> GuidancePhrases.elevation(elevationMeters)
-    is Guidance.Waypoint -> GuidancePhrases.waypoint(name)
+    is Guidance.Waypoint -> GuidancePhrases.waypoint(name, distanceMeters)
     is Guidance.Sunset -> GuidancePhrases.sunset(minutesRemaining, afterSunset)
     is Guidance.Sunrise -> GuidancePhrases.sunrise(minutesRemaining)
     is Guidance.TurnAhead -> GuidancePhrases.turnAhead(distance, side)
