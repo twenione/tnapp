@@ -189,23 +189,43 @@ class GuidancePhrasesTest {
 
     @Test
     fun waypointPhrasesRemoveHashAndNormalizeSpacingForRealNaverNames() {
-        val examples = mapOf(
-            "출발지" to "잠시 후 출발지입니다",
-            "경유지 #1" to "잠시 후 경유지 1입니다",
-            "경유지 #3" to "잠시 후 경유지 3입니다",
-            "망경대" to "잠시 후 망경대입니다",
-            "불곡산" to "잠시 후 불곡산입니다",
-            "도착지" to "잠시 후 도착지입니다",
+        val names = listOf(
+            "출발지" to "출발지",
+            "경유지 #1" to "경유지 1",
+            "경유지 #3" to "경유지 3",
+            "망경대" to "망경대",
+            "불곡산" to "불곡산",
+            "도착지" to "도착지",
         )
-        examples.forEach { (name, expected) -> assertEquals(expected, GuidancePhrases.waypoint(name)) }
-        assertEquals("잠시 후 경유지 3입니다", GuidancePhrases.waypoint(" 경유지   #3 "))
+        val distances = listOf(
+            3.0 to 10,
+            12.0 to 10,
+            184.0 to 180,
+            199.3 to 200,
+            185.0 to 190,
+        )
+
+        names.forEach { (name, spokenName) ->
+            distances.forEach { (distanceMeters, roundedMeters) ->
+                assertEquals(
+                    "약 ${roundedMeters}미터 앞 ${spokenName}입니다",
+                    GuidancePhrases.waypoint(name, distanceMeters),
+                    "name=$name distance=$distanceMeters",
+                )
+            }
+        }
+        assertEquals("약 180미터 앞 경유지 3입니다", GuidancePhrases.waypoint(" 경유지   #3 ", 184.0))
+        assertEquals(
+            "약 100미터 앞 망경대입니다",
+            Guidance.Waypoint(index = 1, name = "망경대", distanceMeters = 100.0).toSpeech(),
+        )
     }
 
     @Test
     fun startBasedPhrasesNameTheirReferencePoint() {
-        assertEquals("출발지로부터 1킬로미터", GuidancePhrases.milestone(1_000.0))
-        assertEquals("출발지로부터 2킬로미터", GuidancePhrases.milestone(2_000.0))
-        assertFalse(GuidancePhrases.milestone(1_000.0).contains("지점"))
+        assertEquals("1킬로미터 걸었습니다", GuidancePhrases.milestone(1_000.0))
+        assertEquals("2킬로미터 걸었습니다", GuidancePhrases.milestone(2_000.0))
+        assertFalse(GuidancePhrases.milestone(1_000.0).contains("출발지로부터"))
         assertEquals("출발지로부터 1시간 경과", GuidancePhrases.elapsed(1))
         assertEquals("출발지로부터 2시간 경과", GuidancePhrases.elapsed(2))
         assertEquals("목적지까지 500미터", GuidancePhrases.remaining(500.0))

@@ -160,7 +160,7 @@ class TurnGuidanceTest {
         assertTrue(status?.nextTurn?.distanceMeters ?: 0.0 > 0.0)
     }
 
-    private fun adjacentTurnsConfig(mergeGapMeters: Double = 40.0) = GuideConfig(
+    private fun adjacentTurnsConfig(mergeGapMeters: Double = GuideConfig().turnMergeGapMeters) = GuideConfig(
         sunsetEnabled = false,
         eventMinIntervalSeconds = 0.0,
         turnLookbackMeters = 5.0,
@@ -179,7 +179,7 @@ class TurnGuidanceTest {
             GeoPoint(startLat, startLon),
             GeoPoint(startLat + 50.0 / metersPerDegreeLatitude, startLon),
             GeoPoint(startLat + 100.0 / metersPerDegreeLatitude, startLon),
-            GeoPoint(startLat + 100.0 / metersPerDegreeLatitude, startLon + 5.0 / metersPerDegreeLongitude),
+            GeoPoint(startLat + 100.0 / metersPerDegreeLatitude, startLon + 15.0 / metersPerDegreeLongitude),
             GeoPoint(startLat + 100.0 / metersPerDegreeLatitude, startLon + gapMeters / metersPerDegreeLongitude),
             GeoPoint(startLat + 150.0 / metersPerDegreeLatitude, startLon + gapMeters / metersPerDegreeLongitude),
             GeoPoint(startLat + 200.0 / metersPerDegreeLatitude, startLon + gapMeters / metersPerDegreeLongitude),
@@ -221,8 +221,26 @@ class TurnGuidanceTest {
     @Test
     fun turnsBeyondMergeGapBothAnnounceAhead() {
         val config = adjacentTurnsConfig()
-        val route = adjacentTurnsRoute(50.0, config)
-        val secondTurn = afterFirstTurn(route, config, expectedGapMeters = 50.0)
+        val route = adjacentTurnsRoute(70.0, config)
+        val secondTurn = afterFirstTurn(route, config, expectedGapMeters = 70.0)
+        assertIs<Guidance.TurnAhead>(secondTurn.guidance)
+        assertEquals(1, (secondTurn.guidance as Guidance.TurnAhead).turnIndex)
+        assertEquals("1", secondTurn.reason.details["turnIndex"])
+    }
+
+    @Test
+    fun defaultMergeGapIs60MetersAndSuppresses47ButAllows70() {
+        assertEquals(60.0, GuideConfig().turnMergeGapMeters)
+
+        val config = adjacentTurnsConfig()
+        val shortGapRoute = adjacentTurnsRoute(47.0, config)
+        assertNull(
+            afterFirstTurn(shortGapRoute, config, expectedGapMeters = 47.0).guidance,
+            "the second ahead cue is merged at the observed 47 m gap",
+        )
+
+        val longGapRoute = adjacentTurnsRoute(70.0, config)
+        val secondTurn = afterFirstTurn(longGapRoute, config, expectedGapMeters = 70.0)
         assertIs<Guidance.TurnAhead>(secondTurn.guidance)
         assertEquals(1, (secondTurn.guidance as Guidance.TurnAhead).turnIndex)
         assertEquals("1", secondTurn.reason.details["turnIndex"])
