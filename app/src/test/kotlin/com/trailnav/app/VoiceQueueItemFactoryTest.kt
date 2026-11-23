@@ -1,5 +1,6 @@
 package com.trailnav.app
 
+import com.trailnav.core.Compass8
 import com.trailnav.core.Guidance
 import com.trailnav.core.Side
 import com.trailnav.core.SlopeKind
@@ -141,6 +142,7 @@ class VoiceQueueItemFactoryTest {
             Double::class -> 1.0
             Int::class -> 1
             Boolean::class -> false
+            Compass8::class -> Compass8.N
             Side::class -> Side.RIGHT
             SlopeKind::class -> SlopeKind.ASCENT
             else -> error("No sample value for sealed subtype constructor parameter $type")
@@ -149,6 +151,8 @@ class VoiceQueueItemFactoryTest {
 
     private fun Guidance.reasonRuleForTest(): String = when (this) {
         is Guidance.OffRoute -> "off-route.enter"
+        Guidance.ReturnHint -> "off-route.return-hint"
+        is Guidance.ReturnGuide -> "off-route.return-request"
         is Guidance.Approach -> "approach.pre-entry"
         is Guidance.WaitingStart -> "waiting.enter"
         is Guidance.TurnAhead -> "turn.ahead"

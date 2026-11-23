@@ -13,6 +13,8 @@ data class SensorFrame(
 
 enum class Side { LEFT, RIGHT }
 
+enum class Compass8 { N, NE, E, SE, S, SW, W, NW }
+
 enum class ProgressDirection { FORWARD, REVERSE, STATIONARY, UNKNOWN }
 
 /** Structured explanation written verbatim to the guide stream by callers. */
@@ -24,7 +26,9 @@ data class Reason(
 )
 
 sealed class Guidance {
-    data class OffRoute(val distance: Double, val direction: String) : Guidance()
+    data class OffRoute(val distance: Double, val direction: String, val returnHint: Boolean = false) : Guidance()
+    object ReturnHint : Guidance()
+    data class ReturnGuide(val backtrackMeters: Int?, val straightMeters: Int, val compass: Compass8) : Guidance()
     data class Approach(val distanceMeters: Double, val bearingDegrees: Double) : Guidance()
     data class WaitingStart(val distanceMeters: Double) : Guidance()
     data class TurnAhead(val distance: Double, val side: Side, val turnIndex: Int) : Guidance()
@@ -69,6 +73,7 @@ data class GuideConfig(
     val offRouteEnterDwellSeconds: Double = 20.0,
     val offRouteExitDistMeters: Double = 15.0,
     val offRouteExitDwellSeconds: Double = 10.0,
+    val returnGuideTriggerMeters: Double = 200.0,
     val reannounceIntervalSeconds: Double = 60.0,
     val arriveRadiusMeters: Double = 25.0,
     val arriveProgressFraction: Double = 0.95,
@@ -163,6 +168,7 @@ data class GuideConfig(
         require(stationarySpeedMps >= 0.0)
         require(searchWindowMeters > 0.0)
         require(offRouteExitDistMeters <= offRouteEnterDistMeters)
+        require(returnGuideTriggerMeters >= offRouteEnterDistMeters)
         require(arriveProgressFraction in 0.0..1.0)
         require(arrivalWalkMaxSpeedMps > 0.0)
         require(arrivalJumpToleranceMeters >= 0.0)
@@ -229,6 +235,7 @@ data class GuideConfig(
             "offRouteEnterDwellSeconds",
             "offRouteExitDistMeters",
             "offRouteExitDwellSeconds",
+            "returnGuideTriggerMeters",
             "reannounceIntervalSeconds",
             "turnAheadDistanceMeters",
             "turnNowDistanceMeters",
@@ -377,6 +384,12 @@ data class EngineSystemEvent(
     val fields: Map<String, String>,
 )
 
+/** A retained position on the current off-route return trajectory. */
+data class ReturnTrajectoryPoint(
+    val location: GeoPoint,
+    val timestampMillis: Long,
+)
+
 /** Immutable state carried from one frame to the next. */
 data class GuideState(
     val route: RouteModel,
@@ -417,6 +430,15 @@ data class GuideState(
     val offRoute: Boolean = false,
     val lastAnnouncementAt: Long? = null,
     val lastAnnouncementDistance: Double? = null,
+    val returnButtonActive: Boolean = false,
+    val returnAvailableEmitted: Boolean = false,
+    val returnHintPending: Boolean = false,
+    val returnHintConsumed: Boolean = false,
+    val returnAnchor: ReturnTrajectoryPoint? = null,
+    val returnTrajectory: List<ReturnTrajectoryPoint> = emptyList(),
+    val returnTrajectoryTruncated: Boolean = false,
+    val returnTrajectoryUnavailableReason: String? = null,
+    val returnCurrentLocation: GeoPoint? = null,
     val arrived: Boolean = false,
     val completedTurnAheadIndices: Set<Int> = emptySet(),
     val completedTurnNowIndices: Set<Int> = emptySet(),

@@ -73,6 +73,7 @@ def main() -> int:
         "offRouteEnterDwellSeconds": {"offRouteEnterDwellSeconds": 120.0},
         "offRouteExitDistMeters": {"offRouteExitDistMeters": 5.0},
         "offRouteExitDwellSeconds": {"offRouteExitDwellSeconds": 120.0},
+        "returnGuideTriggerMeters": {"returnGuideTriggerMeters": 25.0},
         "reannounceIntervalSeconds": {"reannounceIntervalSeconds": 5.0},
         "turnAheadDistanceMeters": {"turnAheadDistanceMeters": 20.0},
         "turnNowDistanceMeters": {"turnNowDistanceMeters": 5.0},
