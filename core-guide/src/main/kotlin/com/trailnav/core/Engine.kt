@@ -12,6 +12,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
+private const val SUNSET_LATE_START_WINDOW_MINUTES = 30.0
 private const val WAITING_DISTANCE_EPSILON_METERS = 1e-9
 
 /** Pure Phase 1 guidance engine. It reads no clock, random source, or I/O. */
@@ -1585,13 +1586,27 @@ private fun evaluateSunset(
     } else {
         config.sunsetAnnounceMinutes.filter { oldMinutes > it && minutes <= it && it !in previous.consumedSunsetThresholds }.toSet()
     }
+    val lateStart = firstEvaluation && minutes < -SUNSET_LATE_START_WINDOW_MINUTES
+    val retainedPending = if (lateStart) initialState.pendingSunsetThresholds - 0 else initialState.pendingSunsetThresholds
+    val retainedPendingReason = when {
+        !config.sunsetEnabled -> null
+        lateStart && retainedPending.isEmpty() -> null
+        else -> initialState.pendingSunsetDelayReason
+    }
+    val lateStartRecords = if (lateStart && config.sunsetEnabled) {
+        listOf(DiscardedEvent("E7", "0", "late-start", initialState.lastMatch?.projectedMeters ?: 0.0))
+    } else {
+        emptyList()
+    }
     val state = initialState.copy(
         sunsetEvaluated = true,
         consumedSunsetThresholds = initialState.consumedSunsetThresholds + newlyCrossed,
-        pendingSunsetThresholds = if (config.sunsetEnabled) initialState.pendingSunsetThresholds else emptySet(),
-        pendingSunsetDelayReason = if (config.sunsetEnabled) initialState.pendingSunsetDelayReason else null,
+        pendingSunsetThresholds = if (config.sunsetEnabled) retainedPending else emptySet(),
+        pendingSunsetDelayReason = retainedPendingReason,
+        discardedEvents = initialState.discardedEvents + lateStartRecords,
     )
     if (!config.sunsetEnabled) return SunsetEvaluation(state, null)
+    if (lateStart) return SunsetEvaluation(state, null)
     val pendingReason = when {
         state.pendingSunsetThresholds.isNotEmpty() -> state.pendingSunsetDelayReason
         higherPriority -> "higher-priority-event"
