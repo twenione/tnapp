@@ -14,11 +14,17 @@ import kotlin.math.sin
 
 private const val SUNSET_LATE_START_WINDOW_MINUTES = 30.0
 private const val WAITING_DISTANCE_EPSILON_METERS = 1e-9
+private const val RETURN_TRAJECTORY_SAMPLE_METERS = 5.0
+private const val RETURN_TRAJECTORY_MAX_METERS = 2_000.0
+private const val RETURN_TRAJECTORY_MAX_MILLIS = 60L * 60L * 1_000L
 
 /** Pure Phase 1 guidance engine. It reads no clock, random source, or I/O. */
 object Engine {
     fun guide(state: GuideState, frame: SensorFrame, config: GuideConfig = GuideConfig()): GuideResult =
         guideFrame(state, frame, config)
+
+    fun returnGuidance(state: GuideState, config: GuideConfig = GuideConfig()): GuideResult? =
+        calculateReturnGuidance(state, config)
 
     fun finish(state: GuideState): GuideState = finishGuideSession(state)
 }
@@ -389,6 +395,7 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
                 val completedNow = if (turnaroundIndex >= 0 && initializedState.roundTripOnReturnLeg && !nextReturnLeg) {
                     resetEvents.completedTurnNowIndices - turnaroundIndex
                 } else resetEvents.completedTurnNowIndices
+                val returnCleared = returnClearedEvent(initializedState, "rematch", rematch.distanceMeters)
                 initializedState = resetEvents.copy(
                     route = newRoute,
                     routeReversed = if (directionSwitch) !initializedState.routeReversed else initializedState.routeReversed,
@@ -410,13 +417,22 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
                     candidateOffRouteSince = null,
                     candidateOffRouteRecoverySince = null,
                     exitCandidateSince = null,
+                    returnButtonActive = false,
+                    returnAvailableEmitted = false,
+                    returnHintPending = false,
+                    returnHintConsumed = false,
+                    returnAnchor = null,
+                    returnTrajectory = emptyList(),
+                    returnTrajectoryTruncated = false,
+                    returnTrajectoryUnavailableReason = null,
+                    returnCurrentLocation = GeoPoint(frame.lat, frame.lon),
                     rematchPending = false,
                     rematchPendingReason = null,
                     reverseWalkedMeters = 0.0,
                     roundTripOnReturnLeg = nextReturnLeg,
                     completedTurnAheadIndices = completedAhead,
                     completedTurnNowIndices = completedNow,
-                    systemEvents = initializedState.systemEvents + listOfNotNull(rematchEvent, directionEvent, baselineEvent),
+                    systemEvents = initializedState.systemEvents + listOfNotNull(rematchEvent, directionEvent, baselineEvent, returnCleared),
                 )
                 match = rematch
                 rematchedThisFrame = true
@@ -462,6 +478,7 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
         lastTimestamp = frame.timestamp,
         direction = direction,
         stationary = stationary,
+        returnCurrentLocation = GeoPoint(frame.lat, frame.lon),
     )
 
     val turnaroundMeters = next.route.roundTripTurnaroundMeters
@@ -538,12 +555,22 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
     }
 
     if (arrivalCandidate && !startupPending && arrivalHasAdvance) {
+        val returnCleared = returnClearedEvent(next, "arrived", directedMatch.distanceMeters)
         next = next.copy(
             arrived = true,
             offRoute = false,
             candidateOffRouteSince = null,
             candidateOffRouteRecoverySince = null,
-            exitCandidateSince = null
+            exitCandidateSince = null,
+            returnButtonActive = false,
+            returnAvailableEmitted = false,
+            returnHintPending = false,
+            returnHintConsumed = false,
+            returnAnchor = null,
+            returnTrajectory = emptyList(),
+            returnTrajectoryTruncated = false,
+            returnTrajectoryUnavailableReason = null,
+            systemEvents = next.systemEvents + listOfNotNull(returnCleared),
         )
         return GuideResult(
             if (next.route.roundTripTurnaroundMeters != null) Guidance.ArrivedAtStart else Guidance.Arrived,
@@ -607,8 +634,20 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
             )
         }
     }
+    val beforeOffRouteUpdate = next
     next = updateOffRouteState(next, directedMatch, frame.timestamp, config)
+    next = updateReturnGuidanceState(
+        beforeOffRouteUpdate,
+        next,
+        frame,
+        config,
+        returnTrajectoryGap = elapsedSincePreviousFrame != null && elapsedSincePreviousFrame >= config.positionGapRematchSeconds,
+        rematchedThisFrame = rematchedThisFrame,
+    )
     if (next.offRoute) {
+        if (!next.returnHintConsumed && directedMatch.distanceMeters >= config.returnGuideTriggerMeters) {
+            next = next.copy(returnHintPending = true)
+        }
         // Advance and consume ordinary event thresholds while off-route, but
         // keep E7 pending for a later safety announcement.
         val dynamic = evaluateDynamicGuidance(
@@ -632,11 +671,14 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
                 ))
         if (shouldAnnounce) {
             val sunset = evaluateSunsetStandalone(next, frame, config, higherPriority = true)
+            val attachReturnHint = next.returnHintPending
             next = sunset.state.copy(
                 lastAnnouncementAt = frame.timestamp,
-                lastAnnouncementDistance = directedMatch.distanceMeters
+                lastAnnouncementDistance = directedMatch.distanceMeters,
+                returnHintPending = false,
+                returnHintConsumed = next.returnHintConsumed || attachReturnHint,
             )
-            return GuideResult(
+            val announcement = GuideResult(
                 Guidance.OffRoute(directedMatch.distanceMeters, direction.name.lowercase()),
                 next,
                 Reason(
@@ -650,6 +692,26 @@ private fun guideFrame(state: GuideState, frame: SensorFrame, config: GuideConfi
                     ),
                     details = mapOf("distanceMeters" to directedMatch.distanceMeters.toString())
                 )
+            )
+            return if (attachReturnHint) {
+                announcement.copy(
+                    guidance = (announcement.guidance as Guidance.OffRoute).copy(returnHint = true),
+                    reason = announcement.reason.copy(details = announcement.reason.details + ("returnHint" to "true")),
+                )
+            } else {
+                announcement
+            }
+        }
+        if (next.returnHintPending) {
+            next = next.copy(returnHintPending = false, returnHintConsumed = true)
+            return GuideResult(
+                Guidance.ReturnHint,
+                next,
+                Reason(
+                    "off-route.return-hint",
+                    thresholds = mapOf("returnGuideTriggerMeters" to config.returnGuideTriggerMeters),
+                    details = mapOf("returnHint" to "true", "distanceMeters" to directedMatch.distanceMeters.toString()),
+                ),
             )
         }
         val sunset = evaluateSunsetStandalone(next, frame, config, higherPriority = false)
@@ -2001,6 +2063,224 @@ private fun updateOffRouteState(
         return state.copy(exitCandidateSince = since)
     }
     return state.copy(exitCandidateSince = null)
+}
+
+private fun updateReturnGuidanceState(
+    previous: GuideState,
+    updated: GuideState,
+    frame: SensorFrame,
+    config: GuideConfig,
+    returnTrajectoryGap: Boolean,
+    rematchedThisFrame: Boolean,
+): GuideState {
+    val point = ReturnTrajectoryPoint(GeoPoint(frame.lat, frame.lon), frame.timestamp)
+    if (rematchedThisFrame) {
+        return updated.copy(
+            returnButtonActive = false,
+            returnAvailableEmitted = false,
+            returnHintPending = false,
+            returnHintConsumed = false,
+            returnAnchor = point,
+            returnTrajectory = emptyList(),
+            returnTrajectoryTruncated = false,
+            returnTrajectoryUnavailableReason = null,
+            returnCurrentLocation = point.location,
+        )
+    }
+    if (previous.offRoute && !updated.offRoute) {
+        val cleared = returnClearedEvent(previous, "returned", updated.lastMatch?.distanceMeters)
+        return updated.copy(
+            returnButtonActive = false,
+            returnAvailableEmitted = false,
+            returnHintPending = false,
+            returnHintConsumed = false,
+            returnAnchor = point,
+            returnTrajectory = emptyList(),
+            returnTrajectoryTruncated = false,
+            returnTrajectoryUnavailableReason = null,
+            returnCurrentLocation = point.location,
+            systemEvents = updated.systemEvents + listOfNotNull(cleared),
+        )
+    }
+    if (!updated.offRoute && updated.candidateOffRouteSince == null) {
+        return updated.copy(
+            returnButtonActive = false,
+            returnAvailableEmitted = false,
+            returnHintPending = false,
+            returnHintConsumed = false,
+            returnAnchor = point,
+            returnTrajectory = emptyList(),
+            returnTrajectoryTruncated = false,
+            returnTrajectoryUnavailableReason = null,
+            returnCurrentLocation = point.location,
+        )
+    }
+
+    val segmentStarted = !previous.offRoute && previous.candidateOffRouteSince == null &&
+        (updated.offRoute || updated.candidateOffRouteSince != null)
+    val anchor = previous.returnAnchor
+    var trajectory = if (segmentStarted) emptyList() else previous.returnTrajectory
+    var truncated = if (segmentStarted) false else previous.returnTrajectoryTruncated
+    var unavailableReason = if (segmentStarted) null else previous.returnTrajectoryUnavailableReason
+    var hintPending = if (segmentStarted) false else previous.returnHintPending
+    var hintConsumed = if (segmentStarted) false else previous.returnHintConsumed
+
+    if (anchor == null) {
+        unavailableReason = unavailableReason ?: "started-off-route"
+    } else if (returnTrajectoryGap && unavailableReason == null) {
+        unavailableReason = "position-gap"
+        trajectory = emptyList()
+    } else if (unavailableReason == null) {
+        trajectory = appendReturnTrajectoryPoint(previous.route, anchor, trajectory, point)
+        val path = returnTrajectoryPath(anchor, trajectory, point)
+        val pathLength = returnTrajectoryLength(previous.route, path)
+        if (pathLength > RETURN_TRAJECTORY_MAX_METERS ||
+            frame.timestamp - anchor.timestampMillis > RETURN_TRAJECTORY_MAX_MILLIS
+        ) {
+            truncated = true
+            unavailableReason = "truncated"
+            trajectory = trimReturnTrajectory(previous.route, anchor, trajectory, point)
+        }
+    }
+
+    val eligibleForButton = updated.offRoute && !updated.waitingForRoute &&
+        !(updated.startupEnabled && !updated.startupResolved) &&
+        updated.direction != ProgressDirection.UNKNOWN
+    val available = eligibleForButton && !updated.returnAvailableEmitted
+    val events = if (available) {
+        updated.systemEvents + EngineSystemEvent(
+            "return.available",
+            mapOf("off_route_m" to (updated.lastMatch?.distanceMeters?.toString() ?: "0.0")),
+        )
+    } else {
+        updated.systemEvents
+    }
+
+    return updated.copy(
+        returnButtonActive = eligibleForButton,
+        returnAvailableEmitted = updated.returnAvailableEmitted || available,
+        returnHintPending = hintPending,
+        returnHintConsumed = hintConsumed,
+        returnAnchor = anchor,
+        returnTrajectory = trajectory,
+        returnTrajectoryTruncated = truncated,
+        returnTrajectoryUnavailableReason = unavailableReason,
+        returnCurrentLocation = point.location,
+        systemEvents = events,
+    )
+}
+
+private fun returnClearedEvent(state: GuideState, reason: String, offRouteMeters: Double?): EngineSystemEvent? =
+    if (!state.returnAvailableEmitted) null else EngineSystemEvent(
+        "return.cleared",
+        mapOf(
+            "reason" to reason,
+            "off_route_m" to (offRouteMeters?.toString() ?: "0.0"),
+        ),
+    )
+
+private fun appendReturnTrajectoryPoint(
+    route: RouteModel,
+    anchor: ReturnTrajectoryPoint,
+    trajectory: List<ReturnTrajectoryPoint>,
+    current: ReturnTrajectoryPoint,
+): List<ReturnTrajectoryPoint> {
+    val previous = trajectory.lastOrNull() ?: anchor
+    val distance = RouteMath.distance(route.toEnu(previous.location), route.toEnu(current.location))
+    return if (trajectory.isEmpty() || distance >= RETURN_TRAJECTORY_SAMPLE_METERS) {
+        trajectory + current
+    } else {
+        trajectory
+    }
+}
+
+private fun returnTrajectoryPath(
+    anchor: ReturnTrajectoryPoint,
+    trajectory: List<ReturnTrajectoryPoint>,
+    current: ReturnTrajectoryPoint,
+): List<ReturnTrajectoryPoint> = buildList {
+    add(anchor)
+    addAll(trajectory)
+    if (lastOrNull()?.location != current.location) add(current)
+}
+
+private fun returnTrajectoryLength(route: RouteModel, points: List<ReturnTrajectoryPoint>): Double =
+    points.zipWithNext().sumOf { (first, second) ->
+        RouteMath.distance(route.toEnu(first.location), route.toEnu(second.location))
+    }
+
+private fun trimReturnTrajectory(
+    route: RouteModel,
+    anchor: ReturnTrajectoryPoint,
+    trajectory: List<ReturnTrajectoryPoint>,
+    current: ReturnTrajectoryPoint,
+): List<ReturnTrajectoryPoint> {
+    var retained = trajectory
+    while (retained.size > 1 && (
+            current.timestampMillis - retained.first().timestampMillis > RETURN_TRAJECTORY_MAX_MILLIS ||
+                returnTrajectoryLength(route, returnTrajectoryPath(anchor, retained, current)) > RETURN_TRAJECTORY_MAX_METERS
+            )
+    ) {
+        retained = retained.drop(1)
+    }
+    if (retained.size == 1 && current.timestampMillis - retained.single().timestampMillis > RETURN_TRAJECTORY_MAX_MILLIS) {
+        retained = listOf(current)
+    }
+    return retained
+}
+
+private fun calculateReturnGuidance(state: GuideState, config: GuideConfig): GuideResult? {
+    if (!state.returnButtonActive || !state.offRoute || state.waitingForRoute || state.arrived ||
+        (state.startupEnabled && !state.startupResolved) || state.direction == ProgressDirection.UNKNOWN
+    ) return null
+    val current = state.returnCurrentLocation ?: return null
+    val currentMatch = RouteMatcher.nearest(
+        state.route,
+        SensorFrame(
+            timestamp = state.lastTimestamp ?: 0L,
+            lat = current.lat,
+            lon = current.lon,
+            accuracy = 0f,
+            speed = null,
+            gpsBearing = null,
+        ),
+        previousS = null,
+        config = config,
+    ) ?: return null
+    val currentEnu = state.route.toEnu(current)
+    val straightDistance = RouteMath.distance(currentEnu, currentMatch.projectedPoint)
+    val straightMeters = roundReturnMeters(straightDistance)
+    val compass = compass8(bearingDegrees(currentEnu, currentMatch.projectedPoint))
+
+    val backtrackMeters = if (
+        state.returnAnchor != null && !state.returnTrajectoryTruncated &&
+        state.returnTrajectoryUnavailableReason == null
+    ) {
+        val path = returnTrajectoryPath(
+            state.returnAnchor,
+            state.returnTrajectory,
+            ReturnTrajectoryPoint(current, state.lastTimestamp ?: 0L),
+        )
+        if (path.size >= 2) roundReturnMeters(returnTrajectoryLength(state.route, path)) else null
+    } else null
+
+    val guidance = Guidance.ReturnGuide(backtrackMeters, straightMeters, compass)
+    val details = mapOf(
+        "A_present" to (backtrackMeters != null).toString(),
+        "N" to (backtrackMeters?.toString() ?: "none"),
+        "M" to straightMeters.toString(),
+        "compass" to compass.name,
+        "off_route_m" to (state.lastMatch?.distanceMeters?.toString() ?: "0.0"),
+    )
+    return GuideResult(guidance, state, Reason("off-route.return-request", details = details))
+}
+
+private fun roundReturnMeters(distanceMeters: Double): Int =
+    (distanceMeters / 10.0).roundToInt().times(10).coerceAtLeast(10)
+
+private fun compass8(bearingDegrees: Double): Compass8 {
+    val index = floor((bearingDegrees + 22.5 + 1e-9) / 45.0).toInt() % Compass8.values().size
+    return Compass8.values()[index]
 }
 
 private fun elapsedSeconds(now: Long, then: Long?): Double {

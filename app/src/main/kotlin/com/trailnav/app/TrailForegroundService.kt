@@ -1131,6 +1131,9 @@ internal fun Guidance?.toSpeech(
     startEtaSeconds: Double? = null,
 ): String? = when (this) {
     is Guidance.OffRoute -> GuidancePhrases.offRoute(distance)
+    // TASK-128 supplies the user-facing return guidance phrases.
+    Guidance.ReturnHint -> null
+    is Guidance.ReturnGuide -> null
     is Guidance.Approach -> GuidancePhrases.approach(distanceMeters, bearingDegrees)
     is Guidance.WaitingStart -> GuidancePhrases.waitingStart(distanceMeters)
     is Guidance.Status -> if (isReverseStatus()) null else message

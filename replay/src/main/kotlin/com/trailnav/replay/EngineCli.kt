@@ -172,6 +172,8 @@ private data class Output(
 private fun decision(guidance: Guidance?): String = when (guidance) {
     null -> "CONTINUE"
     is Guidance.OffRoute -> "OFF_ROUTE"
+    Guidance.ReturnHint -> "RETURN_HINT"
+    is Guidance.ReturnGuide -> "RETURN_GUIDE"
     is Guidance.Approach -> "APPROACH"
     is Guidance.WaitingStart -> "WAITING_START"
     is Guidance.TurnAhead -> "TURN_AHEAD"
@@ -209,6 +211,7 @@ private fun GuideConfig.withOverrides(values: Map<String, Double>): GuideConfig 
     offRouteEnterDwellSeconds = values["offRouteEnterDwellSeconds"] ?: offRouteEnterDwellSeconds,
     offRouteExitDistMeters = values["offRouteExitDistMeters"] ?: offRouteExitDistMeters,
     offRouteExitDwellSeconds = values["offRouteExitDwellSeconds"] ?: offRouteExitDwellSeconds,
+    returnGuideTriggerMeters = values["returnGuideTriggerMeters"] ?: returnGuideTriggerMeters,
     reannounceIntervalSeconds = values["reannounceIntervalSeconds"] ?: reannounceIntervalSeconds,
     turnAheadDistanceMeters = values["turnAheadDistanceMeters"] ?: turnAheadDistanceMeters,
     turnNowDistanceMeters = values["turnNowDistanceMeters"] ?: turnNowDistanceMeters,
