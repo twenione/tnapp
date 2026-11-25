@@ -13,7 +13,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Build
 import android.provider.OpenableColumns
-import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
@@ -37,97 +36,29 @@ import kotlin.math.roundToInt
 /** Minimal route list/import screen for Phase 2; maps and turn previews are later phases. */
 class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
-    private lateinit var gpsIndicator: TextView
-    private lateinit var routeRibbon: RouteRibbonView
     private lateinit var routeListAdapter: RouteListAdapter
     private val savedRoutes = mutableListOf<SavedRoute>()
     private lateinit var startButton: Button
-    private lateinit var pauseResumeButton: Button
-    private lateinit var endButton: Button
     private lateinit var mapButton: Button
     private lateinit var eventSettingsButton: Button
-    private lateinit var navigationState: TextView
-    private var intervalButtons: List<Pair<Button, Long>> = emptyList()
+    private lateinit var voiceControls: OnRouteVoiceControls
     private var selectedRoute: Uri? = null
     private var selectedRouteSummary: String? = null
     private var selectedSavedRoute: SavedRoute? = null
-    private var onRouteVoiceEnabled = false
-    private var onRouteVoiceIntervalSeconds = 0L
-    private var onRouteVoiceMode = NavigationPreferences.PeriodicVoiceMode.OFF
-    private var lastServiceState: String? = null
+    private var pendingGuidePreparation = false
+    private var guideLaunchRequested = false
 
-    private val ribbonReceiver = object : BroadcastReceiver() {
+    private val serviceStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: android.content.Context, intent: Intent) {
-            if (intent.action == TrailForegroundService.ACTION_SERVICE_STATE_UPDATE) {
-                applyServiceState(intent.getStringExtra(TrailForegroundService.EXTRA_SERVICE_STATE)
-                    ?: NavigationPreferences.STATE_IDLE)
-                return
+            if (intent.action != TrailForegroundService.ACTION_SERVICE_STATE_UPDATE) return
+            val state = intent.getStringExtra(TrailForegroundService.EXTRA_SERVICE_STATE)
+                ?: NavigationPreferences.STATE_IDLE
+            if (screenFor(state) == AppScreen.GUIDE) {
+                launchGuideActivity()
+            } else {
+                startButton.isEnabled = true
+                guideLaunchRequested = false
             }
-            if (intent.action == TrailForegroundService.ACTION_ROUTE_PREPARATION_UPDATE) {
-                routeRibbon.updatePreparation(
-                    RoutePreparationStage.fromWire(
-                        intent.getStringExtra(TrailForegroundService.EXTRA_ROUTE_PREPARATION_STAGE),
-                    ),
-                )
-                return
-            }
-            if (intent.action == TrailForegroundService.ACTION_GPS_SIGNAL_UPDATE) {
-                updateGpsIndicator(
-                    intent.getDoubleExtra(TrailForegroundService.EXTRA_GPS_ACCURACY_METERS, 0.0),
-                )
-                return
-            }
-            if (intent.action != TrailForegroundService.ACTION_ROUTE_RIBBON_UPDATE) return
-            val ribbonState = RouteRibbonState(
-                perpendicularDistanceMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_DISTANCE_METERS, 0.0),
-                signedOffsetMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_SIGNED_OFFSET_METERS, 0.0),
-                direction = runCatching {
-                    com.trailnav.core.ProgressDirection.valueOf(
-                        intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_DIRECTION).orEmpty(),
-                    )
-                }.getOrDefault(com.trailnav.core.ProgressDirection.UNKNOWN),
-                offRoute = intent.getBooleanExtra(TrailForegroundService.EXTRA_RIBBON_OFF_ROUTE, false),
-                enterBandMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_ENTER_BAND_METERS, 0.0),
-                exitBandMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_EXIT_BAND_METERS, 0.0),
-                accuracyRadiusMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_ACCURACY_METERS, 0.0),
-                remainingDistanceMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_REMAINING_METERS, 0.0),
-                targetKind = runCatching {
-                    com.trailnav.core.TargetKind.valueOf(
-                        intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_TARGET_KIND).orEmpty(),
-                    )
-                }.getOrNull(),
-                targetLabelKind = runCatching {
-                    com.trailnav.core.TargetLabelKind.valueOf(
-                        intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_TARGET_LABEL_KIND).orEmpty(),
-                    )
-                }.getOrNull(),
-                targetName = intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_TARGET_NAME)
-                    ?.takeIf { it.isNotBlank() },
-                roundTripLeg = runCatching {
-                    RibbonRoundTripLeg.valueOf(
-                        intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_ROUND_TRIP_LEG).orEmpty(),
-                    )
-                }.getOrNull(),
-                closedRoute = intent.getBooleanExtra(TrailForegroundService.EXTRA_RIBBON_CLOSED_ROUTE, false),
-                targetRemainingMeters = intent.getDoubleExtra(
-                    TrailForegroundService.EXTRA_RIBBON_TARGET_REMAINING_METERS,
-                    -1.0,
-                ).takeIf { it >= 0.0 },
-                nextTurn = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_NEXT_TURN_DISTANCE_METERS, -1.0)
-                    .takeIf { it >= 0.0 }
-                    ?.let { distance ->
-                        RibbonNextTurn(
-                            distanceMeters = distance,
-                            side = if (intent.getStringExtra(TrailForegroundService.EXTRA_RIBBON_NEXT_TURN_SIDE) == RibbonTurnSide.LEFT.name) {
-                                RibbonTurnSide.LEFT
-                            } else {
-                                RibbonTurnSide.RIGHT
-                            },
-                        )
-                    },
-            )
-            routeRibbon.update(ribbonState)
-            updateGpsIndicator(ribbonState.accuracyRadiusMeters)
         }
     }
 
@@ -209,25 +140,6 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
         }
         status = TextView(this).apply { text = "경로를 가져오세요" }
-        gpsIndicator = TextView(this).apply {
-            text = "GPS 대기"
-            textSize = 16f
-            gravity = Gravity.CENTER
-            setTextColor(0xff1b5e20.toInt())
-            contentDescription = "GPS 신호 상태"
-        }
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        header.addView(status, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        header.addView(
-            gpsIndicator,
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
-        )
-        routeRibbon = RouteRibbonView(this).apply {
-            minimumHeight = (220 * resources.displayMetrics.density).toInt()
-        }
         val import = Button(this).apply {
             text = "경로 파일 가져오기"
             setOnClickListener { openGpx.launch(ROUTE_PICKER_MIME_TYPES) }
@@ -239,29 +151,6 @@ class MainActivity : AppCompatActivity() {
         startButton = Button(this).apply {
             text = "안내 시작"
             setOnClickListener { ensurePermissionAndStart() }
-        }
-        pauseResumeButton = Button(this).apply {
-            text = "안내 일시중지"
-            setOnClickListener {
-                if (NavigationPreferences.state(this@MainActivity) == NavigationPreferences.STATE_PAUSED) {
-                    sendServiceAction(TrailForegroundService.ACTION_RESUME_GUIDANCE, "ui")
-                } else {
-                    sendServiceAction(TrailForegroundService.ACTION_PAUSE_GUIDANCE, "ui")
-                }
-            }
-        }
-        endButton = Button(this).apply {
-            text = "안내 종료"
-            setOnClickListener {
-                androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
-                    .setTitle("안내 종료")
-                    .setMessage("안내를 종료하시겠습니까?")
-                    .setNegativeButton("취소", null)
-                    .setPositiveButton("종료") { _, _ ->
-                        sendServiceAction(TrailForegroundService.ACTION_END_GUIDANCE, "ui")
-                    }
-                    .show()
-            }
         }
         routeListAdapter = RouteListAdapter(this, savedRoutes)
         val list = ListView(this).apply {
@@ -283,50 +172,19 @@ class MainActivity : AppCompatActivity() {
             text = "안내 설정"
             setOnClickListener { showEventSettingsDialog() }
         }
-        val onRouteVoicePresets = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-        intervalButtons = VoiceSelectionUi.INTERVAL_CHOICES.map { (intervalSeconds, label) ->
-            Button(this).apply {
-                text = label
-                setOnClickListener {
-                    onRouteVoiceIntervalSeconds = intervalSeconds
-                    onRouteVoiceMode = if (intervalSeconds > 0L) {
-                        NavigationPreferences.PeriodicVoiceMode.TONE
-                    } else {
-                        NavigationPreferences.PeriodicVoiceMode.OFF
-                    }
-                    onRouteVoiceEnabled = intervalSeconds > 0L
-                    NavigationPreferences.saveVoice(this@MainActivity, onRouteVoiceEnabled, intervalSeconds, onRouteVoiceMode)
-                    renderVoiceSelections()
-                    if (NavigationPreferences.state(this@MainActivity) != NavigationPreferences.STATE_IDLE) {
-                        sendServiceAction(
-                            TrailForegroundService.ACTION_UPDATE_ON_ROUTE_VOICE,
-                            "ui",
-                        )
-                    }
-                }
-            }.also { button ->
-                onRouteVoicePresets.addView(button, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            } to intervalSeconds
-        }
-        root.addView(header)
-        root.addView(routeRibbon, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (250 * resources.displayMetrics.density).toInt()))
+        voiceControls = OnRouteVoiceControls(
+            context = this,
+            isGuidanceActive = { NavigationPreferences.state(this) != NavigationPreferences.STATE_IDLE },
+            onActiveSelectionChanged = { sendServiceAction(TrailForegroundService.ACTION_UPDATE_ON_ROUTE_VOICE, "ui") },
+        )
+        root.addView(status)
         root.addView(import)
         root.addView(export)
         root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(mapButton)
         root.addView(eventSettingsButton)
-        root.addView(onRouteVoicePresets)
-        navigationState = TextView(this).apply {
-            text = "안내 대기 중"
-            textSize = 20f
-            gravity = Gravity.CENTER
-        }
-        root.addView(navigationState)
+        root.addView(voiceControls.view)
         root.addView(startButton)
-        root.addView(pauseResumeButton)
-        root.addView(endButton)
         setContentView(root)
         val horizontalPadding = dp(24f)
         val bottomPadding = dp(24f)
@@ -343,58 +201,41 @@ class MainActivity : AppCompatActivity() {
         ViewCompat.requestApplyInsets(root)
         restoreUiState(savedInstanceState)
         restoreRouteCatalog()
-        renderVoiceSelections()
-        applyServiceState(NavigationPreferences.state(this))
-    }
-
-    private fun updateGpsIndicator(accuracyMeters: Double) {
-        if (!accuracyMeters.isFinite() || accuracyMeters <= 0.0) {
-            gpsIndicator.text = "GPS 대기"
-            gpsIndicator.setTextColor(0xff6d6d6d.toInt())
-            return
-        }
-        val rounded = "%.0f".format(accuracyMeters)
-        val quality = when {
-            accuracyMeters <= 10.0 -> "좋음"
-            accuracyMeters <= 30.0 -> "보통"
-            else -> "약함"
-        }
-        gpsIndicator.text = "GPS $quality ${rounded}m"
-        gpsIndicator.setTextColor(
-            if (quality == "약함") 0xffb71c1c.toInt() else 0xff1b5e20.toInt(),
-        )
+        voiceControls.render()
     }
 
     private fun dp(value: Float): Int = (value * resources.displayMetrics.density).roundToInt()
 
     override fun onStart() {
         super.onStart()
-        val filter = IntentFilter(TrailForegroundService.ACTION_ROUTE_RIBBON_UPDATE).apply {
-            addAction(TrailForegroundService.ACTION_ROUTE_PREPARATION_UPDATE)
-            addAction(TrailForegroundService.ACTION_GPS_SIGNAL_UPDATE)
-            addAction(TrailForegroundService.ACTION_SERVICE_STATE_UPDATE)
-        }
+        val filter = IntentFilter(TrailForegroundService.ACTION_SERVICE_STATE_UPDATE)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(ribbonReceiver, filter, RECEIVER_NOT_EXPORTED)
+            registerReceiver(serviceStateReceiver, filter, RECEIVER_NOT_EXPORTED)
         } else {
             @Suppress("DEPRECATION")
-            registerReceiver(ribbonReceiver, filter)
+            registerReceiver(serviceStateReceiver, filter)
         }
+        if (screenFor(NavigationPreferences.state(this)) == AppScreen.GUIDE) launchGuideActivity()
+        else startButton.isEnabled = true
+        voiceControls.render()
         sendServiceAction(TrailForegroundService.ACTION_QUERY_SERVICE_STATE, "ui")
     }
 
     override fun onStop() {
-        unregisterReceiver(ribbonReceiver)
+        unregisterReceiver(serviceStateReceiver)
         super.onStop()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        guideLaunchRequested = false
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(KEY_SELECTED_ROUTE_URI, selectedRoute?.toString())
         outState.putString(KEY_SELECTED_ROUTE_SUMMARY, selectedRouteSummary)
         outState.putString(KEY_STATUS, status.text.toString())
-        outState.putBoolean(KEY_ON_ROUTE_VOICE_ENABLED, onRouteVoiceEnabled)
-        outState.putLong(KEY_ON_ROUTE_VOICE_INTERVAL_SECONDS, onRouteVoiceIntervalSeconds)
-        outState.putString(KEY_ON_ROUTE_VOICE_MODE, onRouteVoiceMode.name)
+        outState.putBoolean(KEY_PENDING_GUIDE_PREPARATION, pendingGuidePreparation)
         super.onSaveInstanceState(outState)
     }
 
@@ -402,17 +243,9 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState != null) {
             selectedRoute = savedInstanceState.getString(KEY_SELECTED_ROUTE_URI)?.let(Uri::parse)
             selectedRouteSummary = savedInstanceState.getString(KEY_SELECTED_ROUTE_SUMMARY)
-            onRouteVoiceEnabled = savedInstanceState.getBoolean(KEY_ON_ROUTE_VOICE_ENABLED, false)
-            onRouteVoiceIntervalSeconds = savedInstanceState.getLong(KEY_ON_ROUTE_VOICE_INTERVAL_SECONDS, 0L)
-            onRouteVoiceMode = NavigationPreferences.PeriodicVoiceMode.fromWire(
-                savedInstanceState.getString(KEY_ON_ROUTE_VOICE_MODE),
-            )
             savedInstanceState.getString(KEY_STATUS)?.let { status.text = it }
+            pendingGuidePreparation = savedInstanceState.getBoolean(KEY_PENDING_GUIDE_PREPARATION, false)
         }
-        val storedVoice = NavigationPreferences.voice(this)
-        onRouteVoiceEnabled = storedVoice.enabled
-        onRouteVoiceIntervalSeconds = storedVoice.intervalSeconds
-        onRouteVoiceMode = storedVoice.mode
     }
 
     private fun restoreRouteCatalog() {
@@ -667,13 +500,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun renderVoiceSelections() {
-        intervalButtons.forEach { (button, intervalSeconds) ->
-            val selected = VoiceSelectionUi.intervalSelected(onRouteVoiceIntervalSeconds, intervalSeconds)
-            applyButtonSelection(button, selected, button.text.toString().removePrefix("✓ "))
-        }
-    }
-
     private fun showEventSettingsDialog() {
         if (isFinishing || isDestroyed) return
         val currentSettings = NavigationPreferences.eventSettings(this)
@@ -698,10 +524,6 @@ class MainActivity : AppCompatActivity() {
             }
             check(NavigationPreferences.onDemandResponseMode(this@MainActivity).ordinal + 1)
         }
-        val imuCollectEnabled = CheckBox(this).apply {
-            text = "원 가속도 수집(연구용)"
-            isChecked = NavigationPreferences.imuCollectEnabled(this@MainActivity)
-        }
         val roundTripEnabled = CheckBox(this).apply {
             text = "왕복 안내 (편도 경로를 갔다가 돌아올 때)"
             isChecked = NavigationPreferences.roundTripEnabled(this@MainActivity)
@@ -712,6 +534,8 @@ class MainActivity : AppCompatActivity() {
                 isChecked = checked[index]
             }
         }
+        val tapCounter = TapCounter(target = 7)
+        var settingsDialog: androidx.appcompat.app.AlertDialog? = null
         val density = resources.displayMetrics.density
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -725,13 +549,22 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(Color.DKGRAY)
                 setPadding((8 * density).roundToInt(), 0, (8 * density).roundToInt(), (4 * density).roundToInt())
             })
-            addView(imuCollectEnabled)
             addView(TextView(this@MainActivity).apply {
                 text = "안내 이벤트 (E1–E8)"
                 setTypeface(typeface, Typeface.BOLD)
                 setPadding(0, (8 * density).roundToInt(), 0, (4 * density).roundToInt())
             })
             eventCheckBoxes.forEach { addView(it) }
+            addView(TextView(this@MainActivity).apply {
+                text = "앱 정보 (버전 ${BuildConfig.VERSION_NAME})"
+                setPadding((8 * density).roundToInt(), (12 * density).roundToInt(), (8 * density).roundToInt(), (8 * density).roundToInt())
+                setOnClickListener {
+                    if (tapCounter.tap()) {
+                        startActivity(Intent(this@MainActivity, DeveloperActivity::class.java))
+                        settingsDialog?.dismiss()
+                    }
+                }
+            })
         }
         val scroll = ScrollView(this).apply {
             isFillViewport = true
@@ -747,7 +580,7 @@ class MainActivity : AppCompatActivity() {
                 NavigationSettingsUi.resolveDialogSelection(
                     eventChecked = checked,
                     onDemandEnabled = onDemandEnabled.isChecked,
-                    imuCollectEnabled = imuCollectEnabled.isChecked,
+                    imuCollectEnabled = NavigationPreferences.imuCollectEnabled(this),
                     accepted = true,
                     onDemandResponseMode = responseModes.firstOrNull {
                         it.ordinal + 1 == responseModeGroup.checkedRadioButtonId
@@ -764,11 +597,12 @@ class MainActivity : AppCompatActivity() {
             }
             .setCancelable(true)
             .create()
+        settingsDialog = dialog
+        dialog.setOnDismissListener { tapCounter.reset() }
         dialog.setOnShowListener {
             dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
                 val defaults = NavigationSettingsUi.resetToDefaults(checked)
                 onDemandEnabled.isChecked = defaults.onDemandEnabled
-                imuCollectEnabled.isChecked = defaults.imuCollectEnabled
                 responseModeGroup.check(defaults.onDemandResponseMode.ordinal + 1)
                 roundTripEnabled.isChecked = defaults.roundTripEnabled
                 eventCheckBoxes.forEachIndexed { index, checkBox -> checkBox.isChecked = checked[index] }
@@ -777,55 +611,23 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun applyButtonSelection(button: Button, selected: Boolean, label: String) {
-        button.text = if (selected) "✓ $label" else label
-        button.setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
-        button.setBackgroundColor(if (selected) 0xff2962ff.toInt() else Color.TRANSPARENT)
-        button.setTextColor(if (selected) Color.WHITE else Color.DKGRAY)
-        button.contentDescription = if (selected) "$label 선택됨" else label
-    }
-
-    private fun applyServiceState(state: String) {
-        if (shouldResetRibbon(lastServiceState, state)) {
-            routeRibbon.reset()
-            updateGpsIndicator(0.0)
-        }
-        lastServiceState = state
-        when (state) {
-            NavigationPreferences.STATE_RUNNING -> {
-                navigationState.text = "안내 중"
-                startButton.isEnabled = false
-                pauseResumeButton.visibility = android.view.View.VISIBLE
-                pauseResumeButton.text = "안내 일시중지"
-                endButton.visibility = android.view.View.VISIBLE
-            }
-            NavigationPreferences.STATE_PAUSED -> {
-                navigationState.text = "안내 일시중지 중"
-                startButton.isEnabled = false
-                pauseResumeButton.visibility = android.view.View.VISIBLE
-                pauseResumeButton.text = "안내 재개"
-                endButton.visibility = android.view.View.VISIBLE
-            }
-            else -> {
-                navigationState.text = "안내 대기 중"
-                startButton.isEnabled = true
-                pauseResumeButton.visibility = android.view.View.GONE
-                endButton.visibility = android.view.View.GONE
-            }
-        }
-        val storedVoice = NavigationPreferences.voice(this)
-        onRouteVoiceEnabled = storedVoice.enabled
-        onRouteVoiceIntervalSeconds = storedVoice.intervalSeconds
-        onRouteVoiceMode = storedVoice.mode
-        renderVoiceSelections()
-    }
-
     private fun sendServiceAction(action: String, source: String) {
         startService(
             Intent(this, TrailForegroundService::class.java)
                 .setAction(action)
                 .putExtra(TrailForegroundService.EXTRA_ACTION_SOURCE, source),
         )
+    }
+
+    private fun launchGuideActivity() {
+        if (guideLaunchRequested || isFinishing || isDestroyed) return
+        guideLaunchRequested = true
+        startButton.isEnabled = false
+        startActivity(Intent(this, GuideActivity::class.java).putExtra(
+            GuideActivity.EXTRA_START_WITH_PREPARING,
+            pendingGuidePreparation,
+        ))
+        pendingGuidePreparation = false
     }
 
     private fun ensurePermissionAndStart() {
@@ -858,7 +660,6 @@ class MainActivity : AppCompatActivity() {
             mapButton.isEnabled = false
             return
         }
-        routeRibbon.updatePreparation(RoutePreparationStage.PREPARING)
         val voice = NavigationPreferences.voice(this)
         val intent = Intent(this, TrailForegroundService::class.java).putExtra(
             TrailForegroundService.EXTRA_ROUTE_URI,
@@ -866,6 +667,7 @@ class MainActivity : AppCompatActivity() {
         ).putExtra(TrailForegroundService.EXTRA_ON_ROUTE_VOICE_ENABLED, voice.enabled)
             .putExtra(TrailForegroundService.EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS, voice.intervalSeconds)
             .putExtra(TrailForegroundService.EXTRA_ON_ROUTE_VOICE_MODE, voice.mode.name)
+        pendingGuidePreparation = true
         ContextCompat.startForegroundService(this, intent)
         status.text = "안내 서비스를 시작했습니다"
     }
@@ -874,9 +676,7 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_SELECTED_ROUTE_URI = "selected_route_uri"
         private const val KEY_SELECTED_ROUTE_SUMMARY = "selected_route_summary"
         private const val KEY_STATUS = "status"
-        private const val KEY_ON_ROUTE_VOICE_ENABLED = "on_route_voice_enabled"
-        private const val KEY_ON_ROUTE_VOICE_INTERVAL_SECONDS = "on_route_voice_interval_seconds"
-        private const val KEY_ON_ROUTE_VOICE_MODE = "on_route_voice_mode"
+        private const val KEY_PENDING_GUIDE_PREPARATION = "pending_guide_preparation"
         // Drive and local document providers frequently expose GPX as
         // application/octet-stream or omit a MIME type. The content is still
         // validated as GPX after selection, so the picker can safely be broad.
