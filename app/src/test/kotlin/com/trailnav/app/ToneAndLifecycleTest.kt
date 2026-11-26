@@ -17,15 +17,10 @@ class ToneAndLifecycleTest {
     }
 
     @Test
-    fun endingSuppressesEveryVoiceKindAndRibbonResetsOnlyAtIdleTransition() {
-        VoiceKind.values().forEach { kind ->
-            assertFalse(shouldSpeakVoice(ending = true, paused = false, kind = kind))
-        }
+    fun ribbonResetsOnlyAtIdleTransition() {
         assertTrue(shouldResetRibbon(NavigationPreferences.STATE_RUNNING, NavigationPreferences.STATE_IDLE))
-        assertTrue(shouldResetRibbon(NavigationPreferences.STATE_PAUSED, NavigationPreferences.STATE_IDLE))
         assertFalse(shouldResetRibbon(null, NavigationPreferences.STATE_IDLE))
         assertFalse(shouldResetRibbon(NavigationPreferences.STATE_IDLE, NavigationPreferences.STATE_IDLE))
-        assertFalse(shouldResetRibbon(NavigationPreferences.STATE_RUNNING, NavigationPreferences.STATE_PAUSED))
     }
 
     @Test

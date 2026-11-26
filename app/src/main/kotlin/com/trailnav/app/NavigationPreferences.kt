@@ -6,7 +6,6 @@ import android.content.Context
 internal object NavigationPreferences {
     const val STATE_IDLE = "IDLE"
     const val STATE_RUNNING = "RUNNING"
-    const val STATE_PAUSED = "PAUSED"
 
     private const val PREFS = "trailnav.navigation"
     private const val KEY_VOICE_ENABLED = "voice_on_route_enabled"

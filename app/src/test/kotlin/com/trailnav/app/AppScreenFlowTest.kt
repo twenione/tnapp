@@ -9,7 +9,7 @@ class AppScreenFlowTest {
     @Test
     fun activeServiceStatesOpenGuideAndAllOthersReturnHome() {
         assertEquals(AppScreen.GUIDE, screenFor(NavigationPreferences.STATE_RUNNING))
-        assertEquals(AppScreen.GUIDE, screenFor(NavigationPreferences.STATE_PAUSED))
+        assertEquals(AppScreen.HOME, screenFor("PAUSED"))
         assertEquals(AppScreen.HOME, screenFor(NavigationPreferences.STATE_IDLE))
         assertEquals(AppScreen.HOME, screenFor(null))
         assertEquals(AppScreen.HOME, screenFor("UNKNOWN"))
