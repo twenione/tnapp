@@ -90,6 +90,16 @@ class GpxImportTest {
         assertEquals(false, open.closed)
     }
 
+    @Test
+    fun doctypeRouteImportsUsingFileNameWhenNameParsingIsRejected() {
+        val xml = "<!DOCTYPE gpx>${routeGpx("37.0", "37.01")}"
+
+        val imported = GpxImport.importGpx(xml, "doctype-route.gpx", null, "fallback")
+
+        assertEquals("doctype-route", imported.displayName)
+        assertEquals(true, imported.route.totalLengthMeters > 0.0)
+    }
+
     private fun routeGpx(firstLatitude: String, lastLatitude: String): String =
         """<gpx><trk><trkseg><trkpt lat="$firstLatitude" lon="127.0"/><trkpt lat="$lastLatitude" lon="127.0"/></trkseg></trk></gpx>"""
 }

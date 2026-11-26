@@ -2,7 +2,6 @@ package com.trailnav.app
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -113,7 +112,6 @@ class EventSettingsUiTest {
             onDemandEnabled = false,
             imuCollectEnabled = true,
             onDemandResponseMode = DistanceTimeMode.TimeOnly,
-            roundTripEnabled = true,
         )
         var persisted = initiallySaved
 
@@ -124,7 +122,6 @@ class EventSettingsUiTest {
             imuCollectEnabled = false,
             accepted = false,
             onDemandResponseMode = DistanceTimeMode.DistanceOnly,
-            roundTripEnabled = false,
         )
         if (cancelled != null) persisted = cancelled
         assertEquals(initiallySaved, persisted)
@@ -139,7 +136,6 @@ class EventSettingsUiTest {
             imuCollectEnabled = false,
             accepted = true,
             onDemandResponseMode = DistanceTimeMode.DistanceOnly,
-            roundTripEnabled = false,
         )
         persisted = requireNotNull(saved)
 
@@ -147,7 +143,6 @@ class EventSettingsUiTest {
         assertEquals(false, persisted.onDemandEnabled)
         assertEquals(false, persisted.imuCollectEnabled)
         assertEquals(DistanceTimeMode.DistanceOnly, persisted.onDemandResponseMode)
-        assertFalse(persisted.roundTripEnabled)
     }
 
     @Test
@@ -159,7 +154,6 @@ class EventSettingsUiTest {
         assertTrue(defaults.onDemandEnabled)
         assertEquals(false, defaults.imuCollectEnabled)
         assertEquals(DistanceTimeMode.Both, defaults.onDemandResponseMode)
-        assertFalse(defaults.roundTripEnabled)
 
         val saved = NavigationSettingsUi.resolveDialogSelection(
             eventChecked = eventDraft,
@@ -167,12 +161,10 @@ class EventSettingsUiTest {
             imuCollectEnabled = defaults.imuCollectEnabled,
             accepted = true,
             onDemandResponseMode = defaults.onDemandResponseMode,
-            roundTripEnabled = defaults.roundTripEnabled,
         )
         assertEquals(EventSettings.defaults(), saved?.eventSettings)
         assertEquals(true, saved?.onDemandEnabled)
         assertEquals(false, saved?.imuCollectEnabled)
         assertEquals(DistanceTimeMode.Both, saved?.onDemandResponseMode)
-        assertEquals(false, saved?.roundTripEnabled)
     }
 }
