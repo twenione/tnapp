@@ -57,15 +57,15 @@ internal class GuideActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         navigationState = TextView(this).apply {
-            text = "안내 중"
+            text = getString(R.string.guidance_running)
             textSize = 20f
         }
         gpsIndicator = TextView(this).apply {
-            text = "GPS 대기"
+            text = getString(R.string.gps_waiting)
             textSize = 16f
             gravity = Gravity.CENTER
             setTextColor(0xff1b5e20.toInt())
-            contentDescription = "GPS 신호 상태"
+            contentDescription = getString(R.string.gps_signal_state_description)
         }
         routeRibbon = RouteRibbonView(this).apply {
             minimumHeight = (220 * resources.displayMetrics.density).toInt()
@@ -76,7 +76,7 @@ internal class GuideActivity : AppCompatActivity() {
             onActiveSelectionChanged = { sendServiceAction(TrailForegroundService.ACTION_UPDATE_ON_ROUTE_VOICE) },
         )
         pauseResumeButton = Button(this).apply {
-            text = "안내 일시중지"
+            text = getString(R.string.guidance_pause)
             setOnClickListener {
                 if (NavigationPreferences.state(this@GuideActivity) == NavigationPreferences.STATE_PAUSED) {
                     sendServiceAction(TrailForegroundService.ACTION_RESUME_GUIDANCE)
@@ -86,13 +86,13 @@ internal class GuideActivity : AppCompatActivity() {
             }
         }
         val endButton = Button(this).apply {
-            text = "안내 종료"
+            text = getString(R.string.guidance_end)
             setOnClickListener {
                 androidx.appcompat.app.AlertDialog.Builder(this@GuideActivity)
-                    .setTitle("안내 종료")
-                    .setMessage("안내를 종료하시겠습니까?")
-                    .setNegativeButton("취소", null)
-                    .setPositiveButton("종료") { _, _ ->
+                    .setTitle(getString(R.string.guidance_end))
+                    .setMessage(getString(R.string.guidance_end_confirmation))
+                    .setNegativeButton(getString(R.string.common_cancel), null)
+                    .setPositiveButton(getString(R.string.guidance_end_action)) { _, _ ->
                         sendServiceAction(TrailForegroundService.ACTION_END_GUIDANCE)
                     }
                     .show()
@@ -160,17 +160,17 @@ internal class GuideActivity : AppCompatActivity() {
         lastServiceState = state
         when (state) {
             NavigationPreferences.STATE_RUNNING -> {
-                navigationState.text = "안내 중"
+                navigationState.text = getString(R.string.guidance_running)
                 pauseResumeButton.visibility = android.view.View.VISIBLE
-                pauseResumeButton.text = "안내 일시중지"
+                pauseResumeButton.text = getString(R.string.guidance_pause)
             }
             NavigationPreferences.STATE_PAUSED -> {
-                navigationState.text = "안내 일시중지 중"
+                navigationState.text = getString(R.string.guidance_paused)
                 pauseResumeButton.visibility = android.view.View.VISIBLE
-                pauseResumeButton.text = "안내 재개"
+                pauseResumeButton.text = getString(R.string.guidance_resume)
             }
             else -> {
-                navigationState.text = "안내 대기 중"
+                navigationState.text = getString(R.string.guidance_waiting)
                 pauseResumeButton.visibility = android.view.View.GONE
                 finish()
             }
@@ -180,18 +180,18 @@ internal class GuideActivity : AppCompatActivity() {
 
     private fun updateGpsIndicator(accuracyMeters: Double) {
         if (!accuracyMeters.isFinite() || accuracyMeters <= 0.0) {
-            gpsIndicator.text = "GPS 대기"
+            gpsIndicator.text = getString(R.string.gps_waiting)
             gpsIndicator.setTextColor(0xff6d6d6d.toInt())
             return
         }
         val rounded = "%.0f".format(accuracyMeters)
         val quality = when {
-            accuracyMeters <= 10.0 -> "좋음"
-            accuracyMeters <= 30.0 -> "보통"
-            else -> "약함"
+            accuracyMeters <= 10.0 -> getString(R.string.gps_quality_good)
+            accuracyMeters <= 30.0 -> getString(R.string.gps_quality_normal)
+            else -> getString(R.string.gps_quality_weak)
         }
-        gpsIndicator.text = "GPS $quality ${rounded}m"
-        gpsIndicator.setTextColor(if (quality == "약함") 0xffb71c1c.toInt() else 0xff1b5e20.toInt())
+        gpsIndicator.text = getString(R.string.gps_accuracy_value, quality, rounded)
+        gpsIndicator.setTextColor(if (accuracyMeters > 30.0) 0xffb71c1c.toInt() else 0xff1b5e20.toInt())
     }
 
     private fun sendServiceAction(action: String) {

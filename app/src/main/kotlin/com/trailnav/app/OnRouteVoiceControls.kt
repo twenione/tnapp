@@ -16,7 +16,7 @@ internal class OnRouteVoiceControls(
     val view = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
     private val buttons = VoiceSelectionUi.INTERVAL_CHOICES.map { (seconds, label) ->
         Button(context).apply {
-            text = label
+            text = context.getString(label)
             setOnClickListener {
                 val enabled = seconds > 0L
                 NavigationPreferences.saveVoice(
@@ -42,7 +42,7 @@ internal class OnRouteVoiceControls(
             button.setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
             button.setBackgroundColor(if (selected) 0xff2962ff.toInt() else Color.TRANSPARENT)
             button.setTextColor(if (selected) Color.WHITE else Color.DKGRAY)
-            button.contentDescription = if (selected) "$label 선택됨" else label
+            button.contentDescription = if (selected) view.context.getString(R.string.item_selected, label) else label
         }
     }
 }

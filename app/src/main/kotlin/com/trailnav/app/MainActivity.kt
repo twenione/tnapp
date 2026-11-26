@@ -68,7 +68,7 @@ class MainActivity : AppCompatActivity() {
         if (grants[Manifest.permission.ACCESS_FINE_LOCATION] == true || grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
             startNavigation()
         } else {
-            status.text = "위치 권한이 필요합니다"
+            status.text = getString(R.string.main_location_permission_needed)
         }
     }
 
@@ -93,7 +93,7 @@ class MainActivity : AppCompatActivity() {
                     if (column >= 0 && cursor.moveToFirst()) cursor.getString(column) else null
                 }?.takeIf { it.isNotBlank() }
                     ?: uri.lastPathSegment?.takeIf { it.isNotBlank() }
-                    ?: "GPX 경로"
+                    ?: getString(R.string.imported_route_fallback_name)
                 SavedRoute(
                     uri = uri.toString(),
                     displayName = displayName,
@@ -104,7 +104,7 @@ class MainActivity : AppCompatActivity() {
                     waypointCount = route.waypoints.size,
                     wideGapCount = route.quality.gapOver100Count,
                 )
-            } ?: throw IllegalStateException("GPX를 읽을 수 없습니다")
+            } ?: throw IllegalStateException(getString(R.string.main_gpx_read_failed))
             try {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (_: SecurityException) {
@@ -125,7 +125,7 @@ class MainActivity : AppCompatActivity() {
             // The wildcard picker can show provider files whose MIME type is
             // generic or unknown. Keep the picker broad, then reject invalid
             // content here without crashing or replacing the current route.
-            status.text = "경로 파일을 읽을 수 없습니다. GPX 파일을 선택하세요."
+            status.text = getString(R.string.main_route_file_read_failed)
         }
     }
 
@@ -139,17 +139,17 @@ class MainActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        status = TextView(this).apply { text = "경로를 가져오세요" }
+        status = TextView(this).apply { text = getString(R.string.main_import_route_prompt) }
         val import = Button(this).apply {
-            text = "경로 파일 가져오기"
+            text = getString(R.string.main_import_route_button)
             setOnClickListener { openGpx.launch(ROUTE_PICKER_MIME_TYPES) }
         }
         val export = Button(this).apply {
-            text = "기록 내보내기"
+            text = getString(R.string.main_export_sessions)
             setOnClickListener { startActivity(Intent(this@MainActivity, SessionExportActivity::class.java)) }
         }
         startButton = Button(this).apply {
-            text = "안내 시작"
+            text = getString(R.string.main_start_guidance)
             setOnClickListener { ensurePermissionAndStart() }
         }
         routeListAdapter = RouteListAdapter(this, savedRoutes)
@@ -164,12 +164,12 @@ class MainActivity : AppCompatActivity() {
             }
         }
         mapButton = Button(this).apply {
-            text = "지도에서 보기"
+            text = getString(R.string.main_view_map)
             isEnabled = false
             setOnClickListener { openSelectedRouteInMap() }
         }
         eventSettingsButton = Button(this).apply {
-            text = "안내 설정"
+            text = getString(R.string.main_guidance_settings)
             setOnClickListener { showEventSettingsDialog() }
         }
         voiceControls = OnRouteVoiceControls(
@@ -270,18 +270,18 @@ class MainActivity : AppCompatActivity() {
         val readable = RouteCatalog.isReadable(this, route)
         mapButton.isEnabled = readable
         if (readable) {
-            status.text = "${route.displayName} 선택됨"
+            status.text = getString(R.string.item_selected, route.displayName)
         } else {
-            status.text = "이 경로의 파일 권한이 없습니다. 다시 가져오기 필요"
+            status.text = getString(R.string.saved_route_permission_missing)
         }
     }
 
     private fun confirmRemoveSavedRoute(route: SavedRoute) {
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("목록에서 제거")
-            .setMessage("${route.displayName}을(를) 목록에서 제거하시겠습니까?")
-            .setNegativeButton("취소", null)
-            .setPositiveButton("제거") { _, _ -> removeSavedRoute(route) }
+            .setTitle(getString(R.string.saved_route_remove_title))
+            .setMessage(getString(R.string.saved_route_remove_confirmation, route.displayName))
+            .setNegativeButton(getString(R.string.common_cancel), null)
+            .setPositiveButton(getString(R.string.common_remove)) { _, _ -> removeSavedRoute(route) }
             .show()
     }
 
@@ -300,7 +300,7 @@ class MainActivity : AppCompatActivity() {
             selectedRoute = replacement?.let { Uri.parse(it.uri) }
             selectedRouteSummary = replacement?.let(RouteCatalog::details)
             mapButton.isEnabled = replacement?.let { RouteCatalog.isReadable(this, it) } == true
-            status.text = if (replacement == null) "경로를 가져오세요" else "${replacement.displayName} 선택됨"
+            status.text = if (replacement == null) getString(R.string.main_import_route_prompt) else getString(R.string.item_selected, replacement.displayName)
         }
     }
 
@@ -319,7 +319,7 @@ class MainActivity : AppCompatActivity() {
         val route = selectedSavedRoute ?: return
         val uri = selectedRoute ?: return
         if (!RouteCatalog.isReadable(this, route)) {
-            status.text = "이 경로의 파일 권한이 없습니다. 다시 가져오기 필요"
+            status.text = getString(R.string.saved_route_permission_missing)
             return
         }
 
@@ -402,7 +402,7 @@ class MainActivity : AppCompatActivity() {
         val candidates = discovery.merge.candidates
         val labels = mapChoiceLabels(candidates)
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("지도 앱 선택")
+            .setTitle(getString(R.string.map_app_picker_title))
             .setItems(labels.toTypedArray()) { _, which ->
                 when (val selection = mapChoiceAt(candidates, which)) {
                     is MapChoiceSelection.Candidate -> launchMapCandidate(selection.candidate, discovery.sources)
@@ -410,7 +410,7 @@ class MainActivity : AppCompatActivity() {
                     null -> Unit
                 }
             }
-            .setNegativeButton("취소", null)
+            .setNegativeButton(getString(R.string.common_cancel), null)
             .setCancelable(true)
             .show()
     }
@@ -431,9 +431,9 @@ class MainActivity : AppCompatActivity() {
         }
         val success = outcome.successCombo
         if (success != null) {
-            status.text = "${candidate.label}에서 열었습니다 (방식: ${success.uriKind.label}·${success.shape.label})"
+            status.text = getString(R.string.map_open_success, candidate.label, success.uriKind.label, success.shape.label)
         } else {
-            val message = "${candidate.label}에서 열 수 없습니다 (${outcome.lastReason})"
+            val message = getString(R.string.map_open_failure, candidate.label, outcome.lastReason)
             status.text = message
             Toast.makeText(this, message, Toast.LENGTH_LONG).show()
         }
@@ -457,7 +457,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         outcome.successShape?.let { shape ->
-            status.text = "연결 앱 선택창을 열었습니다 (방식: ${shape.label})"
+            status.text = getString(R.string.map_fallback_success, shape.label)
             return
         }
         showMapUnavailable(mapFallbackDiagnostic(discovery.counts, outcome, diagnostics))
@@ -479,7 +479,7 @@ class MainActivity : AppCompatActivity() {
         }
 
     private fun showMapUnavailable(diagnostic: String? = null) {
-        val message = "GPX를 열 수 있는 지도 앱이 없습니다"
+        val message = getString(R.string.map_app_unavailable)
         status.text = if (diagnostic.isNullOrBlank()) message else "$message\n$diagnostic"
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
@@ -505,7 +505,7 @@ class MainActivity : AppCompatActivity() {
         val currentSettings = NavigationPreferences.eventSettings(this)
         val checked = EventSettingsUi.checkedItems(currentSettings)
         val onDemandEnabled = CheckBox(this).apply {
-            text = "정지 상태에서 흔들어 경로 상태 확인"
+            text = getString(R.string.shake_route_status)
             isChecked = NavigationPreferences.onDemandEnabled(this@MainActivity)
         }
         val responseModes = DistanceTimeMode.values()
@@ -513,9 +513,9 @@ class MainActivity : AppCompatActivity() {
             orientation = RadioGroup.VERTICAL
             responseModes.forEach { mode ->
                 val label = when (mode) {
-                    DistanceTimeMode.Both -> "거리와 시간"
-                    DistanceTimeMode.DistanceOnly -> "거리만"
-                    DistanceTimeMode.TimeOnly -> "시간만"
+                    DistanceTimeMode.Both -> getString(R.string.distance_and_time)
+                    DistanceTimeMode.DistanceOnly -> getString(R.string.distance_only)
+                    DistanceTimeMode.TimeOnly -> getString(R.string.time_only)
                 }
                 addView(RadioButton(this@MainActivity).apply {
                     id = mode.ordinal + 1
@@ -525,10 +525,10 @@ class MainActivity : AppCompatActivity() {
             check(NavigationPreferences.onDemandResponseMode(this@MainActivity).ordinal + 1)
         }
         val roundTripEnabled = CheckBox(this).apply {
-            text = "왕복 안내 (편도 경로를 갔다가 돌아올 때)"
+            text = getString(R.string.round_trip_setting)
             isChecked = NavigationPreferences.roundTripEnabled(this@MainActivity)
         }
-        val eventCheckBoxes = EventSettingsUi.labels().mapIndexed { index, label ->
+        val eventCheckBoxes = EventSettingsUi.labels { getString(it) }.mapIndexed { index, label ->
             CheckBox(this).apply {
                 text = label
                 isChecked = checked[index]
@@ -544,19 +544,19 @@ class MainActivity : AppCompatActivity() {
             addView(responseModeGroup)
             addView(roundTripEnabled)
             addView(TextView(this@MainActivity).apply {
-                text = "순환형 경로에는 적용되지 않습니다. 다음 안내 시작부터 적용됩니다"
+                text = getString(R.string.round_trip_setting_note)
                 textSize = 12f
                 setTextColor(Color.DKGRAY)
                 setPadding((8 * density).roundToInt(), 0, (8 * density).roundToInt(), (4 * density).roundToInt())
             })
             addView(TextView(this@MainActivity).apply {
-                text = "안내 이벤트 (E1–E8)"
+                text = getString(R.string.event_settings_heading)
                 setTypeface(typeface, Typeface.BOLD)
                 setPadding(0, (8 * density).roundToInt(), 0, (4 * density).roundToInt())
             })
             eventCheckBoxes.forEach { addView(it) }
             addView(TextView(this@MainActivity).apply {
-                text = "앱 정보 (버전 ${BuildConfig.VERSION_NAME})"
+                text = getString(R.string.app_about_version, BuildConfig.VERSION_NAME)
                 setPadding((8 * density).roundToInt(), (12 * density).roundToInt(), (8 * density).roundToInt(), (8 * density).roundToInt())
                 setOnClickListener {
                     if (tapCounter.tap()) {
@@ -571,11 +571,11 @@ class MainActivity : AppCompatActivity() {
             addView(content)
         }
         val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("안내 설정")
+            .setTitle(getString(R.string.main_guidance_settings))
             .setView(scroll)
-            .setNegativeButton("취소", null)
-            .setNeutralButton("기본값으로 되돌리기", null)
-            .setPositiveButton("저장") { _, _ ->
+            .setNegativeButton(getString(R.string.common_cancel), null)
+            .setNeutralButton(getString(R.string.settings_reset_defaults), null)
+            .setPositiveButton(getString(R.string.common_save)) { _, _ ->
                 eventCheckBoxes.forEachIndexed { index, checkBox -> checked[index] = checkBox.isChecked }
                 NavigationSettingsUi.resolveDialogSelection(
                     eventChecked = checked,
@@ -592,7 +592,7 @@ class MainActivity : AppCompatActivity() {
                     NavigationPreferences.saveImuCollectEnabled(this, selection.imuCollectEnabled)
                     NavigationPreferences.saveOnDemandResponseMode(this, selection.onDemandResponseMode)
                     NavigationPreferences.saveRoundTripEnabled(this, selection.roundTripEnabled)
-                    status.text = "안내 설정을 저장했습니다"
+                    status.text = getString(R.string.settings_saved)
                 }
             }
             .setCancelable(true)
@@ -651,12 +651,12 @@ class MainActivity : AppCompatActivity() {
     private fun startNavigation() {
         val route = selectedRoute
         if (route == null) {
-            status.text = "먼저 GPX 경로를 가져오세요"
+            status.text = getString(R.string.main_import_route_first)
             return
         }
         val savedRoute = selectedSavedRoute
         if (savedRoute == null || !RouteCatalog.isReadable(this, savedRoute)) {
-            status.text = "이 경로의 파일 권한이 없습니다. 다시 가져오기 필요"
+            status.text = getString(R.string.saved_route_permission_missing)
             mapButton.isEnabled = false
             return
         }
@@ -669,7 +669,7 @@ class MainActivity : AppCompatActivity() {
             .putExtra(TrailForegroundService.EXTRA_ON_ROUTE_VOICE_MODE, voice.mode.name)
         pendingGuidePreparation = true
         ContextCompat.startForegroundService(this, intent)
-        status.text = "안내 서비스를 시작했습니다"
+        status.text = getString(R.string.guidance_service_started)
     }
 
     companion object {

@@ -1,0 +1,52 @@
+{
+  "app/src/main/kotlin/com/trailnav/app/GuidancePhrases.kt": {
+    "lines": 62,
+    "reason": "음성 · 상태 문구의 단일 원천(순수 함수), 정확한 문구 시험 다수",
+    "retire": "다른 언어가 정해질 때"
+  },
+  "app/src/main/kotlin/com/trailnav/app/RecoveryVoice.kt": {
+    "lines": 1,
+    "reason": "순수 상수",
+    "retire": "다른 언어가 정해질 때"
+  },
+  "app/src/main/kotlin/com/trailnav/app/SessionExport.kt": {
+    "lines": 2,
+    "reason": "순수 함수, 내보내기 파일 문구",
+    "retire": "다른 언어가 정해질 때"
+  },
+  "app/src/main/kotlin/com/trailnav/app/MapIntentPolicy.kt": {
+    "lines": 13,
+    "reason": "지도 앱 후보 · 진단 문구(순수 함수)",
+    "retire": "다른 언어가 정해질 때"
+  },
+  "app/src/main/kotlin/com/trailnav/app/MapOpenFallback.kt": {
+    "lines": 14,
+    "reason": "진단 문구(순수 함수)",
+    "retire": "다른 언어가 정해질 때"
+  },
+  "app/src/main/kotlin/com/trailnav/app/RouteCatalog.kt": {
+    "lines": 11,
+    "reason": "목록 · 상세 문구(순수 함수)",
+    "retire": "P5-2 가 이 문구를 다시 만들 때 옮기거나 숫자를 낮춘다"
+  },
+  "app/src/main/kotlin/com/trailnav/app/RouteImportWarning.kt": {
+    "lines": 5,
+    "reason": "가져오기 경고(순수 함수)",
+    "retire": "P5-2"
+  },
+  "app/src/main/kotlin/com/trailnav/app/RouteRibbon.kt": {
+    "lines": 5,
+    "reason": "리본 문구(순수 함수)",
+    "retire": "P5-3 (리본 단순화)"
+  },
+  "app/src/main/kotlin/com/trailnav/app/DeveloperActivity.kt": {
+    "lines": 2,
+    "reason": "개발자 화면의 고정 진단 문구 (D-266 예외)",
+    "retire": "영구"
+  },
+  "app/src/main/kotlin/com/trailnav/app/TrailForegroundService.kt": {
+    "lines": 11,
+    "reason": "일시중지 문구 7줄(753 · 762 · 777 · 792 · 851 · 852 · 854, D-264 정리 PR 에서 지워질 것), 엔진 문구 비교 1줄(1127 isReverseStatus), GPS 안내 음성 3줄(1163 ~ 1165 toSpeechPrompt, 순수 함수)",
+    "retire": "7줄은 일시중지 정리 PR, 4줄은 다른 언어가 정해질 때"
+  }
+}

@@ -2,12 +2,12 @@ package com.trailnav.app
 
 /** Pure selection rules for the periodic tone interval row. */
 internal object VoiceSelectionUi {
-    val INTERVAL_CHOICES = listOf(
-        0L to "끄기",
-        60L to "1분",
-        180L to "3분",
-        300L to "5분",
-        600L to "10분",
+    val INTERVAL_CHOICES: List<Pair<Long, Int>> = listOf(
+        0L to R.string.voice_interval_off,
+        60L to R.string.voice_interval_one_minute,
+        180L to R.string.voice_interval_three_minutes,
+        300L to R.string.voice_interval_five_minutes,
+        600L to R.string.voice_interval_ten_minutes,
     )
 
     fun intervalSelected(intervalSeconds: Long, candidateSeconds: Long): Boolean =

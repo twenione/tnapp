@@ -103,6 +103,12 @@ def test_full_gate_leak_into_fast_job_is_rejected() -> None:
     _must_fail(broken, "purity: full-validation gate leaked")
 
 
+def test_missing_app_string_literals_job_is_rejected() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    broken = replace_job_block(workflow, "app-string-literals", lambda _lines: [])
+    _must_fail(broken, "missing fast job app-string-literals")
+
+
 def test_missing_schedule_trigger_is_rejected() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     broken = workflow.replace("  schedule:\n    - cron: '0 18 * * 0'\n", "")
@@ -133,6 +139,7 @@ def run_all() -> None:
     test_aggregate_requires_always()
     test_aggregate_always_without_gate_is_rejected()
     test_full_gate_leak_into_fast_job_is_rejected()
+    test_missing_app_string_literals_job_is_rejected()
     test_missing_schedule_trigger_is_rejected()
     test_missing_pr_sample_count_is_rejected()
     test_unrestricted_push_is_rejected()

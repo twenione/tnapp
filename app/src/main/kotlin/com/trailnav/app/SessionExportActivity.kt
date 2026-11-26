@@ -27,10 +27,10 @@ class SessionExportActivity : AppCompatActivity() {
             setPadding(dp(16), dp(16), dp(16), dp(16))
         }
         val title = TextView(this).apply {
-            text = "기록 내보내기"
+            text = getString(R.string.main_export_sessions)
             textSize = 22f
         }
-        status = TextView(this).apply { text = "종료된 기록을 선택하세요" }
+        status = TextView(this).apply { text = getString(R.string.export_sessions_prompt) }
         adapter = SessionListAdapter(this, sessions)
         val list = ListView(this).apply {
             adapter = this@SessionExportActivity.adapter
@@ -42,7 +42,7 @@ class SessionExportActivity : AppCompatActivity() {
             }
         }
         shareButton = Button(this).apply {
-            text = "선택 기록 공유"
+            text = getString(R.string.export_sessions_share)
             isEnabled = false
             setOnClickListener { confirmAndShare() }
         }
@@ -55,7 +55,7 @@ class SessionExportActivity : AppCompatActivity() {
     }
 
     private fun loadSessions() {
-        status.text = "기록을 불러오는 중…"
+        status.text = getString(R.string.export_sessions_loading)
         shareButton.isEnabled = false
         selectedIds.clear()
         Thread {
@@ -64,24 +64,24 @@ class SessionExportActivity : AppCompatActivity() {
                 sessions.clear()
                 sessions.addAll(loaded)
                 adapter.notifyDataSetChanged()
-                status.text = if (sessions.isEmpty()) "내보낼 종료 기록이 없습니다" else "종료된 기록을 선택하세요"
+                status.text = if (sessions.isEmpty()) getString(R.string.export_sessions_none) else getString(R.string.export_sessions_prompt)
             }
         }.start()
     }
 
     private fun updateShareButton() {
         shareButton.isEnabled = selectedIds.isNotEmpty()
-        status.text = if (selectedIds.isEmpty()) "종료된 기록을 선택하세요" else "${selectedIds.size}개 기록 선택"
+        status.text = if (selectedIds.isEmpty()) getString(R.string.export_sessions_prompt) else getString(R.string.export_sessions_selected_count, selectedIds.size)
     }
 
     private fun confirmAndShare() {
         val chosen = sessions.filter { it.selectionId in selectedIds }
         if (chosen.isEmpty()) return
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("기록 공유")
-            .setMessage("위치 기록이 포함된 파일입니다. 신뢰하는 곳으로만 공유하세요.")
-            .setNegativeButton("취소", null)
-            .setPositiveButton("공유") { _, _ -> share(chosen) }
+            .setTitle(getString(R.string.export_sessions_share_title))
+            .setMessage(getString(R.string.export_sessions_privacy_warning))
+            .setNegativeButton(getString(R.string.common_cancel), null)
+            .setPositiveButton(getString(R.string.common_share)) { _, _ -> share(chosen) }
             .show()
     }
 
@@ -95,9 +95,9 @@ class SessionExportActivity : AppCompatActivity() {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 clipData = android.content.ClipData.newRawUri("", uri)
             }
-            startActivity(Intent.createChooser(send, "기록 공유"))
+            startActivity(Intent.createChooser(send, getString(R.string.export_sessions_share_title)))
         } catch (_: Exception) {
-            status.text = "기록을 내보낼 수 없습니다"
+            status.text = getString(R.string.export_sessions_unavailable)
         }
     }
 

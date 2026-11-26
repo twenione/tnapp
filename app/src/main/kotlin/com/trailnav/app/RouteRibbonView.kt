@@ -34,7 +34,7 @@ class RouteRibbonView @JvmOverloads constructor(
     init {
         backgroundPaint.color = Color.rgb(24, 28, 36)
         isFocusable = false
-        contentDescription = "안내 대기 중"
+        contentDescription = context.getString(R.string.guidance_waiting)
     }
 
     fun update(newState: RouteRibbonState?) {
@@ -48,7 +48,7 @@ class RouteRibbonView @JvmOverloads constructor(
         state = null
         showIdleLabel = false
         preparationStage = stage
-        contentDescription = stage.label
+        contentDescription = context.getString(stage.labelRes)
         invalidate()
     }
 
@@ -56,7 +56,7 @@ class RouteRibbonView @JvmOverloads constructor(
         state = null
         preparationStage = RoutePreparationStage.PREPARING
         showIdleLabel = true
-        contentDescription = "안내 대기 중"
+        contentDescription = context.getString(R.string.guidance_waiting)
         invalidate()
     }
 
@@ -71,7 +71,7 @@ class RouteRibbonView @JvmOverloads constructor(
 
         val current = state
         if (current == null) {
-            drawText(canvas, if (showIdleLabel) "안내 대기 중" else preparationStage.label, left + dp(12f), top + dp(40f), 22f)
+            drawText(canvas, if (showIdleLabel) context.getString(R.string.guidance_waiting) else context.getString(preparationStage.labelRes), left + dp(12f), top + dp(40f), 22f)
             return
         }
 
@@ -144,28 +144,28 @@ class RouteRibbonView @JvmOverloads constructor(
             current.closedRoute,
             current.roundTripLeg?.let { it == RibbonRoundTripLeg.RETURN },
         )
-        val status = if (current.offRoute) "경로 이탈" else "경로 위"
-        drawText(canvas, "$status · $direction", left + dp(12f), top + dp(25f), 20f)
+        val status = if (current.offRoute) context.getString(R.string.ribbon_off_route) else context.getString(R.string.ribbon_on_route)
+        drawText(canvas, context.getString(R.string.ribbon_status_direction, status, direction), left + dp(12f), top + dp(25f), 20f)
         val side = when (current.side) {
-            RibbonSide.LEFT -> "왼쪽"
-            RibbonSide.RIGHT -> "오른쪽"
-            RibbonSide.CENTER -> "중심"
+            RibbonSide.LEFT -> context.getString(R.string.ribbon_left)
+            RibbonSide.RIGHT -> context.getString(R.string.ribbon_right)
+            RibbonSide.CENTER -> context.getString(R.string.ribbon_center)
         }
-        drawText(canvas, "$side · 경로에서 ${formatMeters(current.perpendicularDistanceMeters)}", left + dp(12f), top + dp(52f), 14f, Color.LTGRAY)
+        drawText(canvas, context.getString(R.string.ribbon_side_distance, side, formatMeters(current.perpendicularDistanceMeters)), left + dp(12f), top + dp(52f), 14f, Color.LTGRAY)
         roundTripLegLabel(current)?.let {
             drawText(canvas, it, right - dp(12f), top + dp(52f), 14f, Color.LTGRAY, Paint.Align.RIGHT)
         }
-        drawText(canvas, "↑ 진행 방향", centerX + dp(8f), ribbonTop + dp(16f), 12f, Color.WHITE)
-        drawText(canvas, "↓ 지난 경로", centerX + dp(8f), ribbonBottom - dp(4f), 12f, Color.LTGRAY)
-        drawText(canvas, "진입 ${formatMeters(current.enterBandMeters)}", left + dp(10f), ribbonTop + dp(22f), 14f, Color.LTGRAY)
-        drawText(canvas, "복귀 ${formatMeters(current.exitBandMeters)}", right - dp(10f), ribbonTop + dp(22f), 14f, Color.LTGRAY, Paint.Align.RIGHT)
+        drawText(canvas, context.getString(R.string.ribbon_forward_direction), centerX + dp(8f), ribbonTop + dp(16f), 12f, Color.WHITE)
+        drawText(canvas, context.getString(R.string.ribbon_traversed_route), centerX + dp(8f), ribbonBottom - dp(4f), 12f, Color.LTGRAY)
+        drawText(canvas, context.getString(R.string.ribbon_enter_distance, formatMeters(current.enterBandMeters)), left + dp(10f), ribbonTop + dp(22f), 14f, Color.LTGRAY)
+        drawText(canvas, context.getString(R.string.ribbon_return_distance, formatMeters(current.exitBandMeters)), right - dp(10f), ribbonTop + dp(22f), 14f, Color.LTGRAY, Paint.Align.RIGHT)
         drawText(canvas, ribbonDistanceLabel(current), left + dp(10f), ribbonBottom - dp(12f), 14f, Color.WHITE)
-        drawText(canvas, "GPS 정확도 ${formatMeters(current.accuracyRadiusMeters)}", right - dp(10f), ribbonBottom - dp(12f), 13f, Color.LTGRAY, Paint.Align.RIGHT)
+        drawText(canvas, context.getString(R.string.ribbon_gps_accuracy, formatMeters(current.accuracyRadiusMeters)), right - dp(10f), ribbonBottom - dp(12f), 13f, Color.LTGRAY, Paint.Align.RIGHT)
         current.nextTurn?.let { next ->
-            val sideText = if (next.side == RibbonTurnSide.LEFT) "왼쪽" else "오른쪽"
+            val sideText = if (next.side == RibbonTurnSide.LEFT) context.getString(R.string.ribbon_left) else context.getString(R.string.ribbon_right)
             drawText(
                 canvas,
-                "다음 꺾임 ${formatMeters(next.distanceMeters)} · $sideText",
+                context.getString(R.string.ribbon_next_turn, formatMeters(next.distanceMeters), sideText),
                 centerX,
                 top + dp(68f),
                 14f,

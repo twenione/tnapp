@@ -9,19 +9,47 @@ import kotlin.test.assertTrue
 class EventSettingsUiTest {
     @Test
     fun labelsAppearInE1ThroughE8Order() {
-        assertEquals(
-            listOf(
-                "이정표 (1km마다)",
-                "경과 시간 (1시간마다)",
-                "남은 거리 (2·1·0.5km)",
-                "정점 도착 예고",
-                "고도 통과 (100m마다)",
-                "지점 접근 (이름 있는 지점)",
-                "일몰 안내 (안전 안내)",
-                "일출 안내",
-            ),
-            EventSettingsUi.labels(),
+        val expectedLabels = listOf(
+            "이정표 (1km마다)",
+            "경과 시간 (1시간마다)",
+            "남은 거리 (2·1·0.5km)",
+            "정점 도착 예고",
+            "고도 통과 (100m마다)",
+            "지점 접근 (이름 있는 지점)",
+            "일몰 안내 (안전 안내)",
+            "일출 안내",
         )
+        val resourceNames = listOf(
+            "event_milestone",
+            "event_elapsed",
+            "event_remaining",
+            "event_slope",
+            "event_elevation",
+            "event_waypoint",
+            "event_sunset",
+            "event_sunrise",
+        )
+        val resourceIds = listOf(
+            R.string.event_milestone,
+            R.string.event_elapsed,
+            R.string.event_remaining,
+            R.string.event_slope,
+            R.string.event_elevation,
+            R.string.event_waypoint,
+            R.string.event_sunset,
+            R.string.event_sunrise,
+        )
+
+        assertEquals(expectedLabels, resourceNames.map { TestStrings.text(it) })
+        assertEquals(
+            expectedLabels,
+            EventSettingsUi.labels { resourceId ->
+                val index = resourceIds.indexOf(resourceId)
+                require(index >= 0)
+                TestStrings.text(resourceNames[index])
+            },
+        )
+        assertEquals(resourceIds, GuideEvent.values().map { it.labelRes })
     }
 
     @Test

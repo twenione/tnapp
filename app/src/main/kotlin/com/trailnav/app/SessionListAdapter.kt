@@ -29,9 +29,9 @@ internal class SessionListAdapter(
         }
         val session = getItem(position)
         (row.getChildAt(0) as TextView).text = SessionExportCatalog.displayStartTime(session)
-        (row.getChildAt(1) as TextView).text = "소요 ${SessionExportCatalog.displayDuration(session)} · ${SessionExportCatalog.displaySize(session)}"
+        (row.getChildAt(1) as TextView).text = context.getString(R.string.session_duration_and_size, SessionExportCatalog.displayDuration(session), SessionExportCatalog.displaySize(session))
         val status = row.getChildAt(2) as TextView
-        status.text = if (session.normalTermination) "정상 종료" else "종료 기록 없음"
+        status.text = if (session.normalTermination) context.getString(R.string.session_normal_termination) else context.getString(R.string.session_missing_termination)
         status.setTextColor(if (session.normalTermination) Color.DKGRAY else 0xffb71c1c.toInt())
         row.contentDescription = "${SessionExportCatalog.displayStartTime(session)}, ${status.text}"
         return row
