@@ -1,6 +1,7 @@
 package com.trailnav.app
 
 import android.Manifest
+import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
@@ -8,6 +9,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.location.LocationManager
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
@@ -30,13 +32,22 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.IntentSenderRequest
 import androidx.appcompat.widget.PopupMenu
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.location.LocationManagerCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import com.google.android.gms.common.api.ResolvableApiException
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.LocationSettingsRequest
+import com.google.android.gms.location.LocationSettingsStatusCodes
+import com.google.android.gms.location.Priority
 import java.security.MessageDigest
 import kotlin.math.roundToInt
 
@@ -51,6 +62,10 @@ class MainActivity : AppCompatActivity() {
     private var selectedSavedRoute: SavedRoute? = null
     private var pendingGuidePreparation = false
     private var guideLaunchRequested = false
+    private var startFlowInProgress = false
+    private var startFlowAwaitingExternalResult = false
+    private var startFlowAwaitingSettingsCheck = false
+    private var startModeDialog: AlertDialog? = null
 
     private val serviceStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: android.content.Context, intent: Intent) {
@@ -70,9 +85,23 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
         if (grants[Manifest.permission.ACCESS_FINE_LOCATION] == true || grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
-            startNavigation()
+            startFlowAwaitingExternalResult = false
+            startFlowInProgress = true
+            checkLocationSettings()
         } else {
-            status.text = getString(R.string.main_location_permission_needed)
+            finishStartFlow(getString(R.string.main_location_permission_needed))
+        }
+    }
+
+    private val locationSettingsLauncher = registerForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        startFlowAwaitingExternalResult = false
+        startFlowInProgress = true
+        if (result.resultCode == Activity.RESULT_OK) {
+            chooseStartMode()
+        } else {
+            finishStartFlow(getString(R.string.start_location_off))
         }
     }
 
@@ -270,6 +299,13 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         guideLaunchRequested = false
+        if (startFlowInProgress &&
+            !startFlowAwaitingExternalResult &&
+            !startFlowAwaitingSettingsCheck &&
+            startModeDialog == null
+        ) {
+            finishStartFlow()
+        }
         refreshStartButtonEnabled()
     }
 
@@ -349,7 +385,8 @@ class MainActivity : AppCompatActivity() {
     private fun refreshStartButtonEnabled() {
         startButton.isEnabled = selectedSavedRoute != null &&
             NavigationPreferences.state(this) == NavigationPreferences.STATE_IDLE &&
-            !guideLaunchRequested
+            !guideLaunchRequested &&
+            !startFlowInProgress
     }
 
     private fun showRouteMenu(anchor: View, route: SavedRoute) {
@@ -724,10 +761,6 @@ class MainActivity : AppCompatActivity() {
             }
             check(NavigationPreferences.onDemandResponseMode(this@MainActivity).ordinal + 1)
         }
-        val roundTripEnabled = CheckBox(this).apply {
-            text = getString(R.string.round_trip_setting)
-            isChecked = NavigationPreferences.roundTripEnabled(this@MainActivity)
-        }
         val eventCheckBoxes = EventSettingsUi.labels { getString(it) }.mapIndexed { index, label ->
             CheckBox(this).apply {
                 text = label
@@ -742,13 +775,6 @@ class MainActivity : AppCompatActivity() {
             setPadding((20 * density).roundToInt(), 0, (20 * density).roundToInt(), 0)
             addView(onDemandEnabled)
             addView(responseModeGroup)
-            addView(roundTripEnabled)
-            addView(TextView(this@MainActivity).apply {
-                text = getString(R.string.round_trip_setting_note)
-                textSize = 12f
-                setTextColor(Color.DKGRAY)
-                setPadding((8 * density).roundToInt(), 0, (8 * density).roundToInt(), (4 * density).roundToInt())
-            })
             addView(TextView(this@MainActivity).apply {
                 text = getString(R.string.event_settings_heading)
                 setTypeface(typeface, Typeface.BOLD)
@@ -785,13 +811,11 @@ class MainActivity : AppCompatActivity() {
                     onDemandResponseMode = responseModes.firstOrNull {
                         it.ordinal + 1 == responseModeGroup.checkedRadioButtonId
                     } ?: DistanceTimeMode.Both,
-                    roundTripEnabled = roundTripEnabled.isChecked,
                 )?.let { selection ->
                     NavigationPreferences.saveEventSettings(this, selection.eventSettings)
                     NavigationPreferences.saveOnDemandEnabled(this, selection.onDemandEnabled)
                     NavigationPreferences.saveImuCollectEnabled(this, selection.imuCollectEnabled)
                     NavigationPreferences.saveOnDemandResponseMode(this, selection.onDemandResponseMode)
-                    NavigationPreferences.saveRoundTripEnabled(this, selection.roundTripEnabled)
                     status.text = getString(R.string.settings_saved)
                 }
             }
@@ -804,7 +828,6 @@ class MainActivity : AppCompatActivity() {
                 val defaults = NavigationSettingsUi.resetToDefaults(checked)
                 onDemandEnabled.isChecked = defaults.onDemandEnabled
                 responseModeGroup.check(defaults.onDemandResponseMode.ordinal + 1)
-                roundTripEnabled.isChecked = defaults.roundTripEnabled
                 eventCheckBoxes.forEachIndexed { index, checkBox -> checkBox.isChecked = checked[index] }
             }
         }
@@ -831,32 +854,179 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun ensurePermissionAndStart() {
+        if (startFlowInProgress) return
+        startFlowInProgress = true
+        refreshStartButtonEnabled()
         val locationGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val notificationGranted = android.os.Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         if (locationGranted && notificationGranted) {
-            startNavigation()
+            checkLocationSettings()
         } else {
-            permissionLauncher.launch(
-                buildList {
-                    add(Manifest.permission.ACCESS_FINE_LOCATION)
-                    add(Manifest.permission.ACCESS_COARSE_LOCATION)
-                    if (android.os.Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
-                }.toTypedArray()
-            )
+            startFlowAwaitingExternalResult = true
+            try {
+                permissionLauncher.launch(
+                    buildList {
+                        add(Manifest.permission.ACCESS_FINE_LOCATION)
+                        add(Manifest.permission.ACCESS_COARSE_LOCATION)
+                        if (android.os.Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+                    }.toTypedArray()
+                )
+            } catch (_: Exception) {
+                finishStartFlow()
+            }
         }
     }
 
-    private fun startNavigation() {
+    private fun checkLocationSettings() {
+        if (!canContinueStartFlow()) return
+        startFlowAwaitingSettingsCheck = true
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1_000L).build()
+        val request = LocationSettingsRequest.Builder()
+            .addLocationRequest(locationRequest)
+            .build()
+        try {
+            LocationServices.getSettingsClient(this)
+                .checkLocationSettings(request)
+                .addOnSuccessListener(this) {
+                    startFlowAwaitingSettingsCheck = false
+                    if (canContinueStartFlow()) handleLocationGate(settingsOk = true)
+                }
+                .addOnFailureListener(this) { exception ->
+                    startFlowAwaitingSettingsCheck = false
+                    if (canContinueStartFlow()) handleLocationSettingsFailure(exception)
+                }
+        } catch (exception: Exception) {
+            startFlowAwaitingSettingsCheck = false
+            if (canContinueStartFlow()) handleLocationSettingsFailure(exception)
+        }
+    }
+
+    private fun handleLocationSettingsFailure(exception: Exception) {
+        val resolution = (exception as? ResolvableApiException)
+            ?.takeIf { it.statusCode == LocationSettingsStatusCodes.RESOLUTION_REQUIRED }
+        handleLocationGate(settingsOk = false, resolution = resolution)
+    }
+
+    private fun handleLocationGate(settingsOk: Boolean, resolution: ResolvableApiException? = null) {
+        when (
+            LocationGate.decide(
+                settingsOk = settingsOk,
+                resolvable = resolution != null,
+                serviceEnabled = isLocationServiceEnabled(),
+            )
+        ) {
+            LocationGateAction.Proceed -> chooseStartMode()
+            LocationGateAction.PromptUser -> requestLocationResolution(requireNotNull(resolution))
+            LocationGateAction.Blocked -> finishStartFlow(getString(R.string.start_location_off))
+        }
+    }
+
+    private fun requestLocationResolution(exception: ResolvableApiException) {
+        if (!canContinueStartFlow()) return
+        startFlowAwaitingExternalResult = true
+        try {
+            locationSettingsLauncher.launch(
+                IntentSenderRequest.Builder(exception.resolution).build(),
+            )
+        } catch (_: Exception) {
+            startFlowAwaitingExternalResult = false
+            if (canContinueStartFlow()) handleLocationGate(settingsOk = false)
+        }
+    }
+
+    private fun isLocationServiceEnabled(): Boolean = runCatching {
+        getSystemService(LocationManager::class.java)?.let { manager ->
+            LocationManagerCompat.isLocationEnabled(manager)
+        } ?: false
+    }.getOrDefault(false)
+
+    private fun canContinueStartFlow(): Boolean = startFlowInProgress && !isFinishing && !isDestroyed
+
+    private fun chooseStartMode() {
+        if (!canContinueStartFlow()) return
+        val route = selectedSavedRoute
+        if (route == null) {
+            startNavigation(roundTripEnabled = false)
+            return
+        }
+        when (val action = StartModeGate.decide(routeWithClosedValue(route).closed)) {
+            is StartModeAction.StartDirectly -> startNavigation(action.roundTrip)
+            StartModeAction.AskUser -> showStartModeDialog()
+        }
+    }
+
+    private fun showStartModeDialog() {
+        if (!canContinueStartFlow() || isFinishing || isDestroyed) return
+        lateinit var dialog: AlertDialog
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20f), dp(8f), dp(20f), dp(12f))
+        }
+        content.addView(Button(this).apply {
+            text = getString(R.string.start_mode_one_way)
+            minHeight = dp(60f)
+            setOnClickListener {
+                startNavigation(roundTripEnabled = false)
+                dialog.dismiss()
+            }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(60f)).apply {
+            bottomMargin = dp(8f)
+        })
+        content.addView(Button(this).apply {
+            text = getString(R.string.start_mode_round_trip)
+            minHeight = dp(60f)
+            setOnClickListener {
+                startNavigation(roundTripEnabled = true)
+                dialog.dismiss()
+            }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(60f)).apply {
+            bottomMargin = dp(8f)
+        })
+        content.addView(Button(this).apply {
+            text = getString(R.string.common_cancel)
+            minHeight = dp(48f)
+            setOnClickListener { dialog.cancel() }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48f)))
+
+        dialog = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.start_mode_title))
+            .setView(content)
+            .create()
+        startModeDialog = dialog
+        dialog.setOnCancelListener { finishStartFlow() }
+        dialog.setOnDismissListener {
+            if (startModeDialog === dialog) startModeDialog = null
+            if (startFlowInProgress) finishStartFlow()
+        }
+        dialog.setOnShowListener {
+            dialog.window?.apply {
+                setGravity(Gravity.BOTTOM)
+                setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            }
+        }
+        dialog.show()
+        dialog.setCanceledOnTouchOutside(true)
+    }
+
+    private fun finishStartFlow(message: String? = null) {
+        startFlowInProgress = false
+        startFlowAwaitingExternalResult = false
+        startFlowAwaitingSettingsCheck = false
+        if (message != null) status.text = message
+        refreshStartButtonEnabled()
+    }
+
+    private fun startNavigation(roundTripEnabled: Boolean) {
         val route = selectedRoute
         if (route == null) {
-            status.text = getString(R.string.main_import_route_first)
+            finishStartFlow(getString(R.string.main_import_route_first))
             return
         }
         val savedRoute = selectedSavedRoute
         if (savedRoute == null || !RouteCatalog.isReadable(this, savedRoute)) {
-            status.text = getString(R.string.saved_route_permission_missing)
+            finishStartFlow(getString(R.string.saved_route_permission_missing))
             return
         }
         val voice = NavigationPreferences.voice(this)
@@ -867,6 +1037,10 @@ class MainActivity : AppCompatActivity() {
             .putExtra(TrailForegroundService.EXTRA_ON_ROUTE_VOICE_INTERVAL_SECONDS, voice.intervalSeconds)
             .putExtra(TrailForegroundService.EXTRA_ON_ROUTE_VOICE_MODE, voice.mode.name)
         pendingGuidePreparation = true
+        startFlowInProgress = false
+        startFlowAwaitingExternalResult = false
+        startFlowAwaitingSettingsCheck = false
+        NavigationPreferences.saveRoundTripEnabled(this, roundTripEnabled)
         ContextCompat.startForegroundService(this, intent)
         status.text = getString(R.string.guidance_service_started)
     }

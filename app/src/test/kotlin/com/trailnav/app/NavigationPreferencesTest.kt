@@ -59,13 +59,11 @@ class NavigationPreferencesTest {
         val context = InMemoryPreferencesContext()
         NavigationPreferences.saveImuCollectEnabled(context, true)
         NavigationPreferences.saveOnDemandResponseMode(context, DistanceTimeMode.TimeOnly)
-        NavigationPreferences.saveRoundTripEnabled(context, true)
         val eventDraft = BooleanArray(GuideEvent.values().size) { true }
 
         val defaults = NavigationSettingsUi.resetToDefaults(eventDraft)
         assertTrue(NavigationPreferences.imuCollectEnabled(context))
         assertEquals(DistanceTimeMode.TimeOnly, NavigationPreferences.onDemandResponseMode(context))
-        assertTrue(NavigationPreferences.roundTripEnabled(context))
 
         val cancelled = NavigationSettingsUi.resolveDialogSelection(
             eventChecked = eventDraft,
@@ -76,7 +74,6 @@ class NavigationPreferencesTest {
         assertNull(cancelled)
         assertTrue(NavigationPreferences.imuCollectEnabled(context))
         assertEquals(DistanceTimeMode.TimeOnly, NavigationPreferences.onDemandResponseMode(context))
-        assertTrue(NavigationPreferences.roundTripEnabled(context))
 
         val accepted = requireNotNull(
             NavigationSettingsUi.resolveDialogSelection(
@@ -85,17 +82,14 @@ class NavigationPreferencesTest {
                 imuCollectEnabled = defaults.imuCollectEnabled,
                 accepted = true,
                 onDemandResponseMode = defaults.onDemandResponseMode,
-                roundTripEnabled = defaults.roundTripEnabled,
             ),
         )
         NavigationPreferences.saveImuCollectEnabled(context, accepted.imuCollectEnabled)
         NavigationPreferences.saveOnDemandResponseMode(context, accepted.onDemandResponseMode)
-        NavigationPreferences.saveRoundTripEnabled(context, accepted.roundTripEnabled)
 
         assertFalse(NavigationPreferences.imuCollectEnabled(context))
         assertEquals(DistanceTimeMode.Both, NavigationPreferences.onDemandResponseMode(context))
         assertEquals("both", context.preferences.getAll()["ondemand_response_mode"])
-        assertFalse(NavigationPreferences.roundTripEnabled(context))
     }
 }
 

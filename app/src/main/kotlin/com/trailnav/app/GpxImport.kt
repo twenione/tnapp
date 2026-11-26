@@ -31,10 +31,10 @@ internal object GpxImport {
     }
 
     fun displayName(content: String, fileName: String?, fallbackName: String): String {
-        val document = parseNameDocument(content)
-        val trackName = firstNameInElements(document, "trk")
-        val routeName = firstNameInElements(document, "rte")
-        val metadataName = firstNameInElements(document, "metadata")
+        val document = runCatching { parseNameDocument(content) }.getOrNull()
+        val trackName = document?.let { firstNameInElements(it, "trk") }
+        val routeName = document?.let { firstNameInElements(it, "rte") }
+        val metadataName = document?.let { firstNameInElements(it, "metadata") }
         val fileBaseName = fileName
             ?.takeIf { it.isNotBlank() }
             ?.let(::removeLastExtension)
