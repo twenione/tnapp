@@ -13,6 +13,8 @@ internal data class SavedRoute(
     val elevationReason: String? = null,
     val waypointCount: Int? = null,
     val wideGapCount: Int? = null,
+    val originalFileName: String? = null,
+    val closed: Boolean? = null,
 )
 
 internal object RouteCatalog {
@@ -34,6 +36,12 @@ internal object RouteCatalog {
                     "elevReason" to prefs.getString(key(index, "elevReason"), null),
                     "wptCount" to prefs.getString(key(index, "wptCount"), null),
                     "gap100" to prefs.getString(key(index, "gap100"), null),
+                    "origName" to prefs.getString(key(index, "origName"), null),
+                    "closed" to if (prefs.contains(key(index, "closed"))) {
+                        prefs.getBoolean(key(index, "closed"), false)
+                    } else {
+                        null
+                    },
                 ),
             )
         }.toMutableList()
@@ -47,6 +55,7 @@ internal object RouteCatalog {
                 when (value) {
                     is String -> editor.putString(key(index, field), value)
                     is Long -> editor.putLong(key(index, field), value)
+                    is Boolean -> editor.putBoolean(key(index, field), value)
                 }
             }
         }
@@ -70,11 +79,12 @@ internal object RouteCatalog {
         val existing = routes[duplicateIndex]
         val refreshed = existing.copy(
             uri = incoming.uri,
-            displayName = incoming.displayName,
             lengthMeters = incoming.lengthMeters,
             elevationReason = incoming.elevationReason,
             waypointCount = incoming.waypointCount,
             wideGapCount = incoming.wideGapCount,
+            originalFileName = existing.originalFileName ?: incoming.originalFileName,
+            closed = existing.closed ?: incoming.closed,
         )
         routes[duplicateIndex] = refreshed
         return refreshed
@@ -86,34 +96,11 @@ internal object RouteCatalog {
         false
     }
 
-    fun details(route: SavedRoute): String = "%.2f km · sha256:%s".format(
-        java.util.Locale.US,
-        route.lengthMeters / 1_000.0,
-        route.sha256.take(12),
-    )
-
-    fun detailLine(route: SavedRoute, readable: Boolean): String =
-        if (readable) details(route) else "${details(route)} · 다시 가져오기 필요"
-
-    fun infoLevelLabel(elevationReason: String?, waypointCount: Int?, wideGapCount: Int? = null): String {
-        val base = when (elevationReason) {
-            null -> "정보 확인 필요(다시 가져오기)"
-            "absent" -> "위치정보만"
-            "partial" -> "고도 일부 누락"
-            "unstable" -> "고도 불안정(미사용)"
-            "ok" -> "위치+고도"
-            else -> "정보 확인 필요(다시 가져오기)"
-        }
-        val withWaypoints = if (elevationReason != null && waypointCount != null && waypointCount > 0) {
-            "$base · 지점 ${waypointCount}개"
-        } else {
-            base
-        }
-        return if (wideGapCount != null && wideGapCount > 0) {
-            "$withWaypoints\n점 간격 100m 초과 ${wideGapCount}곳"
-        } else {
-            withWaypoints
-        }
+    fun rename(routes: List<SavedRoute>, uri: String, newName: String): SavedRoute? {
+        val normalizedName = RouteNameRules.trimAndLimit(newName)
+        if (normalizedName.isEmpty()) return null
+        val route = routes.firstOrNull { it.uri == uri } ?: return null
+        return route.copy(displayName = normalizedName)
     }
 
     internal fun encodeStoredRoute(route: SavedRoute): Map<String, Any> = buildMap {
@@ -125,6 +112,8 @@ internal object RouteCatalog {
         route.elevationReason?.let { put("elevReason", it) }
         route.waypointCount?.let { put("wptCount", it.toString()) }
         route.wideGapCount?.let { put("gap100", it.toString()) }
+        route.originalFileName?.let { put("origName", it) }
+        route.closed?.let { put("closed", it) }
     }
 
     internal fun decodeStoredRoute(fields: Map<String, Any?>): SavedRoute? {
@@ -138,6 +127,8 @@ internal object RouteCatalog {
             elevationReason = fields["elevReason"] as? String,
             waypointCount = (fields["wptCount"] as? String)?.toIntOrNull(),
             wideGapCount = (fields["gap100"] as? String)?.toIntOrNull(),
+            originalFileName = fields["origName"] as? String,
+            closed = fields["closed"] as? Boolean,
         )
     }
 

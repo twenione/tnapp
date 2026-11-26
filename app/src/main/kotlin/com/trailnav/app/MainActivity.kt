@@ -1,21 +1,27 @@
 package com.trailnav.app
 
 import android.Manifest
-import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
 import android.provider.OpenableColumns
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.RadioButton
@@ -24,6 +30,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.widget.PopupMenu
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -39,11 +46,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var routeListAdapter: RouteListAdapter
     private val savedRoutes = mutableListOf<SavedRoute>()
     private lateinit var startButton: Button
-    private lateinit var mapButton: Button
-    private lateinit var eventSettingsButton: Button
     private lateinit var voiceControls: OnRouteVoiceControls
     private var selectedRoute: Uri? = null
-    private var selectedRouteSummary: String? = null
     private var selectedSavedRoute: SavedRoute? = null
     private var pendingGuidePreparation = false
     private var guideLaunchRequested = false
@@ -56,8 +60,8 @@ class MainActivity : AppCompatActivity() {
             if (screenFor(state) == AppScreen.GUIDE) {
                 launchGuideActivity()
             } else {
-                startButton.isEnabled = true
                 guideLaunchRequested = false
+                refreshStartButtonEnabled()
             }
         }
     }
@@ -79,10 +83,7 @@ class MainActivity : AppCompatActivity() {
             val imported = contentResolver.openInputStream(uri)?.use { stream ->
                 val bytes = stream.readBytes()
                 val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 0xff) }
-                // Parse once at import time so malformed files are rejected before starting the service.
-                val route = com.trailnav.core.RouteModel.fromGpx(bytes.toString(Charsets.UTF_8))
-                importWarning = RouteImportWarning.from(route.quality, route.totalLengthMeters)
-                val displayName = contentResolver.query(
+                val originalFileName = contentResolver.query(
                     uri,
                     arrayOf(OpenableColumns.DISPLAY_NAME),
                     null,
@@ -91,18 +92,26 @@ class MainActivity : AppCompatActivity() {
                 )?.use { cursor ->
                     val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                     if (column >= 0 && cursor.moveToFirst()) cursor.getString(column) else null
-                }?.takeIf { it.isNotBlank() }
-                    ?: uri.lastPathSegment?.takeIf { it.isNotBlank() }
-                    ?: getString(R.string.imported_route_fallback_name)
+                }
+                val importedGpx = GpxImport.importGpx(
+                    content = bytes.toString(Charsets.UTF_8),
+                    fileName = originalFileName,
+                    fallbackFileName = uri.lastPathSegment,
+                    fallbackName = getString(R.string.imported_route_fallback_name),
+                )
+                val route = importedGpx.route
+                importWarning = RouteImportWarning.from(route.quality, route.totalLengthMeters)
                 SavedRoute(
                     uri = uri.toString(),
-                    displayName = displayName,
+                    displayName = importedGpx.displayName,
                     sha256 = hash,
                     lengthMeters = route.totalLengthMeters,
                     addedAt = System.currentTimeMillis(),
                     elevationReason = route.elevationReason,
                     waypointCount = route.waypoints.size,
                     wideGapCount = route.quality.gapOver100Count,
+                    originalFileName = originalFileName,
+                    closed = importedGpx.closed,
                 )
             } ?: throw IllegalStateException(getString(R.string.main_gpx_read_failed))
             try {
@@ -140,50 +149,82 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
         }
         status = TextView(this).apply { text = getString(R.string.main_import_route_prompt) }
-        val import = Button(this).apply {
-            text = getString(R.string.main_import_route_button)
-            setOnClickListener { openGpx.launch(ROUTE_PICKER_MIME_TYPES) }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-        val export = Button(this).apply {
-            text = getString(R.string.main_export_sessions)
-            setOnClickListener { startActivity(Intent(this@MainActivity, SessionExportActivity::class.java)) }
+        header.addView(TextView(this).apply {
+            text = getString(R.string.main_home_title)
+            textSize = 24f
+            setTypeface(null, Typeface.BOLD)
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        header.addView(Button(this).apply {
+            text = getString(R.string.main_home_export)
+            setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_menu_recent_history, 0, 0, 0)
+            compoundDrawablePadding = dp(4f)
+            minWidth = dp(48f)
+            minHeight = dp(48f)
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, SessionExportActivity::class.java))
+            }
+        })
+        header.addView(Button(this).apply {
+            text = getString(R.string.main_home_settings)
+            setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_menu_preferences, 0, 0, 0)
+            compoundDrawablePadding = dp(4f)
+            minWidth = dp(48f)
+            minHeight = dp(48f)
+            setOnClickListener { showEventSettingsDialog() }
+        })
+        val importButton = Button(this).apply {
+            text = getString(R.string.main_import_gpx)
+            minHeight = dp(48f)
+            setOnClickListener { openGpx.launch(ROUTE_PICKER_MIME_TYPES) }
         }
         startButton = Button(this).apply {
             text = getString(R.string.main_start_guidance)
+            minHeight = dp(60f)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(0xff1f6b45.toInt())
+            setTextColor(Color.WHITE)
+            isEnabled = false
             setOnClickListener { ensurePermissionAndStart() }
         }
-        routeListAdapter = RouteListAdapter(this, savedRoutes)
+        routeListAdapter = RouteListAdapter(this, savedRoutes).apply {
+            onRouteClick = ::selectSavedRoute
+            onMenuClick = { anchor, route -> showRouteMenu(anchor, route) }
+        }
+        val emptyState = TextView(this).apply {
+            text = getString(R.string.main_import_route_prompt)
+            textSize = 22f
+            gravity = Gravity.CENTER
+        }
         val list = ListView(this).apply {
             adapter = routeListAdapter
-            choiceMode = ListView.CHOICE_MODE_SINGLE
-            setOnItemClickListener { _, _, position, _ -> selectSavedRoute(routeListAdapter.getItem(position)) }
-            setOnItemLongClickListener { _, _, position, _ ->
-                val route = routeListAdapter.getItem(position)
-                confirmRemoveSavedRoute(route)
-                true
-            }
+            dividerHeight = dp(6f)
+            clipToPadding = false
+            setPadding(0, dp(4f), 0, dp(4f))
+            emptyView = emptyState
         }
-        mapButton = Button(this).apply {
-            text = getString(R.string.main_view_map)
-            isEnabled = false
-            setOnClickListener { openSelectedRouteInMap() }
-        }
-        eventSettingsButton = Button(this).apply {
-            text = getString(R.string.main_guidance_settings)
-            setOnClickListener { showEventSettingsDialog() }
+        val listContainer = FrameLayout(this).apply {
+            addView(list, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ))
+            addView(emptyState, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ))
         }
         voiceControls = OnRouteVoiceControls(
             context = this,
             isGuidanceActive = { NavigationPreferences.state(this) != NavigationPreferences.STATE_IDLE },
             onActiveSelectionChanged = { sendServiceAction(TrailForegroundService.ACTION_UPDATE_ON_ROUTE_VOICE, "ui") },
         )
+        root.addView(header)
         root.addView(status)
-        root.addView(import)
-        root.addView(export)
-        root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        root.addView(mapButton)
-        root.addView(eventSettingsButton)
+        root.addView(listContainer, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(voiceControls.view)
+        root.addView(importButton)
         root.addView(startButton)
         setContentView(root)
         val horizontalPadding = dp(24f)
@@ -216,7 +257,7 @@ class MainActivity : AppCompatActivity() {
             registerReceiver(serviceStateReceiver, filter)
         }
         if (screenFor(NavigationPreferences.state(this)) == AppScreen.GUIDE) launchGuideActivity()
-        else startButton.isEnabled = true
+        else refreshStartButtonEnabled()
         voiceControls.render()
         sendServiceAction(TrailForegroundService.ACTION_QUERY_SERVICE_STATE, "ui")
     }
@@ -229,11 +270,11 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         guideLaunchRequested = false
+        refreshStartButtonEnabled()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(KEY_SELECTED_ROUTE_URI, selectedRoute?.toString())
-        outState.putString(KEY_SELECTED_ROUTE_SUMMARY, selectedRouteSummary)
         outState.putString(KEY_STATUS, status.text.toString())
         outState.putBoolean(KEY_PENDING_GUIDE_PREPARATION, pendingGuidePreparation)
         super.onSaveInstanceState(outState)
@@ -242,7 +283,6 @@ class MainActivity : AppCompatActivity() {
     private fun restoreUiState(savedInstanceState: Bundle?) {
         if (savedInstanceState != null) {
             selectedRoute = savedInstanceState.getString(KEY_SELECTED_ROUTE_URI)?.let(Uri::parse)
-            selectedRouteSummary = savedInstanceState.getString(KEY_SELECTED_ROUTE_SUMMARY)
             savedInstanceState.getString(KEY_STATUS)?.let { status.text = it }
             pendingGuidePreparation = savedInstanceState.getBoolean(KEY_PENDING_GUIDE_PREPARATION, false)
         }
@@ -258,22 +298,21 @@ class MainActivity : AppCompatActivity() {
         val restored = savedRoutes.firstOrNull { it.uri == lastUri }
             ?: selectedRoute?.let { uri -> savedRoutes.firstOrNull { it.uri == uri.toString() } }
         if (restored != null) selectSavedRoute(restored)
+        else refreshStartButtonEnabled()
     }
 
     private fun selectSavedRoute(route: SavedRoute) {
         selectedSavedRoute = route
         selectedRoute = Uri.parse(route.uri)
-        selectedRouteSummary = RouteCatalog.details(route)
         routeListAdapter.selectedUri = route.uri
         routeListAdapter.notifyDataSetChanged()
         RouteCatalog.save(this, savedRoutes, route.uri)
-        val readable = RouteCatalog.isReadable(this, route)
-        mapButton.isEnabled = readable
-        if (readable) {
-            status.text = getString(R.string.item_selected, route.displayName)
-        } else {
+        if (!RouteCatalog.isReadable(this, route)) {
             status.text = getString(R.string.saved_route_permission_missing)
+        } else {
+            status.text = ""
         }
+        refreshStartButtonEnabled()
     }
 
     private fun confirmRemoveSavedRoute(route: SavedRoute) {
@@ -286,22 +325,184 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun removeSavedRoute(route: SavedRoute) {
+        val removedSelectedRoute = selectedSavedRoute?.uri == route.uri
         val remaining = savedRoutes.filterNot { it.uri == route.uri }
         savedRoutes.clear()
         savedRoutes.addAll(remaining)
-        val replacement = remaining.maxByOrNull { it.addedAt }
+        val replacement = if (removedSelectedRoute) remaining.maxByOrNull { it.addedAt } else selectedSavedRoute
         RouteCatalog.save(this, savedRoutes, replacement?.uri)
-        if (selectedSavedRoute?.uri == route.uri) {
+        if (removedSelectedRoute) {
             routeListAdapter.selectedUri = replacement?.uri
         }
         routeListAdapter.notifyDataSetChanged()
-        if (selectedSavedRoute?.uri == route.uri) {
+        if (removedSelectedRoute) {
             selectedSavedRoute = replacement
             selectedRoute = replacement?.let { Uri.parse(it.uri) }
-            selectedRouteSummary = replacement?.let(RouteCatalog::details)
-            mapButton.isEnabled = replacement?.let { RouteCatalog.isReadable(this, it) } == true
-            status.text = if (replacement == null) getString(R.string.main_import_route_prompt) else getString(R.string.item_selected, replacement.displayName)
+            when {
+                replacement == null -> status.text = getString(R.string.main_import_route_prompt)
+                !RouteCatalog.isReadable(this, replacement) -> status.text = getString(R.string.saved_route_permission_missing)
+            }
         }
+        refreshStartButtonEnabled()
+    }
+
+    private fun refreshStartButtonEnabled() {
+        startButton.isEnabled = selectedSavedRoute != null &&
+            NavigationPreferences.state(this) == NavigationPreferences.STATE_IDLE &&
+            !guideLaunchRequested
+    }
+
+    private fun showRouteMenu(anchor: View, route: SavedRoute) {
+        val popup = PopupMenu(this, anchor)
+        popup.menu.add(ROUTE_MENU_GROUP_ACTIONS, ROUTE_MENU_MAP, 0, getString(R.string.main_view_map))
+        popup.menu.add(ROUTE_MENU_GROUP_ACTIONS, ROUTE_MENU_DETAILS, 1, getString(R.string.route_menu_details))
+        popup.menu.add(ROUTE_MENU_GROUP_ACTIONS, ROUTE_MENU_RENAME, 2, getString(R.string.route_rename))
+        popup.menu.add(ROUTE_MENU_GROUP_DELETE, ROUTE_MENU_DELETE, 3, getString(R.string.route_menu_delete))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) popup.menu.setGroupDividerEnabled(true)
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                ROUTE_MENU_MAP -> openRouteInMap(route)
+                ROUTE_MENU_DETAILS -> showRouteDetails(route)
+                ROUTE_MENU_RENAME -> showRouteRenameDialog(route)
+                ROUTE_MENU_DELETE -> confirmRemoveSavedRoute(route)
+                else -> return@setOnMenuItemClickListener false
+            }
+            true
+        }
+        popup.show()
+    }
+
+    private fun showRouteRenameDialog(route: SavedRoute) {
+        val input = EditText(this).apply {
+            setSingleLine(true)
+            filters = arrayOf(RouteNameLengthFilter(RouteNameRules.MAX_LENGTH))
+            setText(route.displayName)
+            setSelection(text.length)
+        }
+        val inputContainer = FrameLayout(this).apply {
+            val horizontal = dp(24f)
+            val vertical = dp(8f)
+            setPadding(horizontal, vertical, horizontal, 0)
+            addView(input, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ))
+        }
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.route_rename))
+            .setView(inputContainer)
+            .setNegativeButton(getString(R.string.common_cancel), null)
+            .setPositiveButton(getString(R.string.common_save), null)
+            .create()
+        dialog.setOnShowListener {
+            val saveButton = dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE)
+            saveButton.minimumHeight = dp(48f)
+            saveButton.isEnabled = input.text.toString().trim().isNotEmpty()
+            input.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+                override fun afterTextChanged(value: Editable?) {
+                    saveButton.isEnabled = !value.isNullOrBlank()
+                }
+            })
+            saveButton.setOnClickListener {
+                val renamed = RouteCatalog.rename(savedRoutes, route.uri, input.text.toString()) ?: return@setOnClickListener
+                val index = savedRoutes.indexOfFirst { it.uri == route.uri }
+                if (index < 0) return@setOnClickListener
+                savedRoutes[index] = renamed
+                if (selectedSavedRoute?.uri == route.uri) selectedSavedRoute = renamed
+                RouteCatalog.save(this, savedRoutes, RouteCatalog.lastSelectedUri(this))
+                routeListAdapter.notifyDataSetChanged()
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showRouteDetails(route: SavedRoute) {
+        val currentRoute = routeWithClosedValue(route)
+        val presentation = RouteDetailsFormatter.present(currentRoute)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20f), dp(8f), dp(20f), dp(8f))
+        }
+        presentation.rows.forEach { detailRow ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(8f), 0, dp(8f))
+            }
+            row.addView(TextView(this).apply {
+                text = getString(detailRow.labelResourceId)
+                textSize = 16f
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            row.addView(TextView(this).apply {
+                text = when (val value = detailRow.value) {
+                    is RouteDetailValue.Resource -> getString(value.resourceId, *value.arguments.toTypedArray())
+                    is RouteDetailValue.Literal -> value.text
+                }
+                textSize = 16f
+                gravity = Gravity.END
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            content.addView(row)
+        }
+        if (presentation.warnings.isNotEmpty()) {
+            content.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(8f).toFloat()
+                    setColor(0xfffff7ed.toInt())
+                }
+                presentation.warnings.forEach { warning ->
+                    addView(TextView(this@MainActivity).apply {
+                        text = getString(warning.resourceId, *warning.arguments.toTypedArray())
+                        textSize = 16f
+                        setTextColor(0xffc2410c.toInt())
+                    })
+                }
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(8f)
+            })
+        }
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(presentation.title)
+            .setView(scroll)
+            .setNegativeButton(getString(R.string.route_detail_close), null)
+            .setPositiveButton(getString(R.string.main_view_map)) { _, _ -> openRouteInMap(currentRoute) }
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.content.DialogInterface.BUTTON_NEGATIVE).minimumHeight = dp(48f)
+            dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).minimumHeight = dp(48f)
+            dialog.window?.apply {
+                setGravity(Gravity.BOTTOM)
+                setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            }
+        }
+        dialog.show()
+    }
+
+    private fun routeWithClosedValue(route: SavedRoute): SavedRoute {
+        if (route.closed != null) return route
+        val closed = runCatching {
+            contentResolver.openInputStream(Uri.parse(route.uri))?.use { stream ->
+                val xml = stream.readBytes().toString(Charsets.UTF_8)
+                com.trailnav.core.isClosedRoute(com.trailnav.core.RouteModel.fromGpx(xml))
+            }
+        }.getOrNull() ?: return route
+        val updated = route.copy(closed = closed)
+        val index = savedRoutes.indexOfFirst { it.uri == route.uri }
+        if (index >= 0) {
+            savedRoutes[index] = updated
+            if (selectedSavedRoute?.uri == route.uri) selectedSavedRoute = updated
+            RouteCatalog.save(this, savedRoutes, RouteCatalog.lastSelectedUri(this))
+            routeListAdapter.notifyDataSetChanged()
+        }
+        return updated
     }
 
     private data class MapUriSource(
@@ -315,9 +516,8 @@ class MainActivity : AppCompatActivity() {
         val sources: List<MapUriSource>,
     )
 
-    private fun openSelectedRouteInMap() {
-        val route = selectedSavedRoute ?: return
-        val uri = selectedRoute ?: return
+    private fun openRouteInMap(route: SavedRoute) {
+        val uri = Uri.parse(route.uri)
         if (!RouteCatalog.isReadable(this, route)) {
             status.text = getString(R.string.saved_route_permission_missing)
             return
@@ -657,7 +857,6 @@ class MainActivity : AppCompatActivity() {
         val savedRoute = selectedSavedRoute
         if (savedRoute == null || !RouteCatalog.isReadable(this, savedRoute)) {
             status.text = getString(R.string.saved_route_permission_missing)
-            mapButton.isEnabled = false
             return
         }
         val voice = NavigationPreferences.voice(this)
@@ -674,9 +873,14 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val KEY_SELECTED_ROUTE_URI = "selected_route_uri"
-        private const val KEY_SELECTED_ROUTE_SUMMARY = "selected_route_summary"
         private const val KEY_STATUS = "status"
         private const val KEY_PENDING_GUIDE_PREPARATION = "pending_guide_preparation"
+        private const val ROUTE_MENU_GROUP_ACTIONS = 1
+        private const val ROUTE_MENU_GROUP_DELETE = 2
+        private const val ROUTE_MENU_MAP = 101
+        private const val ROUTE_MENU_DETAILS = 102
+        private const val ROUTE_MENU_RENAME = 103
+        private const val ROUTE_MENU_DELETE = 104
         // Drive and local document providers frequently expose GPX as
         // application/octet-stream or omit a MIME type. The content is still
         // validated as GPX after selection, so the picker can safely be broad.

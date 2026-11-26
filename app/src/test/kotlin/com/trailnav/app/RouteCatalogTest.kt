@@ -6,43 +6,92 @@ import kotlin.test.assertNull
 
 class RouteCatalogTest {
     @Test
-    fun sameHashReplacesUriWithoutAddingDuplicate() {
-        val routes = mutableListOf(
-            SavedRoute("content://old", "old.gpx", "abc123", 1_000.0, 10L),
+    fun sameHashPreservesUserNameAndExistingExtendedMetadata() {
+        val existing = SavedRoute(
+            uri = "content://old",
+            displayName = "Custom trail",
+            sha256 = "abc123",
+            lengthMeters = 1_000.0,
+            addedAt = 10L,
+            elevationReason = "absent",
+            waypointCount = 2,
+            wideGapCount = 1,
+            originalFileName = "source-old.gpx",
+            closed = false,
         )
-        val selected = RouteCatalog.upsert(
+        val routes = mutableListOf(existing)
+
+        val refreshed = RouteCatalog.upsert(
             routes,
-            SavedRoute("content://new", "new.gpx", "abc123", 1_100.0, 20L, "ok", 4),
+            SavedRoute(
+                uri = "content://new",
+                displayName = "new-file.gpx",
+                sha256 = "abc123",
+                lengthMeters = 1_100.0,
+                addedAt = 20L,
+                elevationReason = "ok",
+                waypointCount = 4,
+                wideGapCount = 3,
+                originalFileName = "source-new.gpx",
+                closed = true,
+            ),
         )
 
         assertEquals(1, routes.size)
-        assertEquals("content://new", selected.uri)
-        assertEquals("new.gpx", routes.single().displayName)
-        assertEquals(10L, routes.single().addedAt)
-        assertEquals("ok", routes.single().elevationReason)
-        assertEquals(4, routes.single().waypointCount)
+        assertEquals("content://new", refreshed.uri)
+        assertEquals("Custom trail", refreshed.displayName)
+        assertEquals(1_100.0, refreshed.lengthMeters)
+        assertEquals(10L, refreshed.addedAt)
+        assertEquals("ok", refreshed.elevationReason)
+        assertEquals(4, refreshed.waypointCount)
+        assertEquals(3, refreshed.wideGapCount)
+        assertEquals("source-old.gpx", refreshed.originalFileName)
+        assertEquals(false, refreshed.closed)
+        assertEquals(refreshed, routes.single())
     }
 
     @Test
-    fun wideGapCountSurvivesSaveAndLoadAndLegacyRoutesLoadAsNull() {
-        val original = SavedRoute("content://route", "trail.gpx", "abc123", 1_000.0, 10L, "ok", 2, 3)
+    fun sameHashFillsMissingExtendedMetadata() {
+        val routes = mutableListOf(SavedRoute("content://old", "old.gpx", "abc123", 1_000.0, 10L))
+
+        val refreshed = RouteCatalog.upsert(
+            routes,
+            SavedRoute(
+                uri = "content://new",
+                displayName = "new.gpx",
+                sha256 = "abc123",
+                lengthMeters = 1_100.0,
+                addedAt = 20L,
+                originalFileName = "new.gpx",
+                closed = true,
+            ),
+        )
+
+        assertEquals("old.gpx", refreshed.displayName)
+        assertEquals("new.gpx", refreshed.originalFileName)
+        assertEquals(true, refreshed.closed)
+        assertEquals(10L, refreshed.addedAt)
+    }
+
+    @Test
+    fun extendedFieldsRoundTripAndLegacyFieldsDefaultToNull() {
+        val original = SavedRoute(
+            "content://route", "trail.gpx", "abc123", 1_000.0, 10L,
+            "ok", 2, 3, "trail.gpx", false,
+        )
         val stored = RouteCatalog.encodeStoredRoute(original)
 
         assertEquals(original, RouteCatalog.decodeStoredRoute(stored))
-        assertNull(RouteCatalog.decodeStoredRoute(stored - "gap100")?.wideGapCount)
+        assertEquals(null, RouteCatalog.decodeStoredRoute(stored - "gap100")?.wideGapCount)
 
-        val routes = mutableListOf(original)
-        val refreshed = RouteCatalog.upsert(
-            routes,
-            original.copy(uri = "content://refreshed", wideGapCount = 5),
-        )
-        assertEquals(1, routes.size)
-        assertEquals(5, refreshed.wideGapCount)
-        assertEquals(5, routes.single().wideGapCount)
+        val legacy = RouteCatalog.decodeStoredRoute(stored - "origName" - "closed")
+        assertEquals(null, legacy?.originalFileName)
+        assertEquals(null, legacy?.closed)
+        assertEquals(original.copy(originalFileName = null, closed = null), legacy)
     }
 
     @Test
-    fun newHashAppendsAndMissingPermissionIsExplicit() {
+    fun newHashAppendsWithoutDuplicate() {
         val routes = mutableListOf<SavedRoute>()
         val selected = RouteCatalog.upsert(
             routes,
@@ -50,34 +99,30 @@ class RouteCatalogTest {
         )
 
         assertEquals(selected, routes.single())
-        assertEquals("8.99 km · sha256:def456", RouteCatalog.detailLine(selected, readable = true))
-        assertEquals(
-            "8.99 km · sha256:def456 · 다시 가져오기 필요",
-            RouteCatalog.detailLine(selected, readable = false),
+    }
+
+    @Test
+    fun renameTrimsAndOnlyChangesTheDisplayName() {
+        val original = SavedRoute(
+            "content://route", "trail.gpx", "def456", 8_990.0, 30L,
+            "ok", 4, 2, "source.gpx", true,
         )
+        val otherRoute = original.copy(uri = "content://other", displayName = "New route")
+
+        val renamed = RouteCatalog.rename(listOf(original, otherRoute), original.uri, "  New route  ")
+
+        assertEquals(original.copy(displayName = "New route"), renamed)
     }
 
     @Test
-    fun infoLevelLabelCoversElevationStatesAndWaypointSuffix() {
-        assertEquals("정보 확인 필요(다시 가져오기)", RouteCatalog.infoLevelLabel(null, null))
-        assertEquals("위치정보만", RouteCatalog.infoLevelLabel("absent", 0))
-        assertEquals("고도 일부 누락 · 지점 3개", RouteCatalog.infoLevelLabel("partial", 3))
-        assertEquals("고도 불안정(미사용)", RouteCatalog.infoLevelLabel("unstable", null))
-        assertEquals("위치+고도", RouteCatalog.infoLevelLabel("ok", 0))
-    }
+    fun renameRejectsBlankOrMissingRouteAndLimitsUnicodeCodePoints() {
+        val route = SavedRoute("content://route", "trail.gpx", "abc", 100.0, 1L)
+        assertNull(RouteCatalog.rename(listOf(route), route.uri, "   "))
+        assertNull(RouteCatalog.rename(listOf(route), "content://missing", "Valid"))
 
-    @Test
-    fun infoLevelLabelAddsWaypointCountOnlyWhenKnownAndPositive() {
-        assertEquals("위치+고도 · 지점 2개", RouteCatalog.infoLevelLabel("ok", 2))
-        assertEquals("위치+고도", RouteCatalog.infoLevelLabel("ok", 0))
-        assertEquals("위치+고도", RouteCatalog.infoLevelLabel("ok", null))
-        assertEquals("정보 확인 필요(다시 가져오기)", RouteCatalog.infoLevelLabel(null, 4))
-    }
-
-    @Test
-    fun wideGapLineShownOnlyWhenPositive() {
-        assertEquals("위치+고도\n점 간격 100m 초과 2곳", RouteCatalog.infoLevelLabel("ok", 0, 2))
-        assertEquals("위치+고도", RouteCatalog.infoLevelLabel("ok", 0, 0))
-        assertEquals("위치+고도", RouteCatalog.infoLevelLabel("ok", 0, null))
+        val tooLong = "A".repeat(59) + "😀" + "B"
+        val renamed = RouteCatalog.rename(listOf(route), route.uri, tooLong)
+        assertEquals("A".repeat(59) + "😀", renamed?.displayName)
+        assertEquals(60, renamed?.displayName?.let(RouteNameRules::codePointCount))
     }
 }

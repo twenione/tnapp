@@ -25,6 +25,16 @@ internal class DeveloperActivity : AppCompatActivity() {
                 NavigationPreferences.saveImuCollectEnabled(this@DeveloperActivity, checked)
             }
         })
+        val savedRoutes = RouteCatalog.load(this)
+        content.addView(TextView(this).apply {
+            text = "저장된 경로"
+            gravity = Gravity.CENTER_VERTICAL
+        })
+        content.addView(TextView(this).apply {
+            text = if (savedRoutes.isEmpty()) "없음" else savedRoutes.joinToString("\n") { route ->
+                "${route.displayName} · sha256:${route.sha256.take(12)} · 점 간격 100m 초과 ${route.wideGapCount ?: "?"}곳 · 지점 ${route.waypointCount ?: "?"}개 · 고도 ${route.elevationReason ?: "?"}"
+            }
+        })
         setContentView(content)
     }
 }
