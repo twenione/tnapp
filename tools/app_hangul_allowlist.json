@@ -25,9 +25,9 @@
     "retire": "다른 언어가 정해질 때"
   },
   "app/src/main/kotlin/com/trailnav/app/RouteCatalog.kt": {
-    "lines": 11,
+    "lines": 2,
     "reason": "목록 · 상세 문구(순수 함수)",
-    "retire": "P5-2 가 이 문구를 다시 만들 때 옮기거나 숫자를 낮춘다"
+    "retire": "남은 2줄은 기본 이름 상수, 영구"
   },
   "app/src/main/kotlin/com/trailnav/app/RouteImportWarning.kt": {
     "lines": 5,
@@ -40,7 +40,7 @@
     "retire": "P5-3 (리본 단순화)"
   },
   "app/src/main/kotlin/com/trailnav/app/DeveloperActivity.kt": {
-    "lines": 2,
+    "lines": 5,
     "reason": "개발자 화면의 고정 진단 문구 (D-266 예외)",
     "retire": "영구"
   },
