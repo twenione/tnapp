@@ -1,9 +1,11 @@
 package com.trailnav.app
 
-enum class RoutePreparationStage(val wireName: String, val label: String) {
-    PREPARING("preparing", "안내를 준비중"),
-    START_FOUND("start-found", "시작점 잡힘"),
-    DIRECTION_CONFIRMED("direction-confirmed", "경로 방향 잡힘 (안내를 시작합니다)");
+import androidx.annotation.StringRes
+
+enum class RoutePreparationStage(val wireName: String, @param:StringRes val labelRes: Int) {
+    PREPARING("preparing", R.string.route_preparation_preparing),
+    START_FOUND("start-found", R.string.route_preparation_start_found),
+    DIRECTION_CONFIRMED("direction-confirmed", R.string.route_preparation_direction_confirmed);
 
     companion object {
         fun fromWire(value: String?): RoutePreparationStage =

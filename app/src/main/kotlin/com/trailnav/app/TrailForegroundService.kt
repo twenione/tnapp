@@ -260,7 +260,7 @@ class TrailForegroundService : Service() {
         startForegroundCompat()
         publishServiceState()
         publishRoutePreparation(RoutePreparationStage.PREPARING)
-        enqueueVoice("안내를 준비중입니다.", source = "system")
+        enqueueVoice(getString(R.string.service_voice_preparing), source = "system")
         logger?.appendSystem(
             "service.started",
             mapOf("provider" to "fused", "interval_ms" to "1000", "battery_pct" to batteryPercent()),
@@ -574,7 +574,7 @@ class TrailForegroundService : Service() {
             else -> RoutePreparationStage.DIRECTION_CONFIRMED
         }
         if (nextPreparation != previousPreparation) publishRoutePreparation(nextPreparation)
-        if (decision.startupJustResolved) enqueueVoice("안내를 시작합니다", source = "system")
+        if (decision.startupJustResolved) enqueueVoice(getString(R.string.service_voice_starting), source = "system")
         publishRouteRibbon(location, decision)
         val guidance = decision.result.guidance
         val currentOffRoute = decision.result.nextState.offRoute
@@ -730,7 +730,7 @@ class TrailForegroundService : Service() {
     }
 
     private fun startForegroundCompat() {
-        val notification = notification("측위 준비 중")
+        val notification = notification(getString(R.string.notification_location_preparing))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         } else {
@@ -740,12 +740,12 @@ class TrailForegroundService : Service() {
 
     private fun updateNotification(guidance: Guidance?) {
         val message = when (guidance) {
-            is Guidance.OffRoute -> "경로에서 ${"%.0f".format(guidance.distance)}m 이탈"
-            is Guidance.Approach -> "경로까지 ${"%.0f".format(guidance.distanceMeters)}m"
-            Guidance.Arrived -> "목적지에 도착했습니다"
-            Guidance.ArrivedAtStart -> "출발지에 도착했습니다"
-            is Guidance.Status -> if (guidance.isReverseStatus()) "경로를 안내하는 중" else guidance.message
-            else -> "경로를 안내하는 중"
+            is Guidance.OffRoute -> getString(R.string.notification_off_route, "%.0f".format(guidance.distance))
+            is Guidance.Approach -> getString(R.string.notification_approach, "%.0f".format(guidance.distanceMeters))
+            Guidance.Arrived -> getString(R.string.notification_arrived)
+            Guidance.ArrivedAtStart -> getString(R.string.notification_arrived_at_start)
+            is Guidance.Status -> if (guidance.isReverseStatus()) getString(R.string.notification_guidance_in_progress) else guidance.message
+            else -> getString(R.string.notification_guidance_in_progress)
         }
         NotificationManagerCompat.from(this).notify(
             NOTIFICATION_ID,
@@ -841,7 +841,7 @@ class TrailForegroundService : Service() {
 
     private fun notification(text: String, showPauseAction: Boolean = false): Notification {
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("TrailNav")
+            .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setOngoing(true)
@@ -854,7 +854,7 @@ class TrailForegroundService : Service() {
             builder.addAction(notificationAction(ACTION_NOTIFICATION_PAUSE, 1004, "안내 일시중지"))
         }
         if (sessionStarted && imuCollectEnabled) {
-            builder.addAction(notificationAction(ACTION_NOTIFICATION_MARK, 1005, "흔들기 표시"))
+            builder.addAction(notificationAction(ACTION_NOTIFICATION_MARK, 1005, getString(R.string.notification_shake_mark)))
         }
         return builder.build()
     }
@@ -1058,7 +1058,7 @@ class TrailForegroundService : Service() {
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "TrailNav 안내", NotificationManager.IMPORTANCE_LOW))
+        manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, getString(R.string.notification_channel_name), NotificationManager.IMPORTANCE_LOW))
     }
 
     private fun publishRoutePreparation(stage: RoutePreparationStage) {

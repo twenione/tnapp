@@ -279,9 +279,12 @@ class RouteOrientationTest {
 
     @Test
     fun preparationStageLabelsAreShortAndExplicit() {
-        assertEquals("안내를 준비중", RoutePreparationStage.PREPARING.label)
-        assertEquals("시작점 잡힘", RoutePreparationStage.START_FOUND.label)
-        assertEquals("경로 방향 잡힘 (안내를 시작합니다)", RoutePreparationStage.DIRECTION_CONFIRMED.label)
+        assertEquals(R.string.route_preparation_preparing, RoutePreparationStage.PREPARING.labelRes)
+        assertEquals("안내를 준비중", TestStrings.text("route_preparation_preparing"))
+        assertEquals(R.string.route_preparation_start_found, RoutePreparationStage.START_FOUND.labelRes)
+        assertEquals("시작점 잡힘", TestStrings.text("route_preparation_start_found"))
+        assertEquals(R.string.route_preparation_direction_confirmed, RoutePreparationStage.DIRECTION_CONFIRMED.labelRes)
+        assertEquals("경로 방향 잡힘 (안내를 시작합니다)", TestStrings.text("route_preparation_direction_confirmed"))
         assertEquals(RoutePreparationStage.PREPARING, RoutePreparationStage.fromWire("unknown"))
     }
 

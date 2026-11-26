@@ -22,6 +22,7 @@ FAST_JOBS = (
     "replay",
     "replay-determinism",
     "core-guide-build",
+    "app-string-literals",
 )
 JOB_HEADER = re.compile(r"^  ([A-Za-z0-9_-]+):$")
 

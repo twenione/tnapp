@@ -1,21 +1,23 @@
 package com.trailnav.app
 
+import androidx.annotation.StringRes
+
 import com.trailnav.core.GuideConfig
 
 /** User-facing guidance events. Defaults are fixed by D-062. */
 internal enum class GuideEvent(
     val id: String,
-    val label: String,
+    @param:StringRes val labelRes: Int,
     val defaultEnabled: Boolean,
 ) {
-    MILESTONE("E1", "이정표 (1km마다)", false),
-    ELAPSED("E2", "경과 시간 (1시간마다)", false),
-    REMAINING("E3", "남은 거리 (2·1·0.5km)", true),
-    SLOPE("E4", "정점 도착 예고", true),
-    ELEVATION("E5", "고도 통과 (100m마다)", false),
-    WAYPOINT("E6", "지점 접근 (이름 있는 지점)", true),
-    SUNSET("E7", "일몰 안내 (안전 안내)", true),
-    SUNRISE("E8", "일출 안내", true),
+    MILESTONE("E1", R.string.event_milestone, false),
+    ELAPSED("E2", R.string.event_elapsed, false),
+    REMAINING("E3", R.string.event_remaining, true),
+    SLOPE("E4", R.string.event_slope, true),
+    ELEVATION("E5", R.string.event_elevation, false),
+    WAYPOINT("E6", R.string.event_waypoint, true),
+    SUNSET("E7", R.string.event_sunset, true),
+    SUNRISE("E8", R.string.event_sunrise, true),
 }
 
 /** Immutable E1–E8 selection, independent of Android preferences and views. */
@@ -81,7 +83,7 @@ internal fun guideConfigFor(eventSettings: EventSettings, roundTripEnabled: Bool
 
 /** Pure dialog mapping keeps the Android multi-choice UI easy to verify. */
 internal object EventSettingsUi {
-    fun labels(): List<String> = GuideEvent.values().map { it.label }
+    fun labels(resolve: (Int) -> String): List<String> = GuideEvent.values().map { event -> resolve(event.labelRes) }
 
     fun checkedItems(settings: EventSettings): BooleanArray = settings.toCheckedItems()
 

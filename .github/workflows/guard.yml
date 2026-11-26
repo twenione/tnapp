@@ -13,6 +13,17 @@ permissions:
   contents: read
 
 jobs:
+  app-string-literals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python tools/check_app_hangul_literals.py
+      - run: python tools/test_check_app_hangul_literals.py
+
   purity:
     runs-on: ubuntu-latest
     timeout-minutes: 15
