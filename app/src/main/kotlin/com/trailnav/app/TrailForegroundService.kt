@@ -51,10 +51,6 @@ class TrailForegroundService : Service() {
     private var currentGuideConfig: GuideConfig? = null
     private var previousOffRoute = false
     private var sessionStarted = false
-    private var paused = false
-    private var offRoutePausePrompted = false
-    private val pauseAvailability = GuidancePauseAvailability()
-    private val pausedRecoveryNotificationState = PausedRecoveryNotificationState()
     private var endReason = "service-destroy"
     private var activeSessionId: String? = null
     private var lastLocation: TrailLocation? = null
@@ -117,15 +113,7 @@ class TrailForegroundService : Service() {
                 publishServiceState()
                 return START_STICKY
             }
-            ACTION_PAUSE_GUIDANCE, ACTION_NOTIFICATION_PAUSE -> {
-                if (sessionStarted) pauseGuidance(intent.getStringExtra(EXTRA_ACTION_SOURCE) ?: "notification")
-                return START_STICKY
-            }
-            ACTION_RESUME_GUIDANCE, ACTION_NOTIFICATION_RESUME -> {
-                if (sessionStarted) resumeGuidance(intent.getStringExtra(EXTRA_ACTION_SOURCE) ?: "notification")
-                return START_STICKY
-            }
-            ACTION_END_GUIDANCE, ACTION_NOTIFICATION_END -> {
+            ACTION_END_GUIDANCE -> {
                 if (sessionStarted) {
                     beginUserEnd(startId)
                 }
@@ -226,10 +214,6 @@ class TrailForegroundService : Service() {
         currentRoute = parsedRoute
         currentGuideConfig = config
         previousOffRoute = false
-        paused = false
-        pausedRecoveryNotificationState.onResume()
-        pauseAvailability.reset()
-        offRoutePausePrompted = false
         endReason = "service-destroy"
         ending = false
         endStartId = null
@@ -582,23 +566,15 @@ class TrailForegroundService : Service() {
             previousOffRoute = previousOffRoute,
             currentOffRoute = currentOffRoute,
         )
-        if (!previousOffRoute && currentOffRoute) pausedRecoveryNotificationState.onNewOffRouteEntry()
-        if (recoveryPrompt != null && paused) pausedRecoveryNotificationState.onRecovery(paused = true)
-        updateOffRoutePauseAvailability(currentOffRoute)
         previousOffRoute = currentOffRoute
         refreshPendingVoiceTurns(decision.result.nextState)
         val startEtaSeconds = if (guidance is Guidance.Remaining && guidance.returnLeg) {
             guideSession?.startEstimate()?.remainingSeconds
         } else null
         val spoken = guidance.toSpeech(decision.result.nextState, startEtaSeconds)
-        val guidanceVoiceKind = voiceKindFor(guidance)
-        val guidanceVoiceAllowed = shouldSpeakVoice(ending, paused, guidanceVoiceKind)
-        val recoveryVoiceAllowed = shouldSpeakVoice(ending, paused, VoiceKind.RECOVERY)
+        val speakAllowed = !ending
         val gpsAccuracyRejected = decision.result.reason.rule == "input.accuracy-filter"
-        val periodic = if (paused) {
-            onRouteVoiceScheduler?.reset()
-            false
-        } else onRouteVoiceScheduler?.onFrame(
+        val periodic = onRouteVoiceScheduler?.onFrame(
             // Provider timestamps can be stale or repeat across batched fixes.
             // Cadence is an app playback concern, so use a monotonic clock for
             // the one-minute/three-minute/five-minute interval.
@@ -611,8 +587,8 @@ class TrailForegroundService : Service() {
             arrived = decision.result.nextState.arrived,
         ) == true
         val frameSpeech = listOfNotNull(
-            spoken?.takeIf { guidanceVoiceAllowed },
-            recoveryPrompt?.takeIf { recoveryVoiceAllowed },
+            spoken?.takeIf { speakAllowed },
+            recoveryPrompt?.takeIf { speakAllowed },
         ).joinToString(" ").ifBlank { null }
         logger?.appendEnvelope(location, "guide", "decision")
         logger?.appendGuide(
@@ -622,26 +598,10 @@ class TrailForegroundService : Service() {
             requireNotNull(sourceSeq),
             trigger = null,
         )
-        if (paused) {
-            listOfNotNull(
-                spoken?.takeIf { !guidanceVoiceAllowed }?.let { guidanceVoiceKind to it },
-                recoveryPrompt?.takeIf { !recoveryVoiceAllowed }?.let { VoiceKind.RECOVERY to it },
-            ).forEach { (kind, _) ->
-                logger?.appendSystem(
-                    "voice.suppressed",
-                    mapOf(
-                        "type" to kind.name.lowercase(),
-                        "reason" to "paused",
-                    ),
-                )
-            }
-            if (guidanceVoiceAllowed && !spoken.isNullOrBlank()) {
-                enqueueGuidanceVoice(guidance, decision.result.reason.rule, spoken)
-            }
-        } else if (!spoken.isNullOrBlank()) {
+        if (!spoken.isNullOrBlank()) {
             enqueueGuidanceVoice(guidance, decision.result.reason.rule, spoken)
         }
-        if (recoveryVoiceAllowed && recoveryPrompt != null) {
+        if (speakAllowed && recoveryPrompt != null) {
             logger?.appendSystem(
                 "voice.recovered",
                 mapOf("prompt" to recoveryPrompt),
@@ -653,7 +613,7 @@ class TrailForegroundService : Service() {
                 protected = true,
             )
         }
-        if (!ending && !paused && periodic && onRouteVoiceMode == NavigationPreferences.PeriodicVoiceMode.TONE) {
+        if (!ending && periodic && onRouteVoiceMode == NavigationPreferences.PeriodicVoiceMode.TONE) {
             logger?.appendSystem("voice.on-route-tone", mapOf("mode" to "TONE"))
             tonePlayer?.play(ToneSynth.periodicSignal())
         }
@@ -705,9 +665,6 @@ class TrailForegroundService : Service() {
         currentRoute = null
         currentGuideConfig = null
         previousOffRoute = false
-        paused = false
-        pauseAvailability.reset()
-        offRoutePausePrompted = false
         activeSessionId = null
         lastLocation = null
         lastLocationSeq = null
@@ -749,49 +706,8 @@ class TrailForegroundService : Service() {
         }
         NotificationManagerCompat.from(this).notify(
             NOTIFICATION_ID,
-            notification(
-                if (paused) pausedRecoveryNotificationState.recoveryTextOrNull() ?: "안내 일시중지 중" else message,
-                showPauseAction = !paused && offRoutePausePrompted,
-            ),
+            notification(message),
         )
-    }
-
-    private fun pauseGuidance(source: String) {
-        if (ending) return
-        if (paused) return
-        enqueueVoice("안내를 일시중지했습니다", source = "system")
-        paused = true
-        pausedRecoveryNotificationState.onPause()
-        onRouteVoiceScheduler?.reset()
-        logger?.appendSystem("guidance.paused", mapOf("source" to source))
-        NavigationPreferences.setState(this, NavigationPreferences.STATE_PAUSED, activeSessionId)
-        publishServiceState()
-        updateNotification(null)
-    }
-
-    private fun resumeGuidance(source: String) {
-        if (ending) return
-        if (!paused) return
-        paused = false
-        pausedRecoveryNotificationState.onResume()
-        enqueueVoice("안내를 다시 시작합니다", source = "system")
-        onRouteVoiceScheduler?.reset()
-        logger?.appendSystem("guidance.resumed", mapOf("source" to source))
-        NavigationPreferences.setState(this, NavigationPreferences.STATE_RUNNING, activeSessionId)
-        publishServiceState()
-        updateNotification(null)
-    }
-
-    private fun updateOffRoutePauseAvailability(offRoute: Boolean) {
-        if (ending) return
-        val now = SystemClock.elapsedRealtime()
-        if (!offRoute) offRoutePausePrompted = false
-        if (!paused && pauseAvailability.onFrame(offRoute, now)) {
-            offRoutePausePrompted = true
-            logger?.appendSystem("guidance.pause-available")
-            enqueueVoice("안내를 멈추려면 알림에서 일시중지를 누르세요", source = "system")
-            updateNotification(null)
-        }
     }
 
     private fun announceGpsSignal(event: GpsSignalEvent) {
@@ -802,14 +718,7 @@ class TrailForegroundService : Service() {
                 mapOf("accuracy_m" to event.accuracyMeters.toString()),
             )
         }
-        if (!shouldSpeakVoice(ending, paused, VoiceKind.GPS)) {
-            logger?.appendSystem(
-                "voice.suppressed",
-                mapOf("type" to "gps", "reason" to "paused"),
-            )
-        } else {
-            enqueueVoice(event.toSpeechPrompt(), source = "gps")
-        }
+        enqueueVoice(event.toSpeechPrompt(), source = "gps")
     }
 
     private fun publishRouteRibbon(location: TrailLocation, decision: SessionDecision) {
@@ -839,7 +748,7 @@ class TrailForegroundService : Service() {
         )
     }
 
-    private fun notification(text: String, showPauseAction: Boolean = false): Notification {
+    private fun notification(text: String): Notification {
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
@@ -847,12 +756,6 @@ class TrailForegroundService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-        if (paused) {
-            builder.addAction(notificationAction(ACTION_NOTIFICATION_RESUME, 1002, "안내 재개"))
-            builder.addAction(notificationAction(ACTION_NOTIFICATION_END, 1003, "종료"))
-        } else if (showPauseAction) {
-            builder.addAction(notificationAction(ACTION_NOTIFICATION_PAUSE, 1004, "안내 일시중지"))
-        }
         if (sessionStarted && imuCollectEnabled) {
             builder.addAction(notificationAction(ACTION_NOTIFICATION_MARK, 1005, getString(R.string.notification_shake_mark)))
         }
@@ -945,7 +848,7 @@ class TrailForegroundService : Service() {
         onDemandRouter.takeSuppressedEvents().forEach(::appendShakeCooldownSuppression)
         val accepted = decision.acceptedSource
         if (accepted == null) return
-        logger?.appendSystem("ondemand.request", mapOf("source" to source.wireName, "paused" to paused.toString()))
+        logger?.appendSystem("ondemand.request", mapOf("source" to source.wireName))
         tonePlayer?.play(ToneSynth.acknowledgement())
         val session = guideSession
         val location = lastLocation
@@ -955,7 +858,7 @@ class TrailForegroundService : Service() {
         ) {
             val text = GuidancePhrases.noLocationStatus()
             enqueueOnDemandVoice(text)
-            logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-location", "paused" to paused.toString()))
+            logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-location"))
             return
         }
         val snapshot = session.snapshot()
@@ -963,7 +866,7 @@ class TrailForegroundService : Service() {
         if (status == null) {
             val text = GuidancePhrases.noLocationStatus()
             enqueueOnDemandVoice(text)
-            logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-match", "paused" to paused.toString()))
+            logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "no-match"))
             return
         }
         val responseStatus = if (!snapshot.hasEnteredRoute && status.offRouteDistanceMeters == null) {
@@ -996,7 +899,7 @@ class TrailForegroundService : Service() {
         )
         logger?.appendGuide(location, result, text, sourceSeq, trigger = "on-demand")
         enqueueOnDemandVoice(text)
-        logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "route-status", "paused" to paused.toString()))
+        logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "route-status"))
     }
 
     private fun enqueueOnDemandVoice(text: String) {
@@ -1093,12 +996,7 @@ class TrailForegroundService : Service() {
         const val ACTION_SERVICE_STATE_UPDATE = "com.trailnav.app.SERVICE_STATE_UPDATE"
         const val ACTION_UPDATE_ON_ROUTE_VOICE = "com.trailnav.app.UPDATE_ON_ROUTE_VOICE"
         const val ACTION_QUERY_SERVICE_STATE = "com.trailnav.app.QUERY_SERVICE_STATE"
-        const val ACTION_PAUSE_GUIDANCE = "com.trailnav.app.PAUSE_GUIDANCE"
-        const val ACTION_RESUME_GUIDANCE = "com.trailnav.app.RESUME_GUIDANCE"
         const val ACTION_END_GUIDANCE = "com.trailnav.app.END_GUIDANCE"
-        const val ACTION_NOTIFICATION_PAUSE = "com.trailnav.app.NOTIFICATION_PAUSE"
-        const val ACTION_NOTIFICATION_RESUME = "com.trailnav.app.NOTIFICATION_RESUME"
-        const val ACTION_NOTIFICATION_END = "com.trailnav.app.NOTIFICATION_END"
         const val ACTION_NOTIFICATION_MARK = "com.trailnav.app.NOTIFICATION_MARK"
         const val EXTRA_RIBBON_DISTANCE_METERS = "ribbon_distance_meters"
         const val EXTRA_RIBBON_SIGNED_OFFSET_METERS = "ribbon_signed_offset_meters"

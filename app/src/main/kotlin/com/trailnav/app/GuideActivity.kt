@@ -22,7 +22,6 @@ internal class GuideActivity : AppCompatActivity() {
     private lateinit var gpsIndicator: TextView
     private lateinit var routeRibbon: RouteRibbonView
     private lateinit var navigationState: TextView
-    private lateinit var pauseResumeButton: Button
     private lateinit var voiceControls: OnRouteVoiceControls
     private var lastServiceState: String? = null
 
@@ -75,16 +74,6 @@ internal class GuideActivity : AppCompatActivity() {
             isGuidanceActive = { NavigationPreferences.state(this) != NavigationPreferences.STATE_IDLE },
             onActiveSelectionChanged = { sendServiceAction(TrailForegroundService.ACTION_UPDATE_ON_ROUTE_VOICE) },
         )
-        pauseResumeButton = Button(this).apply {
-            text = getString(R.string.guidance_pause)
-            setOnClickListener {
-                if (NavigationPreferences.state(this@GuideActivity) == NavigationPreferences.STATE_PAUSED) {
-                    sendServiceAction(TrailForegroundService.ACTION_RESUME_GUIDANCE)
-                } else {
-                    sendServiceAction(TrailForegroundService.ACTION_PAUSE_GUIDANCE)
-                }
-            }
-        }
         val endButton = Button(this).apply {
             text = getString(R.string.guidance_end)
             setOnClickListener {
@@ -105,7 +94,6 @@ internal class GuideActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (250 * resources.displayMetrics.density).toInt()),
         )
         root.addView(voiceControls.view)
-        root.addView(pauseResumeButton)
         root.addView(endButton)
         setContentView(root)
 
@@ -161,17 +149,9 @@ internal class GuideActivity : AppCompatActivity() {
         when (state) {
             NavigationPreferences.STATE_RUNNING -> {
                 navigationState.text = getString(R.string.guidance_running)
-                pauseResumeButton.visibility = android.view.View.VISIBLE
-                pauseResumeButton.text = getString(R.string.guidance_pause)
-            }
-            NavigationPreferences.STATE_PAUSED -> {
-                navigationState.text = getString(R.string.guidance_paused)
-                pauseResumeButton.visibility = android.view.View.VISIBLE
-                pauseResumeButton.text = getString(R.string.guidance_resume)
             }
             else -> {
                 navigationState.text = getString(R.string.guidance_waiting)
-                pauseResumeButton.visibility = android.view.View.GONE
                 finish()
             }
         }

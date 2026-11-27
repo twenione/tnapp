@@ -36,12 +36,9 @@
     <string name="guidance_running">안내 중</string>
     <string name="gps_waiting">GPS 대기</string>
     <string name="gps_signal_state_description">GPS 신호 상태</string>
-    <string name="guidance_pause">안내 일시중지</string>
     <string name="guidance_end">안내 종료</string>
     <string name="guidance_end_confirmation">안내를 종료하시겠습니까?</string>
     <string name="guidance_end_action">종료</string>
-    <string name="guidance_paused">안내 일시중지 중</string>
-    <string name="guidance_resume">안내 재개</string>
     <string name="guidance_waiting">안내 대기 중</string>
     <string name="gps_quality_good">좋음</string>
     <string name="gps_quality_normal">보통</string>

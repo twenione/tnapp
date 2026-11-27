@@ -4,9 +4,7 @@ package com.trailnav.app
 internal enum class AppScreen { HOME, GUIDE }
 
 internal fun screenFor(serviceState: String?): AppScreen =
-    if (serviceState == NavigationPreferences.STATE_RUNNING ||
-        serviceState == NavigationPreferences.STATE_PAUSED
-    ) AppScreen.GUIDE else AppScreen.HOME
+    if (serviceState == NavigationPreferences.STATE_RUNNING) AppScreen.GUIDE else AppScreen.HOME
 
 /** Counts taps for a hidden entry and fires at most once before reset. */
 internal class TapCounter(private val target: Int = 7) {

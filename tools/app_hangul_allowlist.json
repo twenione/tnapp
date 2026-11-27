@@ -45,8 +45,8 @@
     "retire": "영구"
   },
   "app/src/main/kotlin/com/trailnav/app/TrailForegroundService.kt": {
-    "lines": 11,
-    "reason": "일시중지 문구 7줄(753 · 762 · 777 · 792 · 851 · 852 · 854, D-264 정리 PR 에서 지워질 것), 엔진 문구 비교 1줄(1127 isReverseStatus), GPS 안내 음성 3줄(1163 ~ 1165 toSpeechPrompt, 순수 함수)",
-    "retire": "7줄은 일시중지 정리 PR, 4줄은 다른 언어가 정해질 때"
+    "lines": 4,
+    "reason": "엔진 문구 비교 1줄(isReverseStatus), GPS 안내 음성 3줄(toSpeechPrompt, 순수 함수)",
+    "retire": "다른 언어가 정해질 때"
   }
 }
