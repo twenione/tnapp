@@ -13,10 +13,10 @@
     <string name="main_guidance_settings">안내 설정</string>
     <string name="item_selected">%1$s 선택됨</string>
     <string name="saved_route_permission_missing">이 경로의 파일 권한이 없습니다. 다시 가져오기 필요</string>
-    <string name="saved_route_remove_title">목록에서 제거</string>
-    <string name="saved_route_remove_confirmation">%1$s을(를) 목록에서 제거하시겠습니까?</string>
+    <string name="saved_route_delete_title">경로 삭제</string>
+    <string name="saved_route_delete_confirmation">%1$s을(를) 삭제하시겠습니까?</string>
     <string name="common_cancel">취소</string>
-    <string name="common_remove">제거</string>
+    <string name="common_delete">삭제</string>
     <string name="map_app_picker_title">지도 앱 선택</string>
     <string name="map_open_success">%1$s에서 열었습니다 (방식: %2$s·%3$s)</string>
     <string name="map_open_failure">%1$s에서 열 수 없습니다 (%2$s)</string>
@@ -102,6 +102,7 @@
     <string name="route_row_actions_description">%1$s 메뉴</string>
     <string name="route_menu_details">상세 정보</string>
     <string name="route_rename">이름 바꾸기</string>
+    <string name="route_rename_name_taken">이미 같은 이름의 경로가 있어요</string>
     <string name="route_menu_delete">삭제</string>
     <string name="route_detail_close">닫기</string>
     <string name="route_detail_label_length">길이</string>
@@ -128,4 +129,5 @@
     <string name="start_mode_title">어떻게 안내할까요?</string>
     <string name="start_mode_one_way">편도 · 도착지까지 한 번</string>
     <string name="start_mode_round_trip">왕복 · 갔다가 출발지로 돌아와요</string>
+    <string name="route_import_already_exists">이미 가져온 경로입니다: %1$s</string>
 </resources>

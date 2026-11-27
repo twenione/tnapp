@@ -8,6 +8,26 @@ internal object RouteNameRules {
 
     fun trimAndLimit(value: String): String = limitCodePoints(value.trim(), MAX_LENGTH)
 
+    fun uniqueName(base: String, existing: Collection<String>): String {
+        val normalizedBase = trimAndLimit(base)
+        fun isTaken(candidate: String): Boolean = existing.any {
+            trimAndLimit(it).equals(candidate, ignoreCase = true)
+        }
+
+        if (!isTaken(normalizedBase)) return normalizedBase
+        var suffixNumber = 2
+        while (true) {
+            val suffix = " ($suffixNumber)"
+            val prefix = limitCodePoints(
+                normalizedBase,
+                MAX_LENGTH - codePointCount(suffix),
+            )
+            val candidate = prefix + suffix
+            if (!isTaken(candidate)) return candidate
+            suffixNumber++
+        }
+    }
+
     fun limitCodePoints(value: String, maxLength: Int): String {
         require(maxLength >= 0)
         val codePointCount = codePointCount(value)

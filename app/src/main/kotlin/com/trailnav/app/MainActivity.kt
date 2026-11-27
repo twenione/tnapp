@@ -148,9 +148,13 @@ class MainActivity : AppCompatActivity() {
             } catch (_: SecurityException) {
                 // Some providers do not offer persistable grants; the current session can still use the URI.
             }
+            val alreadyImported = savedRoutes.any { it.sha256 == imported.sha256 }
             val selected = RouteCatalog.upsert(savedRoutes, imported)
             RouteCatalog.save(this, savedRoutes, selected.uri)
             selectSavedRoute(selected)
+            if (alreadyImported && status.text.isEmpty()) {
+                status.text = getString(R.string.route_import_already_exists, selected.displayName)
+            }
             routeListAdapter.notifyDataSetChanged()
             importWarning?.let { warning ->
                 androidx.appcompat.app.AlertDialog.Builder(this)
@@ -190,6 +194,7 @@ class MainActivity : AppCompatActivity() {
         header.addView(Button(this).apply {
             text = getString(R.string.main_home_export)
             setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_menu_recent_history, 0, 0, 0)
+            compoundDrawableTintList = android.content.res.ColorStateList.valueOf(currentTextColor)
             compoundDrawablePadding = dp(4f)
             minWidth = dp(48f)
             minHeight = dp(48f)
@@ -200,6 +205,7 @@ class MainActivity : AppCompatActivity() {
         header.addView(Button(this).apply {
             text = getString(R.string.main_home_settings)
             setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_menu_preferences, 0, 0, 0)
+            compoundDrawableTintList = android.content.res.ColorStateList.valueOf(currentTextColor)
             compoundDrawablePadding = dp(4f)
             minWidth = dp(48f)
             minHeight = dp(48f)
@@ -213,8 +219,16 @@ class MainActivity : AppCompatActivity() {
         startButton = Button(this).apply {
             text = getString(R.string.main_start_guidance)
             minHeight = dp(60f)
-            backgroundTintList = android.content.res.ColorStateList.valueOf(0xff1f6b45.toInt())
-            setTextColor(Color.WHITE)
+            backgroundTintList = android.content.res.ColorStateList(
+                arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()),
+                intArrayOf(START_DISABLED_BACKGROUND, START_ENABLED_BACKGROUND),
+            )
+            setTextColor(
+                android.content.res.ColorStateList(
+                    arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()),
+                    intArrayOf(START_DISABLED_TEXT, Color.WHITE),
+                ),
+            )
             isEnabled = false
             setOnClickListener { ensurePermissionAndStart() }
         }
@@ -353,10 +367,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun confirmRemoveSavedRoute(route: SavedRoute) {
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(getString(R.string.saved_route_remove_title))
-            .setMessage(getString(R.string.saved_route_remove_confirmation, route.displayName))
+            .setTitle(getString(R.string.saved_route_delete_title))
+            .setMessage(getString(R.string.saved_route_delete_confirmation, route.displayName))
             .setNegativeButton(getString(R.string.common_cancel), null)
-            .setPositiveButton(getString(R.string.common_remove)) { _, _ -> removeSavedRoute(route) }
+            .setPositiveButton(getString(R.string.common_delete)) { _, _ -> removeSavedRoute(route) }
             .show()
     }
 
@@ -439,10 +453,20 @@ class MainActivity : AppCompatActivity() {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
                 override fun afterTextChanged(value: Editable?) {
+                    input.error = null
                     saveButton.isEnabled = !value.isNullOrBlank()
                 }
             })
             saveButton.setOnClickListener {
+                val requestedName = RouteNameRules.trimAndLimit(input.text.toString())
+                val keepsCurrentName = requestedName.equals(
+                    RouteNameRules.trimAndLimit(route.displayName),
+                    ignoreCase = true,
+                )
+                if (!keepsCurrentName && RouteCatalog.isNameTaken(savedRoutes, route.uri, requestedName)) {
+                    input.error = getString(R.string.route_rename_name_taken)
+                    return@setOnClickListener
+                }
                 val renamed = RouteCatalog.rename(savedRoutes, route.uri, input.text.toString()) ?: return@setOnClickListener
                 val index = savedRoutes.indexOfFirst { it.uri == route.uri }
                 if (index < 0) return@setOnClickListener
@@ -512,13 +536,13 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton(getString(R.string.route_detail_close), null)
             .setPositiveButton(getString(R.string.main_view_map)) { _, _ -> openRouteInMap(currentRoute) }
             .create()
+        dialog.window?.apply {
+            setGravity(Gravity.BOTTOM)
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
         dialog.setOnShowListener {
             dialog.getButton(android.content.DialogInterface.BUTTON_NEGATIVE).minimumHeight = dp(48f)
             dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).minimumHeight = dp(48f)
-            dialog.window?.apply {
-                setGravity(Gravity.BOTTOM)
-                setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            }
         }
         dialog.show()
     }
@@ -1000,11 +1024,9 @@ class MainActivity : AppCompatActivity() {
             if (startModeDialog === dialog) startModeDialog = null
             if (startFlowInProgress) finishStartFlow()
         }
-        dialog.setOnShowListener {
-            dialog.window?.apply {
-                setGravity(Gravity.BOTTOM)
-                setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            }
+        dialog.window?.apply {
+            setGravity(Gravity.BOTTOM)
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
         dialog.show()
         dialog.setCanceledOnTouchOutside(true)
@@ -1046,6 +1068,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        private val START_ENABLED_BACKGROUND = 0xff1f6b45.toInt()
+        private val START_DISABLED_BACKGROUND = 0xffc3cbc7.toInt()
+        private val START_DISABLED_TEXT = 0xff66706b.toInt()
         private const val KEY_SELECTED_ROUTE_URI = "selected_route_uri"
         private const val KEY_STATUS = "status"
         private const val KEY_PENDING_GUIDE_PREPARATION = "pending_guide_preparation"

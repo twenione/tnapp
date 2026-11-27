@@ -107,11 +107,67 @@ class RouteCatalogTest {
             "content://route", "trail.gpx", "def456", 8_990.0, 30L,
             "ok", 4, 2, "source.gpx", true,
         )
-        val otherRoute = original.copy(uri = "content://other", displayName = "New route")
+        val otherRoute = original.copy(uri = "content://other", displayName = "Other route")
 
         val renamed = RouteCatalog.rename(listOf(original, otherRoute), original.uri, "  New route  ")
 
         assertEquals(original.copy(displayName = "New route"), renamed)
+    }
+
+    @Test
+    fun renameRejectsNameUsedByAnotherRoute() {
+        val route = SavedRoute("content://route", "Mine", "abc", 100.0, 1L)
+        val other = SavedRoute("content://other", "Taken", "def", 100.0, 2L)
+        val routes = listOf(route, other)
+
+        assertNull(RouteCatalog.rename(routes, route.uri, "Taken"))
+        assertNull(RouteCatalog.rename(routes, route.uri, "  taken  "))
+    }
+
+    @Test
+    fun renameToOwnCurrentNameIsAllowed() {
+        val route = SavedRoute("content://route", "Trail", "abc", 100.0, 1L)
+        val legacyDuplicate = route.copy(uri = "content://legacy-duplicate")
+
+        assertEquals(route, RouteCatalog.rename(listOf(route, legacyDuplicate), route.uri, route.displayName))
+    }
+
+    @Test
+    fun isNameTakenExcludesTheRouteItself() {
+        val route = SavedRoute("content://route", "Trail", "abc", 100.0, 1L)
+        val other = route.copy(uri = "content://other")
+
+        assertEquals(false, RouteCatalog.isNameTaken(listOf(route), route.uri, "Trail"))
+        assertEquals(true, RouteCatalog.isNameTaken(listOf(route, other), route.uri, "Trail"))
+    }
+
+    @Test
+    fun newHashWithTakenNameGetsNumberedSuffix() {
+        val first = SavedRoute("content://first", "X", "first", 100.0, 1L)
+        val routes = mutableListOf(first)
+
+        val second = RouteCatalog.upsert(routes, SavedRoute("content://second", "X", "second", 100.0, 2L))
+        val third = RouteCatalog.upsert(routes, SavedRoute("content://third", "X", "third", 100.0, 3L))
+
+        assertEquals("X (2)", second.displayName)
+        assertEquals("X (3)", third.displayName)
+        assertEquals(3, routes.size)
+    }
+
+    @Test
+    fun sameHashKeepsStoredNameEvenWhenAnotherRouteSharesIt() {
+        val first = SavedRoute("content://first", "Shared", "first", 100.0, 1L)
+        val second = SavedRoute("content://second", "Shared", "second", 200.0, 2L)
+        val routes = mutableListOf(first, second)
+
+        val refreshed = RouteCatalog.upsert(
+            routes,
+            SavedRoute("content://first-new", "Incoming", "first", 110.0, 3L),
+        )
+
+        assertEquals(2, routes.size)
+        assertEquals("Shared", refreshed.displayName)
+        assertEquals(listOf("Shared", "Shared"), routes.map { it.displayName })
     }
 
     @Test
