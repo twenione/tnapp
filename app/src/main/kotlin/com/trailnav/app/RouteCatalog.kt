@@ -73,8 +73,11 @@ internal object RouteCatalog {
     fun upsert(routes: MutableList<SavedRoute>, incoming: SavedRoute): SavedRoute {
         val duplicateIndex = routes.indexOfFirst { it.sha256 == incoming.sha256 }
         if (duplicateIndex < 0) {
-            routes.add(incoming)
-            return incoming
+            val unique = incoming.copy(
+                displayName = RouteNameRules.uniqueName(incoming.displayName, routes.map { it.displayName }),
+            )
+            routes.add(unique)
+            return unique
         }
         val existing = routes[duplicateIndex]
         val refreshed = existing.copy(
@@ -100,7 +103,20 @@ internal object RouteCatalog {
         val normalizedName = RouteNameRules.trimAndLimit(newName)
         if (normalizedName.isEmpty()) return null
         val route = routes.firstOrNull { it.uri == uri } ?: return null
+        val keepsCurrentName = normalizedName.equals(
+            RouteNameRules.trimAndLimit(route.displayName),
+            ignoreCase = true,
+        )
+        if (!keepsCurrentName && isNameTaken(routes, excludeUri = uri, name = normalizedName)) return null
         return route.copy(displayName = normalizedName)
+    }
+
+    fun isNameTaken(routes: List<SavedRoute>, excludeUri: String?, name: String): Boolean {
+        val normalizedName = RouteNameRules.trimAndLimit(name)
+        return routes.any { route ->
+            route.uri != excludeUri &&
+                RouteNameRules.trimAndLimit(route.displayName).equals(normalizedName, ignoreCase = true)
+        }
     }
 
     internal fun encodeStoredRoute(route: SavedRoute): Map<String, Any> = buildMap {
