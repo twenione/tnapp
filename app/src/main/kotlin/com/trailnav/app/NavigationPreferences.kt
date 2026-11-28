@@ -17,6 +17,7 @@ internal object NavigationPreferences {
     private const val KEY_ROUND_TRIP_ENABLED = "round_trip_enabled"
     private const val KEY_SERVICE_STATE = "service_state"
     private const val KEY_ACTIVE_SESSION_ID = "active_session_id"
+    private const val KEY_ACTIVE_ROUTE_NAME = "active_route_name"
 
     enum class PeriodicVoiceMode {
         OFF,
@@ -105,6 +106,16 @@ internal object NavigationPreferences {
             .apply()
     }
 
+    fun activeRouteName(context: Context): String? = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .getString(KEY_ACTIVE_ROUTE_NAME, null)
+
+    fun saveActiveRouteName(context: Context, routeName: String?) {
+        val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        if (routeName.isNullOrBlank()) editor.remove(KEY_ACTIVE_ROUTE_NAME)
+        else editor.putString(KEY_ACTIVE_ROUTE_NAME, routeName)
+        editor.apply()
+    }
+
     fun eventSettings(context: Context): EventSettings {
         val storedValues = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).all
             .mapValues { (_, value) -> value as? Boolean }
@@ -126,6 +137,7 @@ internal object NavigationPreferences {
             .apply {
                 if (state == STATE_IDLE || activeSessionId == null) remove(KEY_ACTIVE_SESSION_ID)
                 else putString(KEY_ACTIVE_SESSION_ID, activeSessionId)
+                if (state == STATE_IDLE) remove(KEY_ACTIVE_ROUTE_NAME)
             }
             .apply()
     }

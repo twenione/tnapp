@@ -29,6 +29,8 @@ internal fun routeRibbonStateFromIntent(intent: Intent): RouteRibbonState = Rout
     closedRoute = intent.getBooleanExtra(TrailForegroundService.EXTRA_RIBBON_CLOSED_ROUTE, false),
     targetRemainingMeters = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_TARGET_REMAINING_METERS, -1.0)
         .takeIf { it >= 0.0 },
+    targetRemainingSeconds = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_TARGET_REMAINING_SECONDS, -1.0)
+        .takeIf { it >= 0.0 },
     nextTurn = intent.getDoubleExtra(TrailForegroundService.EXTRA_RIBBON_NEXT_TURN_DISTANCE_METERS, -1.0)
         .takeIf { it >= 0.0 }
         ?.let { distance ->

@@ -321,6 +321,7 @@ class MainActivity : AppCompatActivity() {
             finishStartFlow()
         }
         refreshStartButtonEnabled()
+        voiceControls.render()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -1063,6 +1064,7 @@ class MainActivity : AppCompatActivity() {
         startFlowAwaitingExternalResult = false
         startFlowAwaitingSettingsCheck = false
         NavigationPreferences.saveRoundTripEnabled(this, roundTripEnabled)
+        NavigationPreferences.saveActiveRouteName(this, savedRoute.displayName)
         ContextCompat.startForegroundService(this, intent)
         status.text = getString(R.string.guidance_service_started)
     }

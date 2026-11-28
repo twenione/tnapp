@@ -368,7 +368,7 @@ class RouteStatusRibbonConsistencyTest {
         val expected = setOf(
             "perpendicularDistanceMeters", "signedOffsetMeters", "direction", "offRoute",
             "enterBandMeters", "exitBandMeters", "accuracyRadiusMeters", "remainingDistanceMeters", "nextTurn",
-            "targetKind", "targetRemainingMeters", "targetLabelKind", "targetName",
+            "targetKind", "targetRemainingMeters", "targetRemainingSeconds", "targetLabelKind", "targetName",
             "roundTripLeg", "closedRoute",
         )
         assertEquals(expected, fields)

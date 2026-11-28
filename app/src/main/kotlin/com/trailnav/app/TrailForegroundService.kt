@@ -49,6 +49,12 @@ class TrailForegroundService : Service() {
     private var onRouteVoiceMode = NavigationPreferences.PeriodicVoiceMode.OFF
     private var currentRoute: RouteModel? = null
     private var currentGuideConfig: GuideConfig? = null
+    private var lastRibbonState: RouteRibbonState? = null
+    private var lastGuideStatus: GuideStatusValues? = null
+    private var lastWaitingDistanceMeters: Double? = null
+    private var statusBroadcastSeen = false
+    private var lastNotificationTitle: String? = null
+    private var lastNotificationContent: String? = null
     private var previousOffRoute = false
     private var sessionStarted = false
     private var endReason = "service-destroy"
@@ -126,6 +132,10 @@ class TrailForegroundService : Service() {
                         logger?.appendSystem("imu.mark", mapOf("t_ms" to timestamp.toString()))
                     }
                 }
+                return START_STICKY
+            }
+            ACTION_ON_DEMAND_NOW -> {
+                if (sessionStarted && !ending) handleOnDemand(OnDemandSource.BUTTON)
                 return START_STICKY
             }
         }
@@ -213,6 +223,12 @@ class TrailForegroundService : Service() {
         guideSession = GuideSession(parsedRoute, config, startupEnabled = true)
         currentRoute = parsedRoute
         currentGuideConfig = config
+        lastRibbonState = null
+        lastGuideStatus = null
+        lastWaitingDistanceMeters = null
+        statusBroadcastSeen = false
+        lastNotificationTitle = null
+        lastNotificationContent = null
         previousOffRoute = false
         endReason = "service-destroy"
         ending = false
@@ -559,7 +575,10 @@ class TrailForegroundService : Service() {
         }
         if (nextPreparation != previousPreparation) publishRoutePreparation(nextPreparation)
         if (decision.startupJustResolved) enqueueVoice(getString(R.string.service_voice_starting), source = "system")
-        publishRouteRibbon(location, decision)
+        val ribbon = calculateRouteRibbon(location, decision)
+        if (ribbon != null) lastRibbonState = ribbon
+        publishGuideStatus(decision.result)
+        if (ribbon != null) publishRouteRibbon(ribbon)
         val guidance = decision.result.guidance
         val currentOffRoute = decision.result.nextState.offRoute
         val recoveryPrompt = recoveryVoicePrompt(
@@ -664,6 +683,10 @@ class TrailForegroundService : Service() {
         logger = null
         currentRoute = null
         currentGuideConfig = null
+        lastRibbonState = null
+        lastGuideStatus = null
+        lastWaitingDistanceMeters = null
+        statusBroadcastSeen = false
         previousOffRoute = false
         activeSessionId = null
         lastLocation = null
@@ -687,7 +710,10 @@ class TrailForegroundService : Service() {
     }
 
     private fun startForegroundCompat() {
-        val notification = notification(getString(R.string.notification_location_preparing))
+        val preparing = getString(R.string.notification_location_preparing)
+        lastNotificationTitle = preparing
+        lastNotificationContent = ""
+        val notification = notification(preparing, "")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         } else {
@@ -696,17 +722,20 @@ class TrailForegroundService : Service() {
     }
 
     private fun updateNotification(guidance: Guidance?) {
-        val message = when (guidance) {
-            is Guidance.OffRoute -> getString(R.string.notification_off_route, "%.0f".format(guidance.distance))
-            is Guidance.Approach -> getString(R.string.notification_approach, "%.0f".format(guidance.distanceMeters))
+        if (!statusBroadcastSeen) return
+        val presentation = GuideStatusText.present(requireNotNull(lastGuideStatus))
+        val title = when (guidance) {
             Guidance.Arrived -> getString(R.string.notification_arrived)
             Guidance.ArrivedAtStart -> getString(R.string.notification_arrived_at_start)
-            is Guidance.Status -> if (guidance.isReverseStatus()) getString(R.string.notification_guidance_in_progress) else guidance.message
-            else -> getString(R.string.notification_guidance_in_progress)
+            else -> resolveGuideText(presentation.summary)
         }
+        val content = resolveGuideText(presentation.notificationContent)
+        if (!GuideStatusText.shouldUpdateNotification(lastNotificationTitle, lastNotificationContent, title, content)) return
+        lastNotificationTitle = title
+        lastNotificationContent = content
         NotificationManagerCompat.from(this).notify(
             NOTIFICATION_ID,
-            notification(message),
+            notification(title, content),
         )
     }
 
@@ -721,11 +750,40 @@ class TrailForegroundService : Service() {
         enqueueVoice(event.toSpeechPrompt(), source = "gps")
     }
 
-    private fun publishRouteRibbon(location: TrailLocation, decision: SessionDecision) {
-        val route = currentRoute ?: return
-        val config = currentGuideConfig ?: return
+    private fun calculateRouteRibbon(location: TrailLocation, decision: SessionDecision): RouteRibbonState? {
+        val route = currentRoute ?: return null
+        val config = currentGuideConfig ?: return null
         val target = guideSession?.routeStatus()?.target
-        val ribbon = RouteRibbonCalculator.calculate(location, decision.result, route, config, target) ?: return
+        return RouteRibbonCalculator.calculate(location, decision.result, route, config, target)
+    }
+
+    private fun publishGuideStatus(result: GuideResult) {
+        val nextState = result.nextState
+        val waiting = nextState.waitingForRoute
+        val distanceMeters = GuideStatusText.waitingDistanceMeters(result)
+        lastWaitingDistanceMeters = GuideStatusText.retainWaitingDistance(
+            previousMeters = lastWaitingDistanceMeters,
+            waiting = waiting,
+            latestMeters = distanceMeters,
+        )
+        val values = GuideStatusValues(
+            ribbon = lastRibbonState,
+            waiting = waiting,
+            startupPending = nextState.startupEnabled && !nextState.startupResolved,
+            waitingDistanceMeters = lastWaitingDistanceMeters,
+        )
+        lastGuideStatus = values
+        statusBroadcastSeen = true
+        sendBroadcast(
+            Intent(ACTION_GUIDE_STATUS_UPDATE)
+                .setPackage(packageName)
+                .putExtra(EXTRA_STATUS_WAITING, waiting)
+                .putExtra(EXTRA_STATUS_WAITING_DISTANCE_METERS, distanceMeters ?: -1.0)
+                .putExtra(EXTRA_STATUS_STARTUP_PENDING, values.startupPending),
+        )
+    }
+
+    private fun publishRouteRibbon(ribbon: RouteRibbonState) {
         sendBroadcast(
             Intent(ACTION_ROUTE_RIBBON_UPDATE)
                 .setPackage(packageName)
@@ -739,6 +797,7 @@ class TrailForegroundService : Service() {
                 .putExtra(EXTRA_RIBBON_REMAINING_METERS, ribbon.remainingDistanceMeters)
                 .putExtra(EXTRA_RIBBON_TARGET_KIND, ribbon.targetKind?.name.orEmpty())
                 .putExtra(EXTRA_RIBBON_TARGET_REMAINING_METERS, ribbon.targetRemainingMeters ?: -1.0)
+                .putExtra(EXTRA_RIBBON_TARGET_REMAINING_SECONDS, ribbon.targetRemainingSeconds ?: -1.0)
                 .putExtra(EXTRA_RIBBON_TARGET_LABEL_KIND, ribbon.targetLabelKind?.name.orEmpty())
                 .putExtra(EXTRA_RIBBON_TARGET_NAME, ribbon.targetName.orEmpty())
                 .putExtra(EXTRA_RIBBON_ROUND_TRIP_LEG, ribbon.roundTripLeg?.name.orEmpty())
@@ -748,14 +807,31 @@ class TrailForegroundService : Service() {
         )
     }
 
-    private fun notification(text: String): Notification {
+    private fun resolveGuideText(text: GuideText): String = getString(
+        text.resourceId,
+        *text.arguments.map { argument ->
+            if (argument is GuideText) resolveGuideText(argument) else argument
+        }.toTypedArray(),
+    )
+
+    private fun notification(title: String, content: String): Notification {
+        val contentIntent = android.app.PendingIntent.getActivity(
+            this,
+            1006,
+            Intent(this, GuideActivity::class.java).setFlags(
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP,
+            ),
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+        )
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText(text)
+            .setContentTitle(title)
+            .setContentText(content)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setContentIntent(contentIntent)
+        builder.addAction(notificationAction(ACTION_ON_DEMAND_NOW, 1007, getString(R.string.guide_on_demand_now)))
         if (sessionStarted && imuCollectEnabled) {
             builder.addAction(notificationAction(ACTION_NOTIFICATION_MARK, 1005, getString(R.string.notification_shake_mark)))
         }
@@ -998,6 +1074,11 @@ class TrailForegroundService : Service() {
         const val ACTION_QUERY_SERVICE_STATE = "com.trailnav.app.QUERY_SERVICE_STATE"
         const val ACTION_END_GUIDANCE = "com.trailnav.app.END_GUIDANCE"
         const val ACTION_NOTIFICATION_MARK = "com.trailnav.app.NOTIFICATION_MARK"
+        const val ACTION_ON_DEMAND_NOW = "com.trailnav.app.ON_DEMAND_NOW"
+        const val ACTION_GUIDE_STATUS_UPDATE = "com.trailnav.app.GUIDE_STATUS_UPDATE"
+        const val EXTRA_STATUS_WAITING = "guide_status_waiting"
+        const val EXTRA_STATUS_WAITING_DISTANCE_METERS = "guide_status_waiting_distance_meters"
+        const val EXTRA_STATUS_STARTUP_PENDING = "guide_status_startup_pending"
         const val EXTRA_RIBBON_DISTANCE_METERS = "ribbon_distance_meters"
         const val EXTRA_RIBBON_SIGNED_OFFSET_METERS = "ribbon_signed_offset_meters"
         const val EXTRA_RIBBON_DIRECTION = "ribbon_direction"
@@ -1008,6 +1089,7 @@ class TrailForegroundService : Service() {
         const val EXTRA_RIBBON_REMAINING_METERS = "ribbon_remaining_meters"
         const val EXTRA_RIBBON_TARGET_KIND = "ribbon_target_kind"
         const val EXTRA_RIBBON_TARGET_REMAINING_METERS = "ribbon_target_remaining_meters"
+        const val EXTRA_RIBBON_TARGET_REMAINING_SECONDS = "ribbon_target_remaining_seconds"
         const val EXTRA_RIBBON_TARGET_LABEL_KIND = "ribbon_target_label_kind"
         const val EXTRA_RIBBON_TARGET_NAME = "ribbon_target_name"
         const val EXTRA_RIBBON_ROUND_TRIP_LEG = "ribbon_round_trip_leg"

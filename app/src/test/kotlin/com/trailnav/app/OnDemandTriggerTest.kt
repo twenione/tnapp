@@ -124,6 +124,33 @@ class OnDemandTriggerTest {
     }
 
     @Test
+    fun buttonIsEnabledWithoutShakeAndPassesStopGateAndShakeCooldown() {
+        val router = OnDemandRequestRouter(OnDemandConfig(shakeEnabled = false))
+
+        assertTrue(router.isEnabled(OnDemandSource.BUTTON))
+        assertEquals(
+            OnDemandSource.BUTTON,
+            routeOnDemandRequest(OnDemandSource.BUTTON, 0L, StopGate(), router).acceptedSource,
+        )
+        assertEquals(
+            null,
+            routeOnDemandRequest(OnDemandSource.BUTTON, 1_499L, StopGate(), router).acceptedSource,
+        )
+        assertEquals(
+            OnDemandSource.BUTTON,
+            routeOnDemandRequest(OnDemandSource.BUTTON, 1_500L, StopGate(), router).acceptedSource,
+        )
+    }
+
+    @Test
+    fun buttonSkipsShakeCooldownButKeepsCommonDebounce() {
+        val router = OnDemandRequestRouter(OnDemandConfig())
+        assertEquals(OnDemandSource.SHAKE, router.accept(OnDemandSource.SHAKE, 0L))
+        assertEquals(OnDemandSource.BUTTON, router.accept(OnDemandSource.BUTTON, 1_500L))
+        assertEquals(OnDemandSource.BUTTON, router.accept(OnDemandSource.BUTTON, 3_000L))
+    }
+
+    @Test
     fun detectorAndStatsContinueDuringRouterCooldown() {
         val config = OnDemandConfig()
         val router = OnDemandRequestRouter(config)

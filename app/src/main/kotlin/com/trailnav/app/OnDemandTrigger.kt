@@ -2,7 +2,8 @@ package com.trailnav.app
 
 /** Sources that can request an on-demand navigation status. */
 enum class OnDemandSource(val wireName: String) {
-    SHAKE("shake");
+    SHAKE("shake"),
+    BUTTON("button");
 }
 
 /** Pure trigger settings kept at the app boundary; these are not engine parameters. */
@@ -258,7 +259,7 @@ class OnDemandRequestRouter(private val config: OnDemandConfig) {
     private var lastAcceptedShakeAtMillis: Long? = null
 
     fun isEnabled(source: OnDemandSource): Boolean =
-        source == OnDemandSource.SHAKE && config.shakeEnabled
+        source == OnDemandSource.BUTTON || (source == OnDemandSource.SHAKE && config.shakeEnabled)
 
     fun accept(source: OnDemandSource, timestampMillis: Long): OnDemandSource? {
         if (!isEnabled(source)) return null
