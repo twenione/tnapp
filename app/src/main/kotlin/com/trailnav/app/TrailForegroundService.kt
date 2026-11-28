@@ -24,6 +24,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.trailnav.core.GuideConfig
 import com.trailnav.core.Guidance
+import com.trailnav.core.Engine
 import com.trailnav.core.RouteModel
 import com.trailnav.core.GuideResult
 import com.trailnav.core.Reason
@@ -55,6 +56,9 @@ class TrailForegroundService : Service() {
     private var statusBroadcastSeen = false
     private var lastNotificationTitle: String? = null
     private var lastNotificationContent: String? = null
+    private var lastNotificationReturnAction = false
+    private var lastAcceptedReturnRequestAtMillis: Long? = null
+    private var lastSpokenText: String? = null
     private var previousOffRoute = false
     private var sessionStarted = false
     private var endReason = "service-destroy"
@@ -100,6 +104,7 @@ class TrailForegroundService : Service() {
             ACTION_QUERY_SERVICE_STATE -> {
                 if (!sessionStarted) NavigationPreferences.setState(this, NavigationPreferences.STATE_IDLE)
                 publishServiceState()
+                if (sessionStarted) publishLastSpokenText()
                 if (!sessionStarted) stopSelfResult(startId)
                 return START_NOT_STICKY
             }
@@ -136,6 +141,14 @@ class TrailForegroundService : Service() {
             }
             ACTION_ON_DEMAND_NOW -> {
                 if (sessionStarted && !ending) handleOnDemand(OnDemandSource.BUTTON)
+                return START_STICKY
+            }
+            ACTION_RETURN_GUIDANCE -> {
+                if (!sessionStarted) {
+                    stopSelfResult(startId)
+                    return START_NOT_STICKY
+                }
+                if (!ending) handleReturnRequest()
                 return START_STICKY
             }
         }
@@ -229,6 +242,9 @@ class TrailForegroundService : Service() {
         statusBroadcastSeen = false
         lastNotificationTitle = null
         lastNotificationContent = null
+        lastNotificationReturnAction = false
+        lastAcceptedReturnRequestAtMillis = null
+        lastSpokenText = null
         previousOffRoute = false
         endReason = "service-destroy"
         ending = false
@@ -258,6 +274,7 @@ class TrailForegroundService : Service() {
         sessionStarted = true
         NavigationPreferences.setState(this, NavigationPreferences.STATE_RUNNING, activeSessionId)
         startForegroundCompat()
+        publishSpokenText("")
         publishServiceState()
         publishRoutePreparation(RoutePreparationStage.PREPARING)
         enqueueVoice(getString(R.string.service_voice_preparing), source = "system")
@@ -443,6 +460,10 @@ class TrailForegroundService : Service() {
             return false
         }
         logVoiceDrops(result.dropped)
+        if (source == "guidance" || source == "ondemand") {
+            lastSpokenText = text
+            publishSpokenText(text)
+        }
         result.stopActive?.let { tts?.stop() }
         val controller = tts
         if (controller == null || !controller.isReady) controller?.reportPending()
@@ -687,12 +708,16 @@ class TrailForegroundService : Service() {
         lastGuideStatus = null
         lastWaitingDistanceMeters = null
         statusBroadcastSeen = false
+        lastNotificationReturnAction = false
+        lastAcceptedReturnRequestAtMillis = null
+        lastSpokenText = null
         previousOffRoute = false
         activeSessionId = null
         lastLocation = null
         lastLocationSeq = null
         sessionStarted = false
         NavigationPreferences.setState(this, NavigationPreferences.STATE_IDLE)
+        publishSpokenText("")
         publishServiceState()
         super.onDestroy()
     }
@@ -730,9 +755,19 @@ class TrailForegroundService : Service() {
             else -> resolveGuideText(presentation.summary)
         }
         val content = resolveGuideText(presentation.notificationContent)
-        if (!GuideStatusText.shouldUpdateNotification(lastNotificationTitle, lastNotificationContent, title, content)) return
+        val returnAction = sessionStarted && lastGuideStatus?.returnAvailable == true
+        if (!GuideStatusText.shouldUpdateNotification(
+                lastNotificationTitle,
+                lastNotificationContent,
+                title,
+                content,
+                previousReturnAction = lastNotificationReturnAction,
+                returnAction = returnAction,
+            )
+        ) return
         lastNotificationTitle = title
         lastNotificationContent = content
+        lastNotificationReturnAction = returnAction
         NotificationManagerCompat.from(this).notify(
             NOTIFICATION_ID,
             notification(title, content),
@@ -771,6 +806,7 @@ class TrailForegroundService : Service() {
             waiting = waiting,
             startupPending = nextState.startupEnabled && !nextState.startupResolved,
             waitingDistanceMeters = lastWaitingDistanceMeters,
+            returnAvailable = nextState.returnButtonActive,
         )
         lastGuideStatus = values
         statusBroadcastSeen = true
@@ -779,7 +815,8 @@ class TrailForegroundService : Service() {
                 .setPackage(packageName)
                 .putExtra(EXTRA_STATUS_WAITING, waiting)
                 .putExtra(EXTRA_STATUS_WAITING_DISTANCE_METERS, distanceMeters ?: -1.0)
-                .putExtra(EXTRA_STATUS_STARTUP_PENDING, values.startupPending),
+                .putExtra(EXTRA_STATUS_STARTUP_PENDING, values.startupPending)
+                .putExtra(EXTRA_STATUS_RETURN_AVAILABLE, values.returnAvailable),
         )
     }
 
@@ -831,9 +868,22 @@ class TrailForegroundService : Service() {
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setContentIntent(contentIntent)
-        builder.addAction(notificationAction(ACTION_ON_DEMAND_NOW, 1007, getString(R.string.guide_on_demand_now)))
-        if (sessionStarted && imuCollectEnabled) {
-            builder.addAction(notificationAction(ACTION_NOTIFICATION_MARK, 1005, getString(R.string.notification_shake_mark)))
+        val actionKinds = GuideStatusText.notificationActionKinds(
+            returnAvailable = sessionStarted && lastGuideStatus?.returnAvailable == true,
+            imuEnabled = sessionStarted && imuCollectEnabled,
+        )
+        actionKinds.forEach { kind ->
+            when (kind) {
+                NotificationActionKind.ON_DEMAND -> builder.addAction(
+                    notificationAction(ACTION_ON_DEMAND_NOW, 1007, getString(R.string.guide_on_demand_now)),
+                )
+                NotificationActionKind.RETURN -> builder.addAction(
+                    notificationAction(ACTION_RETURN_GUIDANCE, 1008, getString(R.string.guide_return_button)),
+                )
+                NotificationActionKind.SHAKE_MARK -> builder.addAction(
+                    notificationAction(ACTION_NOTIFICATION_MARK, 1005, getString(R.string.notification_shake_mark)),
+                )
+            }
         }
         return builder.build()
     }
@@ -978,6 +1028,26 @@ class TrailForegroundService : Service() {
         logger?.appendSystem("ondemand.response", mapOf("output_text" to text, "reason" to "route-status"))
     }
 
+    private fun handleReturnRequest() {
+        val timestamp = SystemClock.elapsedRealtime()
+        if (!shouldAcceptReturnRequest(lastAcceptedReturnRequestAtMillis, timestamp)) return
+        val session = guideSession ?: return
+        val config = currentGuideConfig ?: return
+        val result = Engine.returnGuidance(session.snapshot(), config) ?: return
+        val text = result.guidance.toSpeech() ?: return
+
+        lastAcceptedReturnRequestAtMillis = timestamp
+        tonePlayer?.play(ToneSynth.acknowledgement())
+        logger?.appendSystem("return.requested", result.reason.details)
+        enqueueVoice(
+            text = text,
+            source = "ondemand",
+            guidance = result.guidance,
+            reasonRule = "off-route.return-request",
+            onDemand = true,
+        )
+    }
+
     private fun enqueueOnDemandVoice(text: String) {
         val guidance = Guidance.Status(text)
         enqueueVoice(
@@ -1034,6 +1104,18 @@ class TrailForegroundService : Service() {
         )
     }
 
+    private fun publishLastSpokenText() {
+        lastSpokenText?.let(::publishSpokenText)
+    }
+
+    private fun publishSpokenText(text: String) {
+        sendBroadcast(
+            Intent(ACTION_GUIDE_SPOKEN_UPDATE)
+                .setPackage(packageName)
+                .putExtra(EXTRA_SPOKEN_TEXT, text),
+        )
+    }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(NotificationManager::class.java)
@@ -1075,10 +1157,14 @@ class TrailForegroundService : Service() {
         const val ACTION_END_GUIDANCE = "com.trailnav.app.END_GUIDANCE"
         const val ACTION_NOTIFICATION_MARK = "com.trailnav.app.NOTIFICATION_MARK"
         const val ACTION_ON_DEMAND_NOW = "com.trailnav.app.ON_DEMAND_NOW"
+        const val ACTION_RETURN_GUIDANCE = "com.trailnav.app.RETURN_GUIDANCE"
         const val ACTION_GUIDE_STATUS_UPDATE = "com.trailnav.app.GUIDE_STATUS_UPDATE"
+        const val ACTION_GUIDE_SPOKEN_UPDATE = "com.trailnav.app.GUIDE_SPOKEN_UPDATE"
         const val EXTRA_STATUS_WAITING = "guide_status_waiting"
         const val EXTRA_STATUS_WAITING_DISTANCE_METERS = "guide_status_waiting_distance_meters"
         const val EXTRA_STATUS_STARTUP_PENDING = "guide_status_startup_pending"
+        const val EXTRA_STATUS_RETURN_AVAILABLE = "guide_status_return_available"
+        const val EXTRA_SPOKEN_TEXT = "guide_spoken_text"
         const val EXTRA_RIBBON_DISTANCE_METERS = "ribbon_distance_meters"
         const val EXTRA_RIBBON_SIGNED_OFFSET_METERS = "ribbon_signed_offset_meters"
         const val EXTRA_RIBBON_DIRECTION = "ribbon_direction"
@@ -1110,10 +1196,9 @@ internal fun Guidance?.toSpeech(
     state: com.trailnav.core.GuideState? = null,
     startEtaSeconds: Double? = null,
 ): String? = when (this) {
-    is Guidance.OffRoute -> GuidancePhrases.offRoute(distance)
-    // TASK-128 supplies the user-facing return guidance phrases.
-    Guidance.ReturnHint -> null
-    is Guidance.ReturnGuide -> null
+    is Guidance.OffRoute -> GuidancePhrases.offRoute(distance, returnHint)
+    Guidance.ReturnHint -> GuidancePhrases.returnHintSentence()
+    is Guidance.ReturnGuide -> GuidancePhrases.returnGuide(backtrackMeters, straightMeters, compass)
     is Guidance.Approach -> GuidancePhrases.approach(distanceMeters, bearingDegrees)
     is Guidance.WaitingStart -> GuidancePhrases.waitingStart(distanceMeters)
     is Guidance.Status -> if (isReverseStatus()) null else message

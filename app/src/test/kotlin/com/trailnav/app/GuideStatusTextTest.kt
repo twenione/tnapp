@@ -172,6 +172,74 @@ class GuideStatusTextTest {
         assertTrue(GuideStatusText.shouldUpdateNotification("title", "body", "other", "body"))
         assertTrue(GuideStatusText.shouldUpdateNotification("title", "body", "title", "other"))
         assertTrue(GuideStatusText.shouldUpdateNotification(null, null, "title", "body"))
+        assertTrue(
+            GuideStatusText.shouldUpdateNotification(
+                "title", "body", "title", "body", previousReturnAction = false, returnAction = true,
+            ),
+        )
+        assertFalse(
+            GuideStatusText.shouldUpdateNotification(
+                "title", "body", "title", "body", previousReturnAction = true, returnAction = true,
+            ),
+        )
+    }
+
+    @Test
+    fun returnPromptHasPriorityOnlyForAnAvailableOffRouteReturnAction() {
+        val offRoute = GuideStatusText.present(
+            GuideStatusValues(ribbon = ribbon(offRoute = true), returnAvailable = true),
+        )
+        val prompt = assertNotNull(offRoute.returnPrompt)
+        assertEquals(TestStrings.text("guide_status_return_prompt"), render(prompt))
+        assertEquals(prompt, offRoute.notificationContent)
+
+        val unavailable = GuideStatusText.present(GuideStatusValues(ribbon = ribbon(offRoute = true)))
+        assertNull(unavailable.returnPrompt)
+        assertEquals(unavailable.remaining, unavailable.notificationContent)
+
+        val notOffRoute = GuideStatusText.present(
+            GuideStatusValues(ribbon = ribbon(offRoute = false), returnAvailable = true),
+        )
+        val waiting = GuideStatusText.present(
+            GuideStatusValues(ribbon = ribbon(offRoute = true), waiting = true, returnAvailable = true),
+        )
+        val directionConfirming = GuideStatusText.present(
+            GuideStatusValues(
+                ribbon = ribbon(offRoute = true, direction = ProgressDirection.UNKNOWN),
+                returnAvailable = true,
+            ),
+        )
+        assertNull(notOffRoute.returnPrompt)
+        assertNull(waiting.returnPrompt)
+        assertNull(directionConfirming.returnPrompt)
+    }
+
+    @Test
+    fun returnActionIsDebouncedForFifteenHundredMillisecondsAndRejectsClockReversal() {
+        assertTrue(shouldAcceptReturnRequest(null, 0L))
+        assertFalse(shouldAcceptReturnRequest(0L, 1_499L))
+        assertTrue(shouldAcceptReturnRequest(0L, 1_500L))
+        assertFalse(shouldAcceptReturnRequest(1_500L, 1_499L))
+    }
+
+    @Test
+    fun notificationActionKindsKeepTheSpecifiedOrderForAllAvailabilityCombinations() {
+        assertEquals(
+            listOf(NotificationActionKind.ON_DEMAND),
+            GuideStatusText.notificationActionKinds(returnAvailable = false, imuEnabled = false),
+        )
+        assertEquals(
+            listOf(NotificationActionKind.ON_DEMAND, NotificationActionKind.RETURN),
+            GuideStatusText.notificationActionKinds(returnAvailable = true, imuEnabled = false),
+        )
+        assertEquals(
+            listOf(NotificationActionKind.ON_DEMAND, NotificationActionKind.SHAKE_MARK),
+            GuideStatusText.notificationActionKinds(returnAvailable = false, imuEnabled = true),
+        )
+        assertEquals(
+            listOf(NotificationActionKind.ON_DEMAND, NotificationActionKind.RETURN, NotificationActionKind.SHAKE_MARK),
+            GuideStatusText.notificationActionKinds(returnAvailable = true, imuEnabled = true),
+        )
     }
 
     @Test
@@ -227,6 +295,7 @@ class GuideStatusTextTest {
         R.string.guide_status_waiting_distance -> "guide_status_waiting_distance"
         R.string.guide_status_direction_confirming -> "guide_status_direction_confirming"
         R.string.guide_status_off_route -> "guide_status_off_route"
+        R.string.guide_status_return_prompt -> "guide_status_return_prompt"
         R.string.guide_status_on_route -> "guide_status_on_route"
         R.string.guide_status_on_route_turn -> "guide_status_on_route_turn"
         R.string.guide_waiting_hint -> "guide_waiting_hint"
