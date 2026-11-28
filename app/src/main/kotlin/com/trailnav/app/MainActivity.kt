@@ -321,6 +321,7 @@ class MainActivity : AppCompatActivity() {
             finishStartFlow()
         }
         refreshStartButtonEnabled()
+        voiceControls.render()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
