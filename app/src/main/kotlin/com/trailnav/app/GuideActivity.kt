@@ -35,6 +35,9 @@ internal class GuideActivity : AppCompatActivity() {
     private lateinit var offRouteLine: TextView
     private lateinit var remainingLine: TextView
     private lateinit var auxiliaryLine: TextView
+    private lateinit var lastSpokenPanel: LinearLayout
+    private lateinit var lastSpokenLine: TextView
+    private lateinit var returnButton: Button
     private lateinit var toneButton: Button
     private var lastServiceState: String? = null
     private var lastRibbonState: RouteRibbonState? = null
@@ -42,6 +45,8 @@ internal class GuideActivity : AppCompatActivity() {
     private var lastStatusStartupPending = true
     private var lastStatusBroadcastReceived = false
     private var lastWaitingDistanceMeters: Double? = null
+    private var lastStatusReturnAvailable = false
+    private var lastSpokenText: String? = null
 
     private val serviceReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: android.content.Context, intent: Intent) {
@@ -81,8 +86,17 @@ internal class GuideActivity : AppCompatActivity() {
                         TrailForegroundService.EXTRA_STATUS_STARTUP_PENDING,
                         false,
                     )
+                    lastStatusReturnAvailable = intent.getBooleanExtra(
+                        TrailForegroundService.EXTRA_STATUS_RETURN_AVAILABLE,
+                        false,
+                    )
                     lastStatusBroadcastReceived = true
                     renderGuideStatus()
+                }
+                TrailForegroundService.ACTION_GUIDE_SPOKEN_UPDATE -> {
+                    lastSpokenText = intent.getStringExtra(TrailForegroundService.EXTRA_SPOKEN_TEXT)
+                        ?.takeIf(String::isNotBlank)
+                    renderLastSpokenText()
                 }
             }
         }
@@ -126,6 +140,19 @@ internal class GuideActivity : AppCompatActivity() {
         offRouteLine = statusTextView(30f)
         remainingLine = statusTextView(30f)
         auxiliaryLine = statusTextView(16f)
+        lastSpokenLine = statusTextView(16f).apply {
+            maxLines = 3
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        lastSpokenPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(this@GuideActivity).apply {
+                text = getString(R.string.guide_last_spoken_title)
+                textSize = 14f
+            })
+            addView(lastSpokenLine, marginParams(top = 4))
+            visibility = View.GONE
+        }
         statusCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(14), dp(16), dp(14))
@@ -142,6 +169,13 @@ internal class GuideActivity : AppCompatActivity() {
         }
         routeRibbon = RouteRibbonView(this).apply {
             minimumHeight = dp(220)
+        }
+        returnButton = Button(this).apply {
+            text = getString(R.string.guide_return_button)
+            minHeight = dp(60)
+            contentDescription = getString(R.string.guide_return_button_accessibility)
+            visibility = View.GONE
+            setOnClickListener { sendServiceAction(TrailForegroundService.ACTION_RETURN_GUIDANCE) }
         }
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -182,12 +216,14 @@ internal class GuideActivity : AppCompatActivity() {
 
         root.addView(headerRow, marginParams(bottom = 10))
         root.addView(statusCard, marginParams(bottom = 10))
+        root.addView(lastSpokenPanel, marginParams(bottom = 10))
         root.addView(
             routeRibbon,
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(250)).apply {
                 bottomMargin = dp(10)
             },
         )
+        root.addView(returnButton, marginParams(bottom = 10))
         root.addView(controls)
         val scroll = ScrollView(this).apply {
             isFillViewport = true
@@ -223,6 +259,7 @@ internal class GuideActivity : AppCompatActivity() {
             addAction(TrailForegroundService.ACTION_ROUTE_PREPARATION_UPDATE)
             addAction(TrailForegroundService.ACTION_GPS_SIGNAL_UPDATE)
             addAction(TrailForegroundService.ACTION_SERVICE_STATE_UPDATE)
+            addAction(TrailForegroundService.ACTION_GUIDE_SPOKEN_UPDATE)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(serviceReceiver, filter, RECEIVER_NOT_EXPORTED)
@@ -248,11 +285,16 @@ internal class GuideActivity : AppCompatActivity() {
             lastStatusStartupPending = true
             lastStatusBroadcastReceived = false
             lastWaitingDistanceMeters = null
+            lastStatusReturnAvailable = false
             updateGpsIndicator(0.0)
             renderGuideStatus()
         }
         lastServiceState = state
         if (state != NavigationPreferences.STATE_RUNNING) {
+            lastStatusReturnAvailable = false
+            lastSpokenText = null
+            renderLastSpokenText()
+            renderGuideStatus()
             finish()
         }
         updateRouteHeader()
@@ -265,6 +307,7 @@ internal class GuideActivity : AppCompatActivity() {
             waiting = lastStatusWaiting,
             startupPending = if (lastStatusBroadcastReceived) lastStatusStartupPending else true,
             waitingDistanceMeters = lastWaitingDistanceMeters,
+            returnAvailable = lastStatusReturnAvailable,
         )
         val presentation = GuideStatusText.present(values)
         statusSummary.text = resolveGuideText(presentation.summary)
@@ -279,8 +322,18 @@ internal class GuideActivity : AppCompatActivity() {
         setVisibleText(nextTurnLine, presentation.nextTurn?.let(::resolveGuideText))
         setVisibleText(offRouteLine, presentation.offRouteDistance?.let(::resolveGuideText))
         setVisibleText(remainingLine, presentation.remaining?.let(::resolveGuideText))
-        setVisibleText(auxiliaryLine, presentation.auxiliary?.let(::resolveGuideText))
+        setVisibleText(
+            auxiliaryLine,
+            (presentation.returnPrompt ?: presentation.auxiliary)?.let(::resolveGuideText),
+        )
+        returnButton.visibility = if (lastStatusReturnAvailable) View.VISIBLE else View.GONE
         updateRouteHeader()
+    }
+
+    private fun renderLastSpokenText() {
+        if (!::lastSpokenPanel.isInitialized) return
+        lastSpokenLine.text = lastSpokenText.orEmpty()
+        lastSpokenPanel.visibility = if (lastSpokenText == null) View.GONE else View.VISIBLE
     }
 
     private fun setVisibleText(view: TextView, text: String?) {

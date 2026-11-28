@@ -1,6 +1,6 @@
 {
   "app/src/main/kotlin/com/trailnav/app/GuidancePhrases.kt": {
-    "lines": 62,
+    "lines": 73,
     "reason": "음성 · 상태 문구의 단일 원천(순수 함수), 정확한 문구 시험 다수",
     "retire": "다른 언어가 정해질 때"
   },

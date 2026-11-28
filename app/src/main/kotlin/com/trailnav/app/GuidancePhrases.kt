@@ -3,6 +3,7 @@ package com.trailnav.app
 import com.trailnav.core.ProgressDirection
 import com.trailnav.core.RouteStatus
 import com.trailnav.core.RouteTargetEstimate
+import com.trailnav.core.Compass8
 import com.trailnav.core.TargetLabelKind
 import com.trailnav.core.Side
 import com.trailnav.core.SlopeKind
@@ -17,7 +18,31 @@ enum class DistanceTimeMode {
 
 /** Single source of truth for spoken guidance and on-demand status wording. */
 object GuidancePhrases {
-    fun offRoute(distanceMeters: Double): String = "경로를 벗어났습니다. ${formatDistance(distanceMeters)}"
+    fun returnHintSentence(): String = "복귀 안내가 필요하면 버튼을 누르세요"
+
+    fun offRoute(distanceMeters: Double, returnHint: Boolean = false): String = buildString {
+        append("경로를 벗어났습니다. ${formatDistance(distanceMeters)}")
+        if (returnHint) append(". ${returnHintSentence()}")
+    }
+
+    fun compassLabel(compass: Compass8): String = when (compass) {
+        Compass8.N -> "북"
+        Compass8.NE -> "북동"
+        Compass8.E -> "동"
+        Compass8.SE -> "남동"
+        Compass8.S -> "남"
+        Compass8.SW -> "남서"
+        Compass8.W -> "서"
+        Compass8.NW -> "북서"
+    }
+
+    fun returnGuide(backtrackMeters: Int?, straightMeters: Int, compass: Compass8): String {
+        val backtrack = backtrackMeters?.let {
+            "왔던 길로 되돌아가세요. 경로까지 약 ${formatDistance(it.toDouble())}. "
+        }.orEmpty()
+        return "${backtrack}경로는 ${compassLabel(compass)}쪽 직선거리 약 ${formatDistance(straightMeters.toDouble())}입니다"
+    }
+
     fun approach(distanceMeters: Double, bearingDegrees: Double?): String =
         if (bearingDegrees == null) "경로까지 ${formatDistance(distanceMeters)}"
         else "경로까지 ${formatDistance(distanceMeters)}, ${cardinal(bearingDegrees)}쪽입니다"

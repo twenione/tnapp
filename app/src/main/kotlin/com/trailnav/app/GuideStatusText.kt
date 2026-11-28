@@ -15,11 +15,18 @@ internal enum class GuideStatusKind {
     ON_ROUTE,
 }
 
+internal enum class NotificationActionKind {
+    ON_DEMAND,
+    RETURN,
+    SHAKE_MARK,
+}
+
 internal data class GuideStatusValues(
     val ribbon: RouteRibbonState?,
     val waiting: Boolean = false,
     val startupPending: Boolean = false,
     val waitingDistanceMeters: Double? = null,
+    val returnAvailable: Boolean = false,
 )
 
 internal data class GuideText(
@@ -35,9 +42,10 @@ internal data class GuideStatusPresentation(
     val offRouteDistance: GuideText? = null,
     val remaining: GuideText? = null,
     val auxiliary: GuideText? = null,
+    val returnPrompt: GuideText? = null,
 ) {
     val notificationContent: GuideText
-        get() = remaining ?: requireNotNull(auxiliary)
+        get() = returnPrompt ?: remaining ?: requireNotNull(auxiliary)
 }
 
 internal data class PeriodicToneSelection(
@@ -98,6 +106,7 @@ internal object GuideStatusText {
                 directionLabel = directionLabel,
                 offRouteDistance = GuideText(R.string.guide_off_route_distance, listOf(distance)),
                 remaining = remaining,
+                returnPrompt = if (values.returnAvailable) GuideText(R.string.guide_status_return_prompt) else null,
             )
         }
 
@@ -153,7 +162,15 @@ internal object GuideStatusText {
         previousContent: String?,
         title: String,
         content: String,
-    ): Boolean = previousTitle != title || previousContent != content
+        previousReturnAction: Boolean = false,
+        returnAction: Boolean = false,
+    ): Boolean = previousTitle != title || previousContent != content || previousReturnAction != returnAction
+
+    fun notificationActionKinds(returnAvailable: Boolean, imuEnabled: Boolean): List<NotificationActionKind> = buildList {
+        add(NotificationActionKind.ON_DEMAND)
+        if (returnAvailable) add(NotificationActionKind.RETURN)
+        if (imuEnabled) add(NotificationActionKind.SHAKE_MARK)
+    }
 
     fun toneSelection(intervalSeconds: Long): PeriodicToneSelection {
         val interval = intervalSeconds.takeIf { it in TONE_INTERVALS } ?: 0L
@@ -229,3 +246,9 @@ internal object GuideStatusText {
 
     private val TONE_INTERVALS = setOf(60L, 180L, 300L, 600L)
 }
+
+internal fun shouldAcceptReturnRequest(lastAcceptedAtMillis: Long?, nowMillis: Long): Boolean =
+    lastAcceptedAtMillis == null ||
+        (nowMillis >= lastAcceptedAtMillis && nowMillis - lastAcceptedAtMillis >= RETURN_REQUEST_DEBOUNCE_MILLIS)
+
+private const val RETURN_REQUEST_DEBOUNCE_MILLIS = 1_500L

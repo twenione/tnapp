@@ -3,6 +3,7 @@ package com.trailnav.app
 import java.text.DecimalFormatSymbols
 
 import com.trailnav.core.NextTurn
+import com.trailnav.core.Compass8
 import com.trailnav.core.Guidance
 import com.trailnav.core.GuideState
 import com.trailnav.core.ProgressDirection
@@ -19,6 +20,45 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
 class GuidancePhrasesTest {
+    @Test
+    fun returnGuidancePhrasesKeepTheExistingOffRoutePrefixAndNameAllCompassSectors() {
+        assertEquals("경로를 벗어났습니다. 42미터", GuidancePhrases.offRoute(42.0))
+        assertEquals(
+            "경로를 벗어났습니다. 250미터. 복귀 안내가 필요하면 버튼을 누르세요",
+            GuidancePhrases.offRoute(250.0, returnHint = true),
+        )
+        assertEquals("복귀 안내가 필요하면 버튼을 누르세요", GuidancePhrases.returnHintSentence())
+        val labels = listOf(
+            Compass8.N to "북",
+            Compass8.NE to "북동",
+            Compass8.E to "동",
+            Compass8.SE to "남동",
+            Compass8.S to "남",
+            Compass8.SW to "남서",
+            Compass8.W to "서",
+            Compass8.NW to "북서",
+        )
+        labels.forEach { (compass, label) -> assertEquals(label, GuidancePhrases.compassLabel(compass)) }
+    }
+
+    @Test
+    fun returnGuideUsesAWhenPresentAndAllReturnGuidanceTypesConvertToSpeech() {
+        val withBacktrack = "왔던 길로 되돌아가세요. 경로까지 약 120미터. 경로는 북동쪽 직선거리 약 340미터입니다"
+        val withoutBacktrack = "경로는 남쪽 직선거리 약 340미터입니다"
+        assertEquals(withBacktrack, GuidancePhrases.returnGuide(120, 340, Compass8.NE))
+        assertEquals(withoutBacktrack, GuidancePhrases.returnGuide(null, 340, Compass8.S))
+        assertEquals(
+            "왔던 길로 되돌아가세요. 경로까지 약 1.2킬로미터. 경로는 서쪽 직선거리 약 1.5킬로미터입니다",
+            GuidancePhrases.returnGuide(1_200, 1_500, Compass8.W),
+        )
+        assertEquals(
+            "경로를 벗어났습니다. 250미터. 복귀 안내가 필요하면 버튼을 누르세요",
+            Guidance.OffRoute(250.0, "forward", returnHint = true).toSpeech(),
+        )
+        assertEquals(GuidancePhrases.returnHintSentence(), Guidance.ReturnHint.toSpeech())
+        assertEquals(withBacktrack, Guidance.ReturnGuide(120, 340, Compass8.NE).toSpeech())
+    }
+
     @Test
     fun distanceFormattingUsesTheAdoptedBands() {
         assertEquals("99미터", GuidancePhrases.formatDistance(99.4))

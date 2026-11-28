@@ -118,6 +118,10 @@
     <string name="guide_tone_sheet_title">신호음</string>
     <string name="guide_tone_sheet_description">경로 위에 있을 때 울리는 짧은 소리예요. 고르는 즉시 적용되고 다음 안내에도 이 값을 써요.</string>
     <string name="guide_on_demand_now">지금 상태 듣기</string>
+    <string name="guide_return_button">복귀 안내</string>
+    <string name="guide_return_button_accessibility">복귀 안내, 경로로 돌아가는 방법을 말해 줍니다</string>
+    <string name="guide_status_return_prompt">복귀 안내 버튼을 누르면 경로로 돌아가는 방법을 말해 줘요</string>
+    <string name="guide_last_spoken_title">방금 들려준 안내</string>
     <string name="guide_end_long_press">길게 누르기</string>
     <string name="guide_end_long_press_accessibility">길게 눌러 종료</string>
     <string name="guide_route_shape_one_way">편도</string>
